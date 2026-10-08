@@ -3,6 +3,8 @@ package com.hiqnet.pos.users.domain;
 import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -45,4 +47,15 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             """)
     boolean existsByOrganizationIdAndEmail(
             @Param("organizationId") UUID organizationId, @Param("email") String email);
+
+    /**
+     * Scoped administrative lookup: a user is never resolved by a global id in
+     * the administration API (cross-organization requests must get 404, not
+     * 403). Mirrors the {@code branch} isolation pattern.
+     */
+    Optional<User> findByIdAndOrganizationId(UUID id, UUID organizationId);
+
+    Page<User> findByOrganizationId(UUID organizationId, Pageable pageable);
+
+    Page<User> findByOrganizationIdAndStatus(UUID organizationId, UserStatus status, Pageable pageable);
 }

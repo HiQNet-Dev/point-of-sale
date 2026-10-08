@@ -216,6 +216,25 @@ public class User {
         this.status = UserStatus.INACTIVE;
     }
 
+    /**
+     * Reactivates a previously deactivated user. Previously revoked or consumed
+     * refresh sessions do NOT come back to life: the user must authenticate
+     * again, which is enforced entirely by the auth module without any
+     * dependency back into it.
+     */
+    public void activate() {
+        this.status = UserStatus.ACTIVE;
+    }
+
+    /**
+     * Changes the identity email, applying the same normalization as
+     * {@link #create} (trim + lowercase + format). The entity re-normalizes
+     * defensively even when the caller already normalized the value.
+     */
+    public void changeEmail(String email) {
+        this.email = normalizeEmail(email);
+    }
+
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();
