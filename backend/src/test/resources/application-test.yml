@@ -1,5 +1,14 @@
 # Test profile. The PostgreSQL connection is provided by Testcontainers
 # through @ServiceConnection; no datasource values are declared here.
+# Test-only JWT secret (>= 256 bits) and a lower BCrypt cost to keep the
+# suite fast. In production the secret comes from AUTH_JWT_SECRET and there
+# is no fallback value anywhere.
+app:
+  auth:
+    jwt-secret: test-only-secret-0123456789abcdef0123456789abcdef0123456789abcdef
+    password-strength: 10
+    lockout-duration: 1h
+
 logging:
   level:
     root: warn
