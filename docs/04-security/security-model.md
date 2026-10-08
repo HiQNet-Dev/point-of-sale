@@ -1,7 +1,7 @@
 # Modelo de seguridad
 
-**Estado actual:** solo la configuración base de foundation existe. No hay
-autenticación, usuarios, roles ni autorización de negocio (futuro).
+**Estado actual:** autenticación implementada (`auth`, v0.1.x Foundation);
+Roles/Permissions (RBAC) y autorización de negocio siguen siendo futuros.
 
 ## Principios
 
@@ -13,8 +13,8 @@ autenticación, usuarios, roles ni autorización de negocio (futuro).
    contexto de la organización y, cuando aplica, a la sucursal.
    **Sin fallbacks `branchId=1`, sin IDs mágicos, sin "por defecto la primera sucursal".**
 5. **Secretos por entorno.** Contraseñas y credenciales viven en variables de
-   entorno por perfil; nunca en Git. Valores de ejemplo en dev
-   (`hiqnet_dev` / `hiqnet_dev_only`) son **solo locales no productivos**.
+   entorno por perfil; nunca en Git. `AUTH_JWT_SECRET` no tiene default:
+   aplicación no arranca sin ella (excepto tests con secreto de prueba).
 6. **Auditoría.** Quién, cuándo, qué. Operaciones de dinero: inmutables
    (sin hard delete), trazables y transaccionales.
 7. **Protección de operaciones de dinero.** Re-autenticación para operaciones
@@ -29,20 +29,35 @@ autenticación, usuarios, roles ni autorización de negocio (futuro).
 
 `SecurityConfig`:
 
-- `permitAll` **solo** en `/actuator/health` y `/error`.
-- Cualquier otra petición: **denegada** → 401/403 con JSON `ApiError`
-  (`ApiSecurityErrorHandler`), sin detalles internos.
+- `permitAll` **solo** en `/actuator/health`, `/error`, docs (si
+  `app.security.permit-opendoc`) y los endpoints públicos de auth:
+  `POST /api/v1/auth/login|refresh|logout`.
+- `authenticated`: `POST /api/v1/auth/logout-all`, `GET /api/v1/auth/me`.
+- **Cualquier otra petición, incluida la API de negocio, sigue denegada**
+  → 401/403 con JSON `ApiError` (`ApiSecurityErrorHandler`), sin detalles
+  internos. La API de negocio **no abre** con un access válido hasta que
+  exista RBAC.
 - Sesiones stateless, CSRF deshabilitado (API sin cookies de sesión hoy).
+
+Autenticación (detalle: `docs/04-security/authentication.md`):
+
+- Access JWT HS256 10m (`oauth2-resource-server`/Nimbus); refresh opaco
+  rotativo 30d, solo hash SHA-256 persistido; familia 30d absolutos.
+- Rotación atómica (`SELECT ... FOR UPDATE`); reuso de token consumido
+  revoca la familia completa.
+- BCrypt cost 12; lockout 5 intentos → 15m; errores genéricos
+  (`INVALID_CREDENTIALS`) con hash dummy anti-enumeración.
+- `AUTH_JWT_SECRET` obligatoria (≥32 bytes), fail-fast.
 
 No existe CORS wildcard, no existe `permitAll` global, no existen credenciales
 reales en el repositorio.
 
 ## Futuro (no implementado)
 
-- **Autenticación** (módulo `auth`): login, sesiones/tokens, logout.
 - **Autorización RBAC** (módulo `users`): roles y permisos por organización.
-- **Scoping efectivo** de organization/branch en cada endpoint.
-- **Rate limiting** (futuro, no implementado).
+- **Scoping efectivo** de organization/branch en cada endpoint (autorización
+  por pertenencia, no solo deny).
+- **Rate limiting** por IP (futuro, no implementado).
 - **Seguridad de WebSockets** cuando ese módulo llegue (futuro, no implementado).
 - **Re-autenticación e idempotencia** en operaciones monetarias (futuro).
 

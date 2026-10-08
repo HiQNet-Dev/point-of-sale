@@ -1,7 +1,8 @@
 # Modelo de dominio conceptual
 
-**Documento vivo.** `Organization` y `Branch` ya están implementados
-(migración `V2`); el resto de las entidades descritas aquí son futuras.
+**Documento vivo.** `Organization`, `Branch`, `User` (identidad) y
+`RefreshSession` ya están implementados (migraciones `V1`–`V3`); el resto de
+las entidades descritas aquí son futuras.
 
 Versión actual: `0.1.0-SNAPSHOT`.
 
@@ -9,6 +10,8 @@ Versión actual: `0.1.0-SNAPSHOT`.
 
 ```text
 Organization (organización / empresa)  ✔ implementado
+ ├── User (usuario)                    ✔ implementado (identidad; RBAC futuro)
+ │    └── RefreshSession (familia de refresh tokens)  ✔ implementado
  └── Branch (sucursal)                 ✔ implementado
       ├── CashRegister (caja)  → Shift (turno) → Sale (venta) → Payment (pago)
       ├── Stock (existencias)  ← descuenta por venta, compra y mermas
@@ -21,7 +24,8 @@ Organization (organización / empresa)  ✔ implementado
 | --- | --- | --- |
 | Organization | raíz | **implementada** — ver `docs/02-database/organization-branch-model.md` |
 | Branch | organización | **implementada** — ver `docs/02-database/organization-branch-model.md` |
-| User | organización | Con roles/permisos (RBAC futuro) |
+| User | organización | **implementada (identidad)** — email normalizado único por organización, `password_hash` BCrypt, intentos/lockout; RBAC futuro |
+| RefreshSession | usuario | **implementada** — refresh opaco rotativo; solo SHA-256 persistido; familia 30d absolutos (`docs/04-security/authentication.md`) |
 | Product / Variant | **organización** | Catálogo: tamaños, sabores, precios |
 | Ingredient | **organización** | Insumos del catálogo |
 | Recipe | **organización** | Producto → ingredientes + cantidades |
@@ -56,7 +60,8 @@ operación pasa por `organization_id` (`findByIdAndOrganizationId`).
 
 ## Relaciones
 
-- Organization 1—N Branch ✔; Organization 1—N User (futuro); Organization 1—N Product/Ingredient (futuro).
+- Organization 1—N Branch ✔; Organization 1—N User ✔; Organization 1—N Product/Ingredient (futuro).
+- User 1—N RefreshSession ✔ (sesiones de refresh por familia).
 - Branch 1—N CashRegister, Branch 1—N Stock (futuro).
 - Product 1—N Variant; Recipe N—M Ingredient (con cantidades) (futuro).
 - Sale 1—N Payment; Sale 1—N SaleLine; Sale N—1 Branch/CashRegister (futuro).

@@ -1,17 +1,18 @@
 # Módulos planeados
 
-**Organization y Branch están implementados.** El resto de los módulos son
-previstos; cada uno se marca como **no implementado** hasta que llegue su
-milestone (ver `docs/00-product/roadmap.md`).
+**Organization, Branch y Authentication (auth) están implementados.** El
+resto de los módulos son previstos; cada uno se marca como **no
+implementado** hasta que llegue su milestone (ver
+`docs/00-product/roadmap.md`).
 
 ## Tabla de módulos
 
 | Módulo | Responsabilidad | Conceptos clave | Estado |
 | --- | --- | --- | --- |
-| `auth` | Autenticación y sesiones | login, tokens/sesiones, perfil | **no implementado** |
+| `auth` | Autenticación y sesiones | login, refresh rotativo, logout, /me | **implementado** |
 | `organization` | Empresas/organizaciones | organization, scoping de catálogo | **implementado** |
 | `branch` | Sucursales | branch, scoping de existencias | **implementado** |
-| `users` | Usuarios y permisos | users, roles, RBAC | **no implementado** |
+| `users` | Usuarios y permisos | users (identidad), roles, RBAC | **parcial (identidad)** |
 | `catalog` | Catálogo comercial | products, variants, precios, ingredientes | **no implementado** |
 | `sales` | Venta y tickets | sales, tickets, líneas, totales | **no implementado** |
 | `payments` | Pagos de la venta | methods, splits, vuelto | **no implementado** |
@@ -35,11 +36,16 @@ com.hiqnet.pos.<modulo>[.domain|.application|.infrastructure|.api]
   Spring Data), `application` (servicios y commands) y `api` (controllers y
   DTOs). **No** hay `infrastructure` propio: Spring Data genera la
   implementación de repositorios, no existe código de persistencia manual.
+- `auth` añade `infrastructure` cuando hay lógica técnica no de dominio:
+  `RefreshTokenHasher` (generación criptográfica del token opaco y su hash
+  SHA-256). El resto sigue `domain/application/api`.
 - Dependencia entre módulos (lectura): `branch` usa
   `OrganizationRepository` de `organization` para validar existencia y
-  resolución de timezone. `organization` no conoce `branch`.
+  resolución de timezone; `auth` usa `User`/`UserRepository` de `users` y
+  `OrganizationRepository` para resolver el login. Dirección única, sin
+  ciclos: `organization` no conoce a nadie.
 - Compartido actual: `com.hiqnet.pos.shared.config` (`SecurityConfig`,
-  `CorsConfig`) y `com.hiqnet.pos.shared.error`.
+  `CorsConfig`, `AuthConfig`, `AuthProperties`) y `com.hiqnet.pos.shared.error`.
 
 ## Regla de scoping (repetida a propósito)
 
@@ -54,7 +60,11 @@ com.hiqnet.pos.<modulo>[.domain|.application|.infrastructure|.api]
 ## Estado actual del código
 
 Existen `com.hiqnet.pos.shared`, los módulos `organization` y `branch`
-(implementados: migración Flyway `V2`, entidades, servicios, `POST/GET/PATCH`
-bajo `/api/v1`, tests de integración con Testcontainers) y las clases de
-arranque. La API de negocio está **deny-by-default** hasta que exista auth
-(véase `docs/04-security/security-model.md`).
+(implementados: migraciones Flyway `V1`/`V2`, entidades, servicios,
+`POST/GET/PATCH` bajo `/api/v1`, tests de integración con Testcontainers), el
+módulo `users` (solo identidad: `User`, `UserRepository`, `UserStatus`) y el
+módulo `auth` (migración Flyway `V3`, `AuthService`, refresh rotativo,
+`AuthController`, JWT, 88 tests de integración verdes). Las clases de arranque siguen en
+su lugar. La API de negocio está **deny-by-default** incluso con access
+válido hasta que exista RBAC (véase
+`docs/04-security/security-model.md` y `docs/04-security/authentication.md`).

@@ -116,6 +116,7 @@ Variables de entorno del backend (nombres seguros de ejemplo en `.env.example` y
 | `DB_PASSWORD` | Contraseña PostgreSQL (*solo dev*) | `hiqnet_dev_only` |
 | `SERVER_PORT` | Puerto HTTP del backend | `8080` |
 | `CORS_ALLOWED_ORIGINS` | Orígenes CORS permitidos (lista, sin wildcard) | `http://localhost:5173` (dev) |
+| `AUTH_JWT_SECRET` | Secreto de firma JWT, ≥32 bytes (256 bits) — **obligatorio, sin default** | *(generar: `openssl rand -base64 32`)* |
 | `SPRING_PROFILES_ACTIVE` | Perfil Spring (`dev`/`prod`) | `dev` |
 
 Frontend: `VITE_API_BASE_URL` (default `"/api/v1"`, same-origin).
