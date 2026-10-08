@@ -1,14 +1,34 @@
 # Convenciones de API
 
-**Estado:** no hay endpoints de negocio aún; la API de foundation solo expone
-`/actuator/health` y `/error` (deny by default). Las convenciones aplican desde
-que se construya el módulo de API.
+**Estado:** existen los primeros endpoints de negocio
+(Organization + Branch, `/api/v1`). Autenticación aún no implementada; la API
+está detrás de **deny-by-default** en todos los entornos salvo el perfil `test`
+de pruebas. Detalle de contrato: `docs/02-database/organization-branch-model.md`
+y la especificación OpenAPI (`/v3/api-docs`, swagger-ui activo solo en dev).
 
 ## Base path y formato
 
-- Prefijo: **`/api/v1`** (ej. `POST /api/v1/sales` — futuro).
+- Prefijo: **`/api/v1`**.
 - JSON en requests y responses; claves en **`camelCase`**.
-- Sin sufijos verbales en rutas (`/sales`, no `/getSales`).
+- Sin sufijos verbales en rutas (`/organizations`, no `/getOrganizations`).
+- IDs en la ruta para subrecursos: `/organizations/{organizationId}/branches`.
+- Recursos en **plural** (`/organizations`, `/branches`).
+
+## Endpoints actuales
+
+```text
+POST  /api/v1/organizations
+GET   /api/v1/organizations/{organizationId}
+PATCH /api/v1/organizations/{organizationId}
+
+POST  /api/v1/organizations/{organizationId}/branches
+GET   /api/v1/organizations/{organizationId}/branches
+GET   /api/v1/organizations/{organizationId}/branches/{branchId}
+PATCH /api/v1/organizations/{organizationId}/branches/{branchId}
+```
+
+No hay `DELETE`: la baja es `status = INACTIVE` (sin hard delete sobre datos
+que luego serán financieros).
 
 ## Semántica HTTP
 
@@ -16,11 +36,22 @@ que se construya el módulo de API.
 | --- | --- | --- |
 | GET | Lectura | 200 |
 | POST | Creación | 201 |
-| PUT/PATCH | Reemplazo / actualización parcial | 200 |
-| DELETE | Baja | 204 |
+| PATCH | Actualización **parcial** | 200 |
+| DELETE | No usado todavía | — |
 
 Errores: 400 (validación/malformed), 401 (no autenticado), 403 (prohibido),
-404 (recurso inexistente), 409 (conflicto), 422 (regla de negocio), 500 (interno).
+404 (recurso inexistente), 409 (conflicto: duplicado o modificación
+concurrente), 500 (interno).
+
+## PATCH (parcial, no PUT disfrazado)
+
+- Solo se actualizan los campos presentes (no nulos) en el body.
+- `code` es **inmutable** tras la creación, tanto en `organizations` como en
+  `branches` (no se expone en PATCH): evita romper futuras referencias y URLs
+  lógicas.
+- `status` permite `ACTIVE`/`INACTIVE` (activar/desactivar).
+- `branch.timezone` explícito borra/inicia la herencia de timezone;
+  no enviarlo deja el valor actual.
 
 ## Contrato de error
 
@@ -29,45 +60,66 @@ Misma forma que `ApiError` del backend:
 ```json
 {
   "timestamp": "2026-10-07T12:00:00Z",
-  "status": 400,
-  "code": "VALIDATION_ERROR",
-  "message": "Datos de entrada inválidos",
-  "path": "/api/v1/sales",
-  "details": ["total: debe ser mayor o igual a 0"]
+  "status": 409,
+  "code": "BRANCH_CODE_ALREADY_EXISTS",
+  "message": "A branch with this code already exists in the organization",
+  "path": "/api/v1/organizations/…/branches",
+  "details": []
 }
 ```
 
-Códigos estables de ejemplo: `VALIDATION_ERROR`, `MALFORMED_REQUEST`,
-`RESOURCE_NOT_FOUND`, `UNAUTHORIZED`, `FORBIDDEN`, `INTERNAL_ERROR`.
-Nunca se exponen stack traces ni detalles internos.
+Códigos estables:
+
+| Código | HTTP | Cuándo |
+| --- | --- | --- |
+| `VALIDATION_ERROR` | 400 | Bean Validation o parámetro mal formado |
+| `MALFORMED_REQUEST` | 400 | Body ilegible |
+| `INVALID_CODE` | 400 | Slug inválido (formato `^[a-z0-9]+(-[a-z0-9]+)*$`) |
+| `INVALID_TIMEZONE` | 400 | No es timezone IANA |
+| `INVALID_CURRENCY` | 400 | No es ISO 4217 |
+| `INVALID_LOCALE` | 400 | No es BCP 47 |
+| `UNAUTHORIZED` | 401 | Sin autenticación |
+| `FORBIDDEN` | 403 | Sin permiso |
+| `ORGANIZATION_NOT_FOUND` | 404 | Organización inexistente |
+| `BRANCH_NOT_FOUND` | 404 | Branch inexistente (o de otra organización) |
+| `RESOURCE_NOT_FOUND` | 404 | Ruta sin mapping |
+| `ORGANIZATION_CODE_ALREADY_EXISTS` | 409 | Code de organización duplicado (global) |
+| `BRANCH_CODE_ALREADY_EXISTS` | 409 | Code de branch duplicado en la organización |
+| `CONCURRENT_MODIFICATION` | 409 | Falló optimistic locking |
+| `INTERNAL_ERROR` | 500 | Error inesperado |
+
+Nunca se exponen stack traces, mensajes SQL ni detalles internos.
 
 ## Validación
 
-- **Siempre server-side**, incluso si el frontend ya validó.
-- El frontend valida para usabilidad; el servidor valida para seguridad.
+- **Siempre server-side**, incluso si el frontend validó (usabilidad).
+- Doble capa: Bean Validation en DTOs (`VALIDATION_ERROR`) + invariantes de
+  dominio en entidad/servicio (`INVALID_TIMEZONE`, `INVALID_CURRENCY`,
+  `INVALID_LOCALE`, `INVALID_CODE`, duplicados).
+- Constraints reales en PostgreSQL: `NOT NULL`, `UNIQUE`, `FOREIGN KEY`,
+  `CHECK` (status, formato de code, longitud de moneda). No se confía solo en
+  la capa de aplicación.
 
-## Naming
+## Aislamiento entre organizaciones (IDOR)
 
-- Rutas en **kebab-case**; recursos en **plural** (`/cash-registers`, `/sales`).
-- IDs en la ruta para subrecursos: `/api/v1/branches/{branchId}/sales`.
-
-## Paginación (futuro / no implementado)
-
-- Listados: `?page=0&size=20&limit=...` (parámetros a fijar al construir el módulo).
-- Operaciones de dinero de alto volumen podrían usar **cursor** (futuro).
-
-## Idempotencia (futuro / no implementado)
-
-- Operaciones monetarias (ventas, pagos) aceptarán cabecera
-  **`Idempotency-Key`** para reintentos seguros. Aún no existe.
+Toda operación sobre una branch exige `organization_id`: un
+`GET /organizations/{A}/branches/{B1}` donde B1 pertenece a otra organización
+responde **404 BRANCH_NOT_FOUND**, nunca 200. Patrón obligatorio para módulos
+futuros scoped por organización.
 
 ## OpenAPI
 
-- **Todavía no hay OpenAPI** ni springdoc: el módulo de API no existe.
-- Cuando se construya, springdoc generará la especificación en desarrollo.
+- `springdoc-openapi` **3.1.1** (compatible con Spring Boot 4.1.x).
+- Especificación: `/v3/api-docs`; UI: `/swagger-ui` (solo cuando
+  `app.security.permit-opendoc=true`, activo únicamente en `dev`).
+- En producción los endpoints de docs siguen **denegados** por
+  deny-by-default.
 
-## Seguridad de respuestas
+## Otros
 
-- Nunca devolver datos sensibles: contraseñas, hashes, tokens, secretos,
-  datos internos de infraestructura.
-- Ver `docs/04-security/security-model.md`.
+- **Paginación** (futuro): listados con `?page=0&size=20` a fijar al
+  construirlos.
+- **Idempotencia** (futuro): operaciones monetarias aceptarán
+  `Idempotency-Key`. Aún no existe.
+- **Seguridad de respuestas:** nunca devolver contraseñas, hashes, tokens,
+  secretos ni datos internos de infraestructura.
