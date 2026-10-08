@@ -259,6 +259,14 @@ class UserApiTest {
     }
 
     @Test
+    void listUsersRejectsInvalidStatusFilter() throws Exception {
+        String orgId = createOrganization();
+        mockMvc.perform(get(usersUrl(orgId)).param("status", "INVALID"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+    }
+
+    @Test
     void listUsersFiltersByStatus() throws Exception {
         String orgId = createOrganization();
         createUser(orgId, "active1@example.com", STRONG_PASSWORD);

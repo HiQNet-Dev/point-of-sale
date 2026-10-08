@@ -125,6 +125,23 @@ con verificación del estado final en base de datos):
 - **Refresh:** se revoca la familia y se responde `401 INVALID_REFRESH_TOKEN`.
 - **`/me`:** se responde `401 TOKEN_INVALID` (la identidad ya no es operativa).
 
+## Desactivación de usuarios (administración de Users)
+
+La desactivación administrativa (`UserService`, PATCH status=INACTIVE) revoca
+**todas** las refresh sessions del usuario (todas las familias/dispositivos) en
+la **misma transacción** que el cambio de status, vía el port de aplicación
+`UserSessionRevocationPort` implementado por `auth` (orden de locking
+`user → sessions`). Reactivar **no** revive sesiones revocadas ni emite tokens:
+el usuario debe autenticarse de nuevo (login nuevo).
+
+**Access JWT y reactivación:** la desactivación **no** blacklistea JWTs ya
+emitidos — un access token sigue siendo criptográficamente válido hasta su
+`exp` (10m); `/me` consulta User/Organization desde la DB y rechaza identidades
+no operativas, y las business APIs continúan deny-by-default. Antes de abrir
+RBAC revisaremos si hace falta un `securityVersion`/security stamp o si la
+resolución autoritativa desde la DB es suficiente (decisión pendiente, fuera de
+esta fundación).
+
 ## Protecciones aplicadas
 
 - **Anti-enumeración:** 401 genérico para org/email/password incorrectos (o

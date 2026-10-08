@@ -161,6 +161,9 @@ Convención estable desde la administración de usuarios (`shared.api.PageRespon
 
 ## Otros
 
+- **Optimistic concurrency HTTP** (futuro, transversal): contrato común
+  `ETag`/`If-Match`/`expectedVersion` para Organization + Branch + User antes
+  de abrir las APIs administrativas; `version` hoy es informativo.
 - **Idempotencia** (futuro): operaciones monetarias aceptarán
   `Idempotency-Key`. Aún no existe.
 - **Seguridad de respuestas:** nunca devolver contraseñas, hashes, tokens,

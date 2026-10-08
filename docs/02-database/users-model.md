@@ -73,12 +73,16 @@ un usuario de otra organización devuelve **404 `USER_NOT_FOUND`** (nunca 200 ni
 
 ## Integración con `auth`
 
-- Desactivar (`status = INACTIVE`) bloquea inmediatamente **login/refresh/`/me`**
-  (Auth ya rechaza usuarios inactivos y revoca la familia en refresh). Reactivar
-  **no** resucita refresh tokens revocados/consumidos: el usuario vuelve a
-  autenticarse.
-- Dirección de dependencia: **`users` nunca llama a `auth`** (auth reacciona a
-  `User.status`). Sin ciclo de módulos.
+- Desactivar (`ACTIVE → INACTIVE`) es un **límite de seguridad**: además de
+  bloquear login/refresh/`/me`, revoca **todas** las refresh sessions del
+  usuario (todas las familias/dispositivos) **en la misma transacción** que el
+  cambio de status (lock `user` primero → sesiones). La revocación se delega a
+  un port de aplicación (`UserSessionRevocationPort` en `users.application`)
+  implementado por `auth` (Dependency Inversion).
+- Reactivar (`INACTIVE → ACTIVE`) **no** revive ninguna sesión revocada ni crea
+  sesiones nuevas: el usuario debe autenticarse de nuevo.
+- Dirección de dependencia: **`users` nunca compila contra `auth`** (solo usa el
+  port); `auth` implementa el port. Sin ciclo de módulos.
 
 ## Migración
 
@@ -96,6 +100,13 @@ Branch Memberships       ✘ (futuro)
 ```
 
 La **API administrativa permanece cerrada en runtime productivo** hasta que
-exista RBAC (`SecurityConfig` = `denyAll()`): un access JWT válido responde 403.
+  exista RBAC (`SecurityConfig` = `denyAll()`): un access JWT válido responde 403.
 El **bootstrap del primer ADMIN** (provisión segura del administrador inicial)
 sigue pendiente de Foundation; no hay credenciales por defecto.
+
+## Decisión pendiente (Foundation, transversal)
+
+- **HTTP optimistic concurrency contract** (`ETag`/`If-Match`/`expectedVersion`)
+  para **Organization + Branch + User** se resolverá de forma transversal antes
+  de abrir las APIs administrativas en producción. `version` hoy se expone con
+  fines de observación; PATCH aún no recibe una versión esperada.
