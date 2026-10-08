@@ -9,6 +9,10 @@ import com.hiqnet.pos.branch.domain.Branch;
 import com.hiqnet.pos.organization.application.OrganizationService;
 import com.hiqnet.pos.organization.application.UpdateOrganizationCommand;
 import com.hiqnet.pos.organization.domain.Organization;
+import com.hiqnet.pos.users.application.UpdateUserCommand;
+import com.hiqnet.pos.users.application.UserService;
+import com.hiqnet.pos.users.domain.User;
+import com.hiqnet.pos.users.domain.UserStatus;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import org.junit.jupiter.api.Test;
@@ -33,6 +37,9 @@ class OptimisticLockingTests {
 
     @Autowired
     private BranchService branchService;
+
+    @Autowired
+    private UserService userService;
 
     @Autowired
     private EntityManagerFactory entityManagerFactory;
@@ -102,6 +109,46 @@ class OptimisticLockingTests {
         assertEquals(1, v1.getVersion());
         Organization v2 = organizationService.update(
                 created.getId(), new UpdateOrganizationCommand("Newer Name", null, null, null, null));
+        assertEquals(2, v2.getVersion());
+    }
+
+    @Test
+    void userUpdateOnStaleVersionFails() {
+        Organization org = organizationService.create("Org", "lock-user-org", "UTC", "MXN", "es-MX");
+        User created = userService.create(org.getId(), "lock-user@example.com", "correct-horse-1");
+
+        EntityManager winner = entityManagerFactory.createEntityManager();
+        EntityManager loser = entityManagerFactory.createEntityManager();
+        try {
+            winner.getTransaction().begin();
+            loser.getTransaction().begin();
+            User winnerView = winner.find(User.class, created.getId());
+            User loserView = loser.find(User.class, created.getId());
+            winnerView.changeEmail("winner@example.com");
+            winner.getTransaction().commit();
+
+            loserView.changeEmail("loser@example.com");
+            jakarta.persistence.RollbackException ex = assertThrows(
+                    jakarta.persistence.RollbackException.class, loser.getTransaction()::commit);
+            assertTrue(ex.getCause() instanceof jakarta.persistence.OptimisticLockException);
+
+            User current = userService.get(org.getId(), created.getId());
+            assertEquals("winner@example.com", current.getEmail());
+            assertEquals(1, current.getVersion());
+        } finally {
+            closeQuietly(winner);
+            closeQuietly(loser);
+        }
+    }
+
+    @Test
+    void sequentialUserUpdatesSucceedAndBumpVersion() {
+        Organization org = organizationService.create("Org", "seq-user-lock", "UTC", "MXN", "es-MX");
+        User created = userService.create(org.getId(), "seq-user@example.com", "correct-horse-1");
+
+        User v1 = userService.update(org.getId(), created.getId(), new UpdateUserCommand(null, UserStatus.INACTIVE));
+        assertEquals(1, v1.getVersion());
+        User v2 = userService.update(org.getId(), created.getId(), new UpdateUserCommand("seq-new@example.com", null));
         assertEquals(2, v2.getVersion());
     }
 
