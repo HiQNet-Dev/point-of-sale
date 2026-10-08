@@ -55,6 +55,17 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      */
     Optional<User> findByIdAndOrganizationId(UUID id, UUID organizationId);
 
+    /**
+     * Scoped locking lookup for administrative mutations (deactivation):
+     * acquires the user row first (PESSIMISTIC_WRITE) so the subsequent
+     * refresh-session revocation keeps the established order user -> sessions.
+     * Organization scoping (IDOR) is preserved.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.id = :id and u.organizationId = :organizationId")
+    Optional<User> findByIdAndOrganizationIdForUpdate(
+            @Param("id") UUID id, @Param("organizationId") UUID organizationId);
+
     Page<User> findByOrganizationId(UUID organizationId, Pageable pageable);
 
     Page<User> findByOrganizationIdAndStatus(UUID organizationId, UserStatus status, Pageable pageable);

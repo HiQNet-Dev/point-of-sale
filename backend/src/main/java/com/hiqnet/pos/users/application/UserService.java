@@ -8,6 +8,8 @@ import com.hiqnet.pos.users.domain.User;
 import com.hiqnet.pos.users.domain.UserRepository;
 import com.hiqnet.pos.users.domain.UserStatus;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -19,9 +21,14 @@ import org.springframework.transaction.annotation.Transactional;
  * Administrative use cases for users, always scoped to an organization.
  *
  * <p>Module direction: {@code users -> organization, shared}. This service must
- * NOT depend on {@code auth} (that would create a module cycle): deactivating a
- * user is sufficient because the auth module already rejects INACTIVE users on
- * login/refresh/me and never resurrects revoked sessions.</p>
+ * NOT depend on {@code auth} (that would create a module cycle): session
+ * revocation on deactivation is delegated to a port
+ * ({@link UserSessionRevocationPort}) implemented by the authentication
+ * module, so the compile-time direction stays {@code auth -> users}.</p>
+ *
+ * <p>Deactivation is a security boundary: every active refresh session is
+ * revoked in the SAME transaction as {@code status = INACTIVE} (atomic,
+ * user-lock first), and a later reactivation never resurrects them.</p>
  *
  * <p>Password handling: the raw password exists only during the request; it is
  * hashed with the shared {@link PasswordEncoder} and never stored, logged or
@@ -30,17 +37,22 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class UserService {
 
+    private static final Logger log = LoggerFactory.getLogger(UserService.class);
+
     private final UserRepository userRepository;
     private final OrganizationRepository organizationRepository;
     private final PasswordEncoder passwordEncoder;
+    private final UserSessionRevocationPort sessionRevocationPort;
 
     public UserService(
             UserRepository userRepository,
             OrganizationRepository organizationRepository,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder,
+            UserSessionRevocationPort sessionRevocationPort) {
         this.userRepository = userRepository;
         this.organizationRepository = organizationRepository;
         this.passwordEncoder = passwordEncoder;
+        this.sessionRevocationPort = sessionRevocationPort;
     }
 
     @Transactional
@@ -81,12 +93,32 @@ public class UserService {
     @Transactional
     public User update(UUID organizationId, UUID userId, UpdateUserCommand command) {
         requireOrganization(organizationId);
-        User user = requireUser(organizationId, userId);
+        // Locking lookup (org-scoped): serializes administrative mutations and
+        // the later session revocation against auth flows on the user row
+        // (lock order user -> sessions).
+        User user = requireUserForUpdate(organizationId, userId);
         if (command.status() != null) {
+            boolean wasActive = user.isActive();
             if (command.status() == UserStatus.ACTIVE) {
                 user.activate();
             } else {
                 user.deactivate();
+                if (wasActive) {
+                    log.info(
+                            "security-event=user-deactivated userId={} organizationId={}",
+                            user.getId(),
+                            organizationId);
+                }
+                // Idempotent: re-deactivating an already INACTIVE user revokes
+                // nothing (0). Same transaction as the status change.
+                int revoked = sessionRevocationPort.revokeAllForUser(user.getId());
+                if (revoked > 0) {
+                    log.info(
+                            "security-event=user-sessions-revoked userId={} organizationId={} revoked={}",
+                            user.getId(),
+                            organizationId,
+                            revoked);
+                }
             }
         }
         if (command.email() != null) {
@@ -103,6 +135,13 @@ public class UserService {
     private User requireUser(UUID organizationId, UUID userId) {
         return userRepository
                 .findByIdAndOrganizationId(userId, organizationId)
+                .orElseThrow(() -> new BusinessException(
+                        HttpStatus.NOT_FOUND, ErrorCodes.USER_NOT_FOUND, "User not found"));
+    }
+
+    private User requireUserForUpdate(UUID organizationId, UUID userId) {
+        return userRepository
+                .findByIdAndOrganizationIdForUpdate(userId, organizationId)
                 .orElseThrow(() -> new BusinessException(
                         HttpStatus.NOT_FOUND, ErrorCodes.USER_NOT_FOUND, "User not found"));
     }
