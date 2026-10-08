@@ -9,7 +9,7 @@ Versión actual: `0.1.0-SNAPSHOT`.
 
 | Milestone | Contenido (futuro salvo indicación) | Estado |
 | --- | --- | --- |
-| **v0.1.x Foundation** | Estructura backend + frontend, config, seguridad base, documentación, **módulo Organization + Branch (implementado)**, **Authentication (implementado)** | **En curso (actual)** |
+| **v0.1.x Foundation** | Estructura backend + frontend, config, seguridad base, documentación, **módulo Organization + Branch (implementado)**, **Authentication (implementado)**, **Users administration (implementado; API cerrada hasta RBAC)** | **En curso (actual)** |
 | v0.2.x POS Core | Catálogo, cajas, turnos, ventas, pagos, tickets | Futuro / pendiente |
 | v0.3.x Inventory | Ingredientes, recetas, existencias por sucursal | Futuro / pendiente |
 | v0.4.x Purchasing | Proveedores, órdenes de compra, recepción | Futuro / pendiente |

@@ -1,7 +1,8 @@
 # Modelo de seguridad
 
-**Estado actual:** autenticación implementada (`auth`, v0.1.x Foundation);
-Roles/Permissions (RBAC) y autorización de negocio siguen siendo futuros.
+**Estado actual:** autenticación implementada (`auth`) y administración de
+usuarios implementada (`users`), ambas en v0.1.x Foundation; Roles/Permissions
+(RBAC) y autorización de negocio siguen siendo futuros.
 
 ## Principios
 
@@ -38,6 +39,12 @@ Roles/Permissions (RBAC) y autorización de negocio siguen siendo futuros.
   → 401/403 con JSON `ApiError` (`ApiSecurityErrorHandler`), sin detalles
   internos. La API de negocio **no abre** con un access válido hasta que
   exista RBAC.
+- **Administración de usuarios:** los endpoints
+  `/api/v1/organizations/{organizationId}/users/**` existen y están
+  documentados, pero permanecen **denegados** en la cadena productiva hasta que
+  exista RBAC: un access JWT válido responde **403**, nunca 200. Verificado por
+  `SecurityDenyIntegrationTest`. No existe bypass productivo; solo la
+  configuración de `src/test` los abre.
 - Sesiones stateless, CSRF deshabilitado (API sin cookies de sesión hoy).
 
 Autenticación (detalle: `docs/04-security/authentication.md`):
