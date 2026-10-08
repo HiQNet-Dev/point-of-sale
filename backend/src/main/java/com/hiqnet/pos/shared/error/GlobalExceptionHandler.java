@@ -4,12 +4,14 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
@@ -43,6 +45,35 @@ public class GlobalExceptionHandler {
                 HttpStatus.BAD_REQUEST.value(),
                 "MALFORMED_REQUEST",
                 "Malformed request body",
+                request.getRequestURI()));
+    }
+
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<ApiError> handleBusinessException(BusinessException ex, HttpServletRequest request) {
+        return ResponseEntity.status(ex.getStatus()).body(ApiError.of(
+                ex.getStatus().value(),
+                ex.getCode(),
+                ex.getMessage(),
+                request.getRequestURI()));
+    }
+
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ApiError> handleConcurrentModification(
+            OptimisticLockingFailureException ex, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiError.of(
+                HttpStatus.CONFLICT.value(),
+                ErrorCodes.CONCURRENT_MODIFICATION,
+                "The resource was modified concurrently; retry with fresh data",
+                request.getRequestURI()));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiError> handleTypeMismatch(
+            MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
+        return ResponseEntity.badRequest().body(ApiError.of(
+                HttpStatus.BAD_REQUEST.value(),
+                ErrorCodes.VALIDATION_ERROR,
+                "Invalid path parameter value",
                 request.getRequestURI()));
     }
 
