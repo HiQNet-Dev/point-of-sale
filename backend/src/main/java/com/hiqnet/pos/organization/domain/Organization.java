@@ -82,7 +82,8 @@ public class Organization {
     /**
      * Domain factory. Applies core invariants (code format, real IANA timezone,
      * ISO 4217 currency, BCP 47 locale) so no invalid aggregate can exist.
-     * The caller is responsible for trim/lowercase normalization of {@code code}.
+     * The caller is responsible for trim/lowercase normalization of {@code code};
+     * {@code name} is trimmed here before being persisted.
      */
     public static Organization create(String name, String code, String timezone, String currency, String locale) {
         validateName(name);
@@ -90,7 +91,8 @@ public class Organization {
         validateTimezone(timezone);
         validateCurrency(currency);
         validateLocale(locale);
-        return new Organization(UUID.randomUUID(), name, code, timezone, currency.toUpperCase(Locale.ROOT), locale);
+        return new Organization(
+                UUID.randomUUID(), name.trim(), code, timezone, currency.toUpperCase(Locale.ROOT), locale);
     }
 
     public UUID getId() {
@@ -135,7 +137,7 @@ public class Organization {
 
     public void updateName(String newName) {
         validateName(newName);
-        this.name = newName;
+        this.name = newName.trim();
     }
 
     public void updateTimezone(String newTimezone) {

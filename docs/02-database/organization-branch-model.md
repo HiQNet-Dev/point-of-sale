@@ -56,6 +56,8 @@ Organization 1 ── N Branch   (la branch pertenece exactamente a una organiza
 
 - name obligatorio + longitud ≤ 120; code slug obligatorio (normalizado a
   minúsculas + trim en el servicio, revalidado por la entidad).
+- name se normaliza con `trim()` en la capa de dominio (create y update):
+  nunca se persisten espacios externos; los espacios internos se conservan.
 - timezone IANA real; currency ISO 4217 real (sin lista manual: `java.util.Currency`);
   locale BCP 47 reconstruible.
 - status solo `ACTIVE`/`INACTIVE`; **sin hard delete** (la baja es status).
@@ -78,9 +80,9 @@ futuros).
 
 ## Decisiones pendientes
 
-- `branch.timezone` no se puede "limpiar" explícitamente vía PATCH (omitir el
-  campo deja el valor actual); si se necesita reset a herencia, se decidirá en
-  una tarea futura.
+- `branch.timezone` en PATCH usa semántica tri-estado implementada
+  (`PatchField` en `shared.api`): omitir = sin cambios; valor = override;
+  `null` = limpiar override y heredar de la organización.
 - Normalización de `code`: la API exige un slug ya formado
   (Bean Validation); el servicio además normaliza trim+lowercase para
   llamadas internas.

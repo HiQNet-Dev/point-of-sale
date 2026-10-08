@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.hiqnet.pos.TestcontainersConfiguration;
+import com.hiqnet.pos.TestSecurityConfig;
 import com.hiqnet.pos.organization.api.CreateOrganizationRequest;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -21,7 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
 @ActiveProfiles("test")
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, TestSecurityConfig.class})
 @SpringBootTest
 @AutoConfigureMockMvc
 class BranchApiTest {
@@ -181,6 +182,51 @@ class BranchApiTest {
                         .content("{\"timezone\":\"Not/AZone\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_TIMEZONE"));
+    }
+
+    @Test
+    void createBranchTrimsNameWhitespaceButKeepsInternalSpaces() throws Exception {
+        String orgId = createOrganization("branch-trim-create");
+        mockMvc.perform(post("/api/v1/organizations/" + orgId + "/branches")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"   Sucursal   Centro   \",\"code\":\"trim-centro\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value("Sucursal   Centro"));
+    }
+
+    @Test
+    void patchBranchTrimsNameWhitespace() throws Exception {
+        String orgId = createOrganization("branch-trim-patch");
+        String branchId = createBranch(orgId, "centro", null);
+        mockMvc.perform(patch("/api/v1/organizations/" + orgId + "/branches/" + branchId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"  Sucursal Centro Renovada  \"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Sucursal Centro Renovada"));
+    }
+
+    @Test
+    void patchBranchEmptyBodyKeepsTimezoneUnchanged() throws Exception {
+        String orgId = createOrganization("branch-patch-noop");
+        String branchId = createBranch(orgId, "centro", "America/Mexico_City");
+        mockMvc.perform(patch("/api/v1/organizations/" + orgId + "/branches/" + branchId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.timezone").value("America/Mexico_City"))
+                .andExpect(jsonPath("$.version").value(0));
+    }
+
+    @Test
+    void patchBranchNullTimezoneClearsOverrideAndInheritsOrganization() throws Exception {
+        String orgId = createOrganization("branch-tz-clear");
+        String branchId = createBranch(orgId, "centro", "America/Argentina/Buenos_Aires");
+        mockMvc.perform(patch("/api/v1/organizations/" + orgId + "/branches/" + branchId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"timezone\":null}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.timezone").value(nullValue()))
+                .andExpect(jsonPath("$.version").value(1));
     }
 
     @Test

@@ -50,7 +50,7 @@ public class OrganizationService {
     public Organization update(UUID organizationId, UpdateOrganizationCommand command) {
         Organization organization = get(organizationId);
         if (command.name() != null) {
-            organization.updateName(command.name().trim());
+            organization.updateName(command.name());
         }
         if (command.timezone() != null) {
             organization.updateTimezone(command.timezone());

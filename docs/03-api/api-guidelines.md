@@ -2,8 +2,10 @@
 
 **Estado:** existen los primeros endpoints de negocio
 (Organization + Branch, `/api/v1`). Autenticación aún no implementada; la API
-está detrás de **deny-by-default** en todos los entornos salvo el perfil `test`
-de pruebas. Detalle de contrato: `docs/02-database/organization-branch-model.md`
+está detrás de **deny-by-default** en todos los entornos. Los tests de
+integración abren `/api/v1/**` solo mediante una configuración exclusiva de
+`src/test` (`TestSecurityConfig`), nunca desde el artefacto productivo.
+Detalle de contrato: `docs/02-database/organization-branch-model.md`
 y la especificación OpenAPI (`/v3/api-docs`, swagger-ui activo solo en dev).
 
 ## Base path y formato
@@ -50,8 +52,11 @@ concurrente), 500 (interno).
   `branches` (no se expone en PATCH): evita romper futuras referencias y URLs
   lógicas.
 - `status` permite `ACTIVE`/`INACTIVE` (activar/desactivar).
-- `branch.timezone` explícito borra/inicia la herencia de timezone;
-  no enviarlo deja el valor actual.
+- `branch.timezone` tiene semántica tri-estado explícita
+  (`PatchField` en `shared.api`): omitir la clave = sin cambios;
+  `{"timezone": "America/Mexico_City"}` = establecer override;
+  `{"timezone": null}` = eliminar el override y volver a heredar
+  `Organization.timezone`.
 
 ## Contrato de error
 

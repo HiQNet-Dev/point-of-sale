@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.hiqnet.pos.branch.application.BranchService;
-import com.hiqnet.pos.branch.application.UpdateBranchCommand;
 import com.hiqnet.pos.branch.domain.Branch;
 import com.hiqnet.pos.organization.application.OrganizationService;
 import com.hiqnet.pos.organization.application.UpdateOrganizationCommand;
@@ -25,7 +24,7 @@ import org.springframework.test.context.ActiveProfiles;
  * (covered by ConcurrentModificationHandlerTest).
  */
 @ActiveProfiles("test")
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, TestSecurityConfig.class})
 @SpringBootTest
 class OptimisticLockingTests {
 

@@ -85,13 +85,14 @@ public class Branch {
 
     /**
      * Domain factory. Caller must have validated that the organization exists
-     * and that the code is free within it.
+     * and that the code is free within it. {@code name} is trimmed before being
+     * persisted; {@code code} is expected already normalized.
      */
     public static Branch create(Organization organization, String name, String code, String timezone) {
         validateName(name);
         validateCode(code);
         validateTimezoneOrNull(timezone);
-        return new Branch(UUID.randomUUID(), organization, name, code, timezone);
+        return new Branch(UUID.randomUUID(), organization, name.trim(), code, timezone);
     }
 
     public UUID getId() {
@@ -140,7 +141,7 @@ public class Branch {
 
     public void updateName(String newName) {
         validateName(newName);
-        this.name = newName;
+        this.name = newName.trim();
     }
 
     public void updateTimezone(String newTimezone) {

@@ -66,10 +66,12 @@ public class BranchService {
     public Branch update(UUID organizationId, UUID branchId, UpdateBranchCommand command) {
         Branch branch = get(organizationId, branchId);
         if (command.name() != null) {
-            branch.updateName(command.name().trim());
+            branch.updateName(command.name());
         }
         if (command.timezone() != null) {
-            branch.updateTimezone(command.timezone());
+            // PatchField null = omitted (no change); value may itself be null
+            // to clear the override and inherit the organization timezone.
+            branch.updateTimezone(command.timezone().value());
         }
         if (command.status() != null) {
             branch.updateStatus(command.status());

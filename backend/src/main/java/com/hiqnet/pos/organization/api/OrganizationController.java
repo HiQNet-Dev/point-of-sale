@@ -2,6 +2,10 @@ package com.hiqnet.pos.organization.api;
 
 import com.hiqnet.pos.organization.application.OrganizationService;
 import com.hiqnet.pos.organization.application.UpdateOrganizationCommand;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -26,6 +30,12 @@ public class OrganizationController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Create an organization")
+    @ApiResponses({
+        @ApiResponse(responseCode = "201", description = "Created"),
+        @ApiResponse(responseCode = "400", description = "Validation or malformed request (VALIDATION_ERROR, INVALID_CODE/TIMEZONE/CURRENCY/LOCALE)", content = @Content),
+        @ApiResponse(responseCode = "409", description = "Duplicate code (ORGANIZATION_CODE_ALREADY_EXISTS)", content = @Content)
+    })
     public OrganizationResponse create(@Valid @RequestBody CreateOrganizationRequest request) {
         return OrganizationResponse.from(organizationService.create(
                 request.name(),
@@ -36,11 +46,23 @@ public class OrganizationController {
     }
 
     @GetMapping("/{organizationId}")
+    @Operation(summary = "Get an organization by id")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "OK", content = @Content),
+        @ApiResponse(responseCode = "404", description = "Organization not found (ORGANIZATION_NOT_FOUND)", content = @Content)
+    })
     public OrganizationResponse get(@PathVariable UUID organizationId) {
         return OrganizationResponse.from(organizationService.get(organizationId));
     }
 
     @PatchMapping("/{organizationId}")
+    @Operation(summary = "Partially update an organization")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Updated", content = @Content),
+        @ApiResponse(responseCode = "400", description = "Validation or malformed request (VALIDATION_ERROR, INVALID_CODE/TIMEZONE/CURRENCY/LOCALE)", content = @Content),
+        @ApiResponse(responseCode = "404", description = "Organization not found (ORGANIZATION_NOT_FOUND)", content = @Content),
+        @ApiResponse(responseCode = "409", description = "Concurrent modification (CONCURRENT_MODIFICATION)", content = @Content)
+    })
     public OrganizationResponse update(
             @PathVariable UUID organizationId, @Valid @RequestBody UpdateOrganizationRequest request) {
         return OrganizationResponse.from(organizationService.update(

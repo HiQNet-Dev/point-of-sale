@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.hiqnet.pos.TestcontainersConfiguration;
+import com.hiqnet.pos.TestSecurityConfig;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,7 +20,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
 @ActiveProfiles("test")
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, TestSecurityConfig.class})
 @SpringBootTest
 @AutoConfigureMockMvc
 class OrganizationApiTest {
@@ -176,6 +177,25 @@ class OrganizationApiTest {
                         .content("{ \"status\": \"ACTIVE\" }"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ACTIVE"));
+    }
+
+    @Test
+    void createOrganizationTrimsNameWhitespace() throws Exception {
+        mockMvc.perform(post("/api/v1/organizations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("   Cafeteria Central   ", "trim-create-org", "America/Mexico_City", "MXN", "es-MX")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.name").value("Cafeteria Central"));
+    }
+
+    @Test
+    void patchOrganizationTrimsNameWhitespace() throws Exception {
+        String id = createOrganization("trim-patch-org");
+        mockMvc.perform(patch("/api/v1/organizations/" + id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{ \"name\": \"  Cafe Renovado  \" }"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Cafe Renovado"));
     }
 
     @Test

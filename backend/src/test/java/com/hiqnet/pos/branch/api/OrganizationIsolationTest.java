@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.hiqnet.pos.TestcontainersConfiguration;
+import com.hiqnet.pos.TestSecurityConfig;
 import com.hiqnet.pos.organization.api.CreateOrganizationRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,7 +29,7 @@ import tools.jackson.databind.ObjectMapper;
  * 404, never 200 — prevents accidental IDOR between organizations.
  */
 @ActiveProfiles("test")
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, TestSecurityConfig.class})
 @SpringBootTest
 @AutoConfigureMockMvc
 class OrganizationIsolationTest {
