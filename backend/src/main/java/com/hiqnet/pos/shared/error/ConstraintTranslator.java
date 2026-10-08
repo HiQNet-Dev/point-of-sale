@@ -21,6 +21,7 @@ public final class ConstraintTranslator {
     public static final String USERS_ORGANIZATION_EMAIL_UNIQUE = "users_organization_email_unique";
     public static final String USERS_EMAIL_NORMALIZED_CHECK = "users_email_normalized_check";
     public static final String ROLES_ORGANIZATION_CODE_UNIQUE = "roles_organization_code_unique";
+    public static final String BRANCH_MEMBERSHIPS_ORG_BRANCH_USER_UNIQUE = "branch_memberships_org_branch_user_unique";
 
     /**
      * Returns the mapped {@link BusinessException} for a known constraint, or
@@ -54,6 +55,10 @@ public final class ConstraintTranslator {
                     HttpStatus.CONFLICT,
                     ErrorCodes.ROLE_CODE_ALREADY_EXISTS,
                     "A role with this code already exists in the organization");
+            case BRANCH_MEMBERSHIPS_ORG_BRANCH_USER_UNIQUE -> new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.BRANCH_MEMBERSHIP_ALREADY_EXISTS,
+                    "The user already has a membership in this branch");
             default -> null;
         };
     }

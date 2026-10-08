@@ -22,10 +22,15 @@ public final class ErrorCodes {
     public static final String ORGANIZATION_CODE_ALREADY_EXISTS = "ORGANIZATION_CODE_ALREADY_EXISTS";
     public static final String BRANCH_NOT_FOUND = "BRANCH_NOT_FOUND";
     public static final String BRANCH_CODE_ALREADY_EXISTS = "BRANCH_CODE_ALREADY_EXISTS";
+    public static final String BRANCH_INACTIVE = "BRANCH_INACTIVE";
+
+    public static final String BRANCH_MEMBERSHIP_NOT_FOUND = "BRANCH_MEMBERSHIP_NOT_FOUND";
+    public static final String BRANCH_MEMBERSHIP_ALREADY_EXISTS = "BRANCH_MEMBERSHIP_ALREADY_EXISTS";
 
     public static final String USER_NOT_FOUND = "USER_NOT_FOUND";
     public static final String USER_EMAIL_ALREADY_EXISTS = "USER_EMAIL_ALREADY_EXISTS";
     public static final String WEAK_PASSWORD = "WEAK_PASSWORD";
+    public static final String USER_INACTIVE = "USER_INACTIVE";
 
     public static final String ROLE_NOT_FOUND = "ROLE_NOT_FOUND";
     public static final String ROLE_CODE_ALREADY_EXISTS = "ROLE_CODE_ALREADY_EXISTS";
