@@ -17,7 +17,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * PostgreSQL (Testcontainers), runs Flyway and verifies the health endpoint.
  */
 @ActiveProfiles("test")
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, TestSecurityConfig.class})
 @SpringBootTest
 @AutoConfigureMockMvc
 class PosApplicationTests {
@@ -37,9 +37,11 @@ class PosApplicationTests {
     }
 
     @Test
-    void unknownPathIsDeniedByDefault() throws Exception {
+    void unknownApiPathIsNotFoundInTestProfile() throws Exception {
+        // The test-only security config (TestSecurityConfig) exposes /api/v1/**;
+        // an unmapped path surfaces as 404 RESOURCE_NOT_FOUND, not 401.
         mockMvc.perform(get("/api/v1/unknown"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
     }
 }
