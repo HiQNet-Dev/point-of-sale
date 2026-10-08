@@ -1,8 +1,8 @@
 # Modelo de dominio conceptual
 
-**Documento vivo.** `Organization`, `Branch`, `User` (identidad) y
-`RefreshSession` ya están implementados (migraciones `V1`–`V3`); el resto de
-las entidades descritas aquí son futuras.
+**Documento vivo.** `Organization`, `Branch`, `User` (identidad +
+administración) y `RefreshSession` ya están implementados (migraciones
+`V1`–`V4`); el resto de las entidades descritas aquí son futuras.
 
 Versión actual: `0.1.0-SNAPSHOT`.
 
@@ -10,7 +10,7 @@ Versión actual: `0.1.0-SNAPSHOT`.
 
 ```text
 Organization (organización / empresa)  ✔ implementado
- ├── User (usuario)                    ✔ implementado (identidad; RBAC futuro)
+ ├── User (usuario)                    ✔ implementado (identidad + administración; RBAC futuro)
  │    └── RefreshSession (familia de refresh tokens)  ✔ implementado
  └── Branch (sucursal)                 ✔ implementado
       ├── CashRegister (caja)  → Shift (turno) → Sale (venta) → Payment (pago)
@@ -24,7 +24,7 @@ Organization (organización / empresa)  ✔ implementado
 | --- | --- | --- |
 | Organization | raíz | **implementada** — ver `docs/02-database/organization-branch-model.md` |
 | Branch | organización | **implementada** — ver `docs/02-database/organization-branch-model.md` |
-| User | organización | **implementada (identidad)** — email normalizado único por organización, `password_hash` (BCrypt; columna `VARCHAR(255)` para permitir prefijos/formatos versionados), intentos/lockout; RBAC futuro |
+| User | organización | **implementada (identidad + administración)** — email normalizado único por organización (CHECK `V4`), `password_hash` (BCrypt; `VARCHAR(255)`), intentos/lockout, `status ACTIVE/INACTIVE` sin hard delete; RBAC futuro — ver `docs/02-database/users-model.md` |
 | RefreshSession | usuario | **implementada** — refresh opaco rotativo; solo SHA-256 persistido; familia 30d absolutos; `refreshExpiresAt` = `min(expires_at, family_expires_at)` (`docs/04-security/authentication.md`) |
 | Product / Variant | **organización** | Catálogo: tamaños, sabores, precios |
 | Ingredient | **organización** | Insumos del catálogo |

@@ -1,6 +1,7 @@
 package com.hiqnet.pos.auth;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -53,6 +54,59 @@ class SecurityDenyIntegrationTest extends AbstractAuthIntegrationTest {
         mockMvc.perform(get("/api/v1/organizations/{id}/branches", organizationId)
                         .header("Authorization", "Bearer " + access))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void userAdminEndpointsRequireAuthentication() throws Exception {
+        String orgId = UUID.randomUUID().toString();
+
+        mockMvc.perform(get("/api/v1/organizations/" + orgId + "/users"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+
+        mockMvc.perform(post("/api/v1/organizations/" + orgId + "/users")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTHENTICATION_REQUIRED"));
+    }
+
+    @Test
+    void userAdminEndpointsAreForbiddenEvenWithAValidAccessToken() throws Exception {
+        String orgCode = createOrganizationAndGetCode();
+        User user = createUserForOrganization(orgIdOf(orgCode), uniqueEmail("denyU@"), PASSWORD);
+        String access = postLoginExpectingToken(orgCode, user.getEmail(), PASSWORD);
+        String organizationId = orgIdOf(orgCode);
+        String userId = user.getId().toString();
+
+        mockMvc.perform(get("/api/v1/organizations/{id}/users", organizationId)
+                        .header("Authorization", "Bearer " + access))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+
+        mockMvc.perform(post("/api/v1/organizations/{id}/users", organizationId)
+                        .header("Authorization", "Bearer " + access)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"new@example.com\",\"password\":\"correct-horse-1\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+
+        mockMvc.perform(get("/api/v1/organizations/{id}/users/{userId}", organizationId, userId)
+                        .header("Authorization", "Bearer " + access))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(patch("/api/v1/organizations/{id}/users/{userId}", organizationId, userId)
+                        .header("Authorization", "Bearer " + access)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"INACTIVE\"}"))
+                .andExpect(status().isForbidden());
+
+        // The user administration API is closed until RBAC exists, but the
+        // account itself is untouched and still able to authenticate.
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson(orgCode, user.getEmail(), PASSWORD)))
+                .andExpect(status().isOk());
     }
 
     private String createOrganizationAndGetCode() {

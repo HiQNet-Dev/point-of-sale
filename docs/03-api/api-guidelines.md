@@ -1,13 +1,16 @@
 # Convenciones de API
 
 **Estado:** existen los primeros endpoints de negocio
-(Organization + Branch, `/api/v1`) y la autenticación (`auth`,
-`/api/v1/auth`). La API de negocio está detrás de **deny-by-default** incluso
-con un access JWT válido: abrirá solo cuando exista RBAC (módulo `users`).
-Los tests legacy de Organization/Branch usan una configuración exclusiva de
-`src/test` (`TestSecurityConfig`), nunca del artefacto productivo; los tests
+(Organization + Branch, `/api/v1`), la autenticación (`auth`, `/api/v1/auth`) y
+la **administración de usuarios** scoped por organización
+(`/api/v1/organizations/{organizationId}/users`). Toda la API de negocio,
+incluida la administración de usuarios, está detrás de **deny-by-default**
+incluso con un access JWT válido: abrirá solo cuando exista RBAC.
+Los tests legacy de Organization/Branch/Users usan una configuración exclusiva
+de `src/test` (`TestSecurityConfig`), nunca del artefacto productivo; los tests
 de `auth` corren contra la configuración de seguridad **real**.
 Detalle de contrato: `docs/02-database/organization-branch-model.md`,
+`docs/02-database/users-model.md`,
 `docs/04-security/authentication.md` y la especificación OpenAPI
 (`/v3/api-docs`, swagger-ui activo solo en dev con `permit-opendoc=true`).
 
@@ -30,6 +33,11 @@ POST  /api/v1/organizations/{organizationId}/branches
 GET   /api/v1/organizations/{organizationId}/branches
 GET   /api/v1/organizations/{organizationId}/branches/{branchId}
 PATCH /api/v1/organizations/{organizationId}/branches/{branchId}
+
+POST  /api/v1/organizations/{organizationId}/users
+GET   /api/v1/organizations/{organizationId}/users        (paginado, ?page&size&status)
+GET   /api/v1/organizations/{organizationId}/users/{userId}
+PATCH /api/v1/organizations/{organizationId}/users/{userId}
 
 POST  /api/v1/auth/login        (público)
 POST  /api/v1/auth/refresh      (público)
@@ -99,7 +107,11 @@ Códigos estables:
 | `TOKEN_EXPIRED` | 401 | Access expirado |
 | `FORBIDDEN` | 403 | Sin permiso (incluye APIs de negocio hasta RBAC) |
 | `ORGANIZATION_NOT_FOUND` | 404 | Organización inexistente |
+| `ORGANIZATION_INACTIVE` | 409 | No se crean usuarios en una organización inactiva |
 | `BRANCH_NOT_FOUND` | 404 | Branch inexistente (o de otra organización) |
+| `USER_NOT_FOUND` | 404 | Usuario inexistente (o de otra organización) |
+| `USER_EMAIL_ALREADY_EXISTS` | 409 | Email duplicado dentro de la organización |
+| `WEAK_PASSWORD` | 400 | Password fuera de la política (12–128 caracteres) |
 | `RESOURCE_NOT_FOUND` | 404 | Ruta sin mapping |
 | `ORGANIZATION_CODE_ALREADY_EXISTS` | 409 | Code de organización duplicado (global) |
 | `BRANCH_CODE_ALREADY_EXISTS` | 409 | Code de branch duplicado en la organización |
@@ -120,10 +132,24 @@ Nunca se exponen stack traces, mensajes SQL ni detalles internos.
 
 ## Aislamiento entre organizaciones (IDOR)
 
-Toda operación sobre una branch exige `organization_id`: un
-`GET /organizations/{A}/branches/{B1}` donde B1 pertenece a otra organización
-responde **404 BRANCH_NOT_FOUND**, nunca 200. Patrón obligatorio para módulos
-futuros scoped por organización.
+Toda operación sobre un recurso scoped exige `organization_id`: un
+`GET /organizations/{A}/branches/{B1}` o `GET /organizations/{A}/users/{U1}`
+donde el recurso pertenece a otra organización responde **404**
+(`BRANCH_NOT_FOUND` / `USER_NOT_FOUND`), nunca 200 ni 403. Patrón obligatorio
+para módulos scoped por organización.
+
+## Paginación
+
+Convención estable desde la administración de usuarios (`shared.api.PageResponse`):
+
+```json
+{ "items": [], "page": 0, "size": 20, "totalElements": 0, "totalPages": 0 }
+```
+
+- Parámetros `?page` (default 0) y `?size` (default 20, **máximo 100**).
+- Orden determinista en servidor (no se aceptan campos de orden del cliente):
+  en `users`, `email ASC, id ASC`.
+- Nunca se serializa `Page`/`Pageable` de Spring Data directamente.
 
 ## OpenAPI
 
@@ -135,8 +161,9 @@ futuros scoped por organización.
 
 ## Otros
 
-- **Paginación** (futuro): listados con `?page=0&size=20` a fijar al
-  construirlos.
+- **Optimistic concurrency HTTP** (futuro, transversal): contrato común
+  `ETag`/`If-Match`/`expectedVersion` para Organization + Branch + User antes
+  de abrir las APIs administrativas; `version` hoy es informativo.
 - **Idempotencia** (futuro): operaciones monetarias aceptarán
   `Idempotency-Key`. Aún no existe.
 - **Seguridad de respuestas:** nunca devolver contraseñas, hashes, tokens,

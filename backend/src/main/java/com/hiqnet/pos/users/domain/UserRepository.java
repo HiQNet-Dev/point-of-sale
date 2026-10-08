@@ -3,6 +3,8 @@ package com.hiqnet.pos.users.domain;
 import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -45,4 +47,26 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             """)
     boolean existsByOrganizationIdAndEmail(
             @Param("organizationId") UUID organizationId, @Param("email") String email);
+
+    /**
+     * Scoped administrative lookup: a user is never resolved by a global id in
+     * the administration API (cross-organization requests must get 404, not
+     * 403). Mirrors the {@code branch} isolation pattern.
+     */
+    Optional<User> findByIdAndOrganizationId(UUID id, UUID organizationId);
+
+    /**
+     * Scoped locking lookup for administrative mutations (deactivation):
+     * acquires the user row first (PESSIMISTIC_WRITE) so the subsequent
+     * refresh-session revocation keeps the established order user -> sessions.
+     * Organization scoping (IDOR) is preserved.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.id = :id and u.organizationId = :organizationId")
+    Optional<User> findByIdAndOrganizationIdForUpdate(
+            @Param("id") UUID id, @Param("organizationId") UUID organizationId);
+
+    Page<User> findByOrganizationId(UUID organizationId, Pageable pageable);
+
+    Page<User> findByOrganizationIdAndStatus(UUID organizationId, UserStatus status, Pageable pageable);
 }

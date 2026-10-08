@@ -18,9 +18,14 @@ public final class ErrorCodes {
     public static final String CONCURRENT_MODIFICATION = "CONCURRENT_MODIFICATION";
 
     public static final String ORGANIZATION_NOT_FOUND = "ORGANIZATION_NOT_FOUND";
+    public static final String ORGANIZATION_INACTIVE = "ORGANIZATION_INACTIVE";
     public static final String ORGANIZATION_CODE_ALREADY_EXISTS = "ORGANIZATION_CODE_ALREADY_EXISTS";
     public static final String BRANCH_NOT_FOUND = "BRANCH_NOT_FOUND";
     public static final String BRANCH_CODE_ALREADY_EXISTS = "BRANCH_CODE_ALREADY_EXISTS";
+
+    public static final String USER_NOT_FOUND = "USER_NOT_FOUND";
+    public static final String USER_EMAIL_ALREADY_EXISTS = "USER_EMAIL_ALREADY_EXISTS";
+    public static final String WEAK_PASSWORD = "WEAK_PASSWORD";
 
     public static final String INVALID_CODE = "INVALID_CODE";
     public static final String INVALID_TIMEZONE = "INVALID_TIMEZONE";

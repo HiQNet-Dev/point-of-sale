@@ -12,7 +12,7 @@ implementado** hasta que llegue su milestone (ver
 | `auth` | Autenticación y sesiones | login, refresh rotativo, logout, /me | **implementado** |
 | `organization` | Empresas/organizaciones | organization, scoping de catálogo | **implementado** |
 | `branch` | Sucursales | branch, scoping de existencias | **implementado** |
-| `users` | Usuarios y permisos | users (identidad), roles, RBAC | **parcial (identidad)** |
+| `users` | Usuarios y permisos | users (identidad + administración por organización), roles, RBAC | **parcial (identidad + administración)** |
 | `catalog` | Catálogo comercial | products, variants, precios, ingredientes | **no implementado** |
 | `sales` | Venta y tickets | sales, tickets, líneas, totales | **no implementado** |
 | `payments` | Pagos de la venta | methods, splits, vuelto | **no implementado** |
@@ -39,11 +39,16 @@ com.hiqnet.pos.<modulo>[.domain|.application|.infrastructure|.api]
 - `auth` añade `infrastructure` cuando hay lógica técnica no de dominio:
   `RefreshTokenHasher` (generación criptográfica del token opaco y su hash
   SHA-256). El resto sigue `domain/application/api`.
+- `users` usa `domain` (`User`, `UserRepository`, `UserStatus`), `application`
+  (`UserService`, `PasswordPolicy`, commands) y `api` (`UserController`, DTOs).
+  Sin `infrastructure`.
 - Dependencia entre módulos (lectura): `branch` usa
   `OrganizationRepository` de `organization` para validar existencia y
   resolución de timezone; `auth` usa `User`/`UserRepository` de `users` y
-  `OrganizationRepository` para resolver el login. Dirección única, sin
-  ciclos: `organization` no conoce a nadie.
+  `OrganizationRepository` para resolver el login; `users` usa
+  `OrganizationRepository` y `shared`. Dirección única, sin ciclos:
+  `organization` no conoce a nadie y **`users` nunca depende de `auth`** (auth
+  reacciona a `User.status`, no al revés).
 - Compartido actual: `com.hiqnet.pos.shared.config` (`SecurityConfig`,
   `CorsConfig`, `AuthConfig`, `AuthProperties`) y `com.hiqnet.pos.shared.error`.
 
@@ -62,10 +67,12 @@ com.hiqnet.pos.<modulo>[.domain|.application|.infrastructure|.api]
 Existen `com.hiqnet.pos.shared`, los módulos `organization` y `branch`
 (implementados: migraciones Flyway `V1`/`V2`, entidades, servicios,
 `POST/GET/PATCH` bajo `/api/v1`, tests de integración con Testcontainers), el
-módulo `users` (solo identidad: `User`, `UserRepository`, `UserStatus`) y el
-módulo `auth` (migración Flyway `V3`, `AuthService`, refresh rotativo,
+módulo `users` (identidad **y administración**: `create/get/list paginado/patch`,
+`UserService`, `PasswordPolicy`, scoping por organización, migración Flyway
+`V4`) y el módulo `auth` (migración Flyway `V3`, `AuthService`, refresh rotativo,
 `AuthController`, JWT, hardening de concurrencia de sesiones y de validación de
-claims/organización, **110 tests verdes**). Las clases de arranque siguen en
-su lugar. La API de negocio está **deny-by-default** incluso con access
+claims/organización). **148 tests verdes**. Las clases de arranque siguen en
+su lugar. La API de negocio (incluida la administración de usuarios) está
+**deny-by-default** incluso con access
 válido hasta que exista RBAC (véase
 `docs/04-security/security-model.md` y `docs/04-security/authentication.md`).

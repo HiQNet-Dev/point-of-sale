@@ -6,8 +6,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.hiqnet.pos.TestcontainersConfiguration;
 import com.hiqnet.pos.organization.domain.Organization;
 import com.hiqnet.pos.organization.domain.OrganizationRepository;
+import com.hiqnet.pos.shared.error.BusinessException;
+import com.hiqnet.pos.shared.error.ErrorCodes;
 import com.hiqnet.pos.users.domain.User;
 import com.hiqnet.pos.users.domain.UserRepository;
+import com.hiqnet.pos.users.domain.UserStatus;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -89,5 +92,55 @@ class UserIdentityTest {
         assertThat(persisted.getPasswordHash()).isNotEqualTo(plaintext).doesNotContain(plaintext);
         assertThat(persisted.getPasswordHash()).startsWith("$2a$");
         assertThat(persisted.getPasswordHash()).hasSizeGreaterThanOrEqualTo(60);
+    }
+
+    @Test
+    void newUserStartsActiveWithZeroFailures() {
+        User user = User.create(UUID.fromString(createOrganization()), "start@example.com", passwordEncoder.encode("a-1"));
+
+        assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+        assertThat(user.isActive()).isTrue();
+        assertThat(user.getFailedLoginAttempts()).isZero();
+        assertThat(user.getLockedUntil()).isNull();
+    }
+
+    @Test
+    void deactivateAndActivateToggleStatus() {
+        User user = User.create(UUID.fromString(createOrganization()), "toggle@example.com", passwordEncoder.encode("a-1"));
+
+        user.deactivate();
+        assertThat(user.isActive()).isFalse();
+        assertThat(user.getStatus()).isEqualTo(UserStatus.INACTIVE);
+
+        user.activate();
+        assertThat(user.isActive()).isTrue();
+        assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
+    }
+
+    @Test
+    void changeEmailNormalizesAndRejectsMalformed() {
+        User user = User.create(UUID.fromString(createOrganization()), "old@example.com", passwordEncoder.encode("a-1"));
+
+        user.changeEmail("  New.Mixed@Example.COM  ");
+        assertThat(user.getEmail()).isEqualTo("new.mixed@example.com");
+
+        assertThatThrownBy(() -> user.changeEmail("not-an-email"))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void malformedEmailIsRejected() {
+        String orgId = createOrganization();
+
+        assertThatThrownBy(() -> User.create(UUID.fromString(orgId), "not-an-email", passwordEncoder.encode("a-1")))
+                .isInstanceOfSatisfying(BusinessException.class, ex -> assertThat(ex.getCode())
+                        .isEqualTo(ErrorCodes.VALIDATION_ERROR));
+    }
+
+    @Test
+    void organizationIsRequired() {
+        assertThatThrownBy(() -> User.create(null, "a@example.com", passwordEncoder.encode("a-1")))
+                .isInstanceOfSatisfying(BusinessException.class, ex -> assertThat(ex.getCode())
+                        .isEqualTo(ErrorCodes.VALIDATION_ERROR));
     }
 }

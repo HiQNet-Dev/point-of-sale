@@ -18,6 +18,8 @@ public final class ConstraintTranslator {
 
     public static final String ORGANIZATIONS_CODE_UNIQUE = "organizations_code_unique";
     public static final String BRANCHES_ORGANIZATION_CODE_UNIQUE = "branches_organization_code_unique";
+    public static final String USERS_ORGANIZATION_EMAIL_UNIQUE = "users_organization_email_unique";
+    public static final String USERS_EMAIL_NORMALIZED_CHECK = "users_email_normalized_check";
 
     /**
      * Returns the mapped {@link BusinessException} for a known constraint, or
@@ -39,6 +41,14 @@ public final class ConstraintTranslator {
                     HttpStatus.CONFLICT,
                     ErrorCodes.BRANCH_CODE_ALREADY_EXISTS,
                     "A branch with this code already exists in the organization");
+            case USERS_ORGANIZATION_EMAIL_UNIQUE -> new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.USER_EMAIL_ALREADY_EXISTS,
+                    "A user with this email already exists in the organization");
+            case USERS_EMAIL_NORMALIZED_CHECK -> new BusinessException(
+                    HttpStatus.BAD_REQUEST,
+                    ErrorCodes.VALIDATION_ERROR,
+                    "email must be normalized (trimmed, lowercase, non-empty)");
             default -> null;
         };
     }
