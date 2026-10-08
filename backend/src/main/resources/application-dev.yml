@@ -1,0 +1,12 @@
+# Development profile (default).
+# Values below are local, explicitly non-productive development credentials
+# matching docker-compose.yml. Never use them outside local development.
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:hiqnet_pos}
+    username: ${DB_USER:hiqnet_dev}
+    password: ${DB_PASSWORD:hiqnet_dev_only}
+
+app:
+  cors:
+    allowed-origins: http://localhost:5173

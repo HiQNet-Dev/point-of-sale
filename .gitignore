@@ -1,0 +1,32 @@
+# --- Dependencies / build output ---
+node_modules/
+dist/
+coverage/
+target/
+*.class
+*.jar
+!**/mvnw
+
+# --- Environment files ---
+.env
+.env.*
+!.env.example
+
+# --- Logs ---
+logs/
+*.log
+
+# --- IDEs / editors ---
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+
+# --- Temporary files ---
+*.tmp
+*~

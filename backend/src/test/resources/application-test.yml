@@ -1,0 +1,5 @@
+# Test profile. The PostgreSQL connection is provided by Testcontainers
+# through @ServiceConnection; no datasource values are declared here.
+logging:
+  level:
+    root: warn

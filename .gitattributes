@@ -1,0 +1,13 @@
+# Normalize line endings: LF everywhere except Windows batch files.
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary artifacts.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.jar binary
+*.zip binary

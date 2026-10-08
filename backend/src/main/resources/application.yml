@@ -1,0 +1,35 @@
+# Common configuration for all environments.
+# Secrets and environment-specific values live in profile-specific files
+# and are resolved from environment variables. No real secrets in Git.
+spring:
+  application:
+    name: hiqnet-pos
+  profiles:
+    # Local runs without an explicit profile get the development defaults.
+    default: dev
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Flyway is the only mechanism allowed to change the schema.
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      # Do not leak component details (DB host, disk paths, etc.).
+      show-details: never
+
+app:
+  cors:
+    # Comma-separated allowlist. Empty means "no cross-origin access".
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:}

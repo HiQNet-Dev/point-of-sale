@@ -1,0 +1,25 @@
+# Local development environment for HiQNet POS.
+# Explicitly non-productive values. Do NOT reuse the credentials below
+# anywhere outside local development. Override with a root .env file
+# (see .env.example).
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: hiqnet-pos-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hiqnet_pos}
+      POSTGRES_USER: ${POSTGRES_USER:-hiqnet_dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hiqnet_dev_only}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - hiqnet-pos-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hiqnet_dev} -d ${POSTGRES_DB:-hiqnet_pos}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  hiqnet-pos-pgdata:
