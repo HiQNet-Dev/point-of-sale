@@ -42,9 +42,12 @@ class UserDeactivationConcurrencyTest extends AbstractAuthIntegrationTest {
         UUID familyId = familyIdOf(refreshA);
 
         race(
-                () -> userService.update(fx.orgId(), fx.user().getId(), new UpdateUserCommand(null, UserStatus.INACTIVE)),
+                () -> swallow(() -> deactivate(fx)),
                 () -> swallow(() -> authService.refresh(refreshA)));
 
+        // Ensure the deactivation actually completed (a concurrent login/refresh
+        // could otherwise have bumped the version and made the stale 409 win).
+        deactivate(fx);
         assertDeactivated(fx.user().getId());
         assertThat(refreshSessionRepository.findByFamilyId(familyId))
                 .isNotEmpty()
@@ -56,15 +59,23 @@ class UserDeactivationConcurrencyTest extends AbstractAuthIntegrationTest {
         Fixture fx = fixture();
 
         race(
-                () -> userService.update(fx.orgId(), fx.user().getId(), new UpdateUserCommand(null, UserStatus.INACTIVE)),
+                () -> swallow(() -> deactivate(fx)),
                 () -> swallow(() -> authService.login(fx.code(), fx.email(), PASSWORD)));
 
+        // Finalize: no race may leave the user ACTIVE with a valid session once
+        // deactivation is requested to complete.
+        deactivate(fx);
         assertDeactivated(fx.user().getId());
         // A login that won the race before deactivation committed must have its
         // session revoked by the deactivation; a login that lost never created
         // one. Either way: zero usable sessions.
         assertThat(refreshSessionRepository.findByUserId(fx.user().getId()))
                 .allMatch(session -> !session.isReusable(Instant.now()));
+    }
+
+    private void deactivate(Fixture fx) {
+        long version = userRepository.findById(fx.user().getId()).orElseThrow().getVersion();
+        userService.update(fx.orgId(), fx.user().getId(), new UpdateUserCommand(version, null, UserStatus.INACTIVE));
     }
 
     private void assertDeactivated(UUID userId) {

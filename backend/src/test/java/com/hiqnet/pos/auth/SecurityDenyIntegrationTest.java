@@ -98,7 +98,7 @@ class SecurityDenyIntegrationTest extends AbstractAuthIntegrationTest {
         mockMvc.perform(patch("/api/v1/organizations/{id}/users/{userId}", organizationId, userId)
                         .header("Authorization", "Bearer " + access)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"status\":\"INACTIVE\"}"))
+                        .content("{\"expectedVersion\":0,\"status\":\"INACTIVE\"}"))
                 .andExpect(status().isForbidden());
 
         // The user administration API is closed until RBAC exists, but the

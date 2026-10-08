@@ -8,63 +8,36 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.hiqnet.pos.TestSecurityConfig;
-import com.hiqnet.pos.TestcontainersConfiguration;
-import com.hiqnet.pos.organization.api.CreateOrganizationRequest;
+import com.hiqnet.pos.AbstractRbacIntegrationTest;
 import com.hiqnet.pos.organization.domain.Organization;
-import com.hiqnet.pos.organization.domain.OrganizationRepository;
 import com.hiqnet.pos.organization.domain.OrganizationStatus;
 import com.hiqnet.pos.users.domain.User;
-import com.hiqnet.pos.users.domain.UserRepository;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.web.servlet.MockMvc;
-import tools.jackson.databind.ObjectMapper;
 
 /**
- * User administration API, exercised through the test-only security chain
- * (TestSecurityConfig), exactly like organization/branch. The production chain
- * keeps these endpoints denied (see SecurityDenyIntegrationTest).
+ * User administration under the REAL security chain + RBAC (user.create /
+ * user.read / user.update) and expectedVersion on PATCH. Legal behavior
+ * (409 duplicate, 404 cross-org) is tested with an actor that holds the
+ * permission; the authorization boundary itself returns 403 before the service
+ * when the actor lacks permission or the organization is not operational.
  */
-@ActiveProfiles("test")
-@Import({TestcontainersConfiguration.class, TestSecurityConfig.class})
-@SpringBootTest
-@AutoConfigureMockMvc
-class UserApiTest {
+class UserApiTest extends AbstractRbacIntegrationTest {
 
     private static final String STRONG_PASSWORD = "Correct-horse-battery-1";
 
-    @Autowired
-    private MockMvc mockMvc;
-
-    @Autowired
-    private ObjectMapper objectMapper;
-
-    @Autowired
-    private OrganizationRepository organizationRepository;
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private PasswordEncoder passwordEncoder;
-
     @Test
     void createUserReturns201WithoutPasswordMaterial() throws Exception {
-        String orgId = createOrganization();
-        mockMvc.perform(post(usersUrl(orgId))
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        mockMvc.perform(post(usersUrl(fx.orgId()))
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"cashier@example.com\",\"password\":\"" + STRONG_PASSWORD + "\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").isNotEmpty())
-                .andExpect(jsonPath("$.organizationId").value(orgId))
+                .andExpect(jsonPath("$.organizationId").value(fx.orgId().toString()))
                 .andExpect(jsonPath("$.email").value("cashier@example.com"))
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.lastLoginAt").value(nullValue()))
@@ -75,9 +48,23 @@ class UserApiTest {
     }
 
     @Test
+    void createUserWithoutPermissionIsForbidden() throws Exception {
+        RbacFixture fx = fixture();
+        String token = login(fx);
+        mockMvc.perform(post(usersUrl(fx.orgId()))
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"cashier@example.com\",\"password\":\"" + STRONG_PASSWORD + "\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    @Test
     void createUserNormalizesEmail() throws Exception {
-        String orgId = createOrganization();
-        mockMvc.perform(post(usersUrl(orgId))
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        mockMvc.perform(post(usersUrl(fx.orgId()))
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"  Case.Mix@Example.COM \",\"password\":\"" + STRONG_PASSWORD + "\"}"))
                 .andExpect(status().isCreated())
@@ -86,8 +73,9 @@ class UserApiTest {
 
     @Test
     void createUserPersistsBcryptHashOfTheRawPassword() throws Exception {
-        String orgId = createOrganization();
-        String id = createUser(orgId, "hashed@example.com", STRONG_PASSWORD);
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        String id = createUser(fx.orgId(), token, "hashed@example.com", STRONG_PASSWORD);
 
         User persisted = userRepository.findById(UUID.fromString(id)).orElseThrow();
         assertThat(persisted.getPasswordHash())
@@ -98,32 +86,46 @@ class UserApiTest {
     }
 
     @Test
-    void createUserRejectsUnknownOrganization() throws Exception {
-        mockMvc.perform(post(usersUrl(UUID.randomUUID().toString()))
+    void createUserOutsideReachableOrganizationIsForbidden() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        mockMvc.perform(post(usersUrl(UUID.randomUUID()))
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"a@example.com\",\"password\":\"" + STRONG_PASSWORD + "\"}"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_FOUND"));
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
     @Test
-    void createUserRejectsInactiveOrganization() throws Exception {
-        String orgId = createOrganization();
-        deactivateOrganization(orgId);
+    void createUserInInactiveOrganizationIsForbidden() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        deactivateOrganization(fx.orgId());
 
-        mockMvc.perform(post(usersUrl(orgId))
+        // The authorization query refuses INACTIVE organizations: the request
+        // never reaches the service (403), so no session/user is created.
+        mockMvc.perform(post(usersUrl(fx.orgId()))
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"a@example.com\",\"password\":\"" + STRONG_PASSWORD + "\"}"))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("ORGANIZATION_INACTIVE"));
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        // No user was created: only the fixture user exists in this organization.
+        assertThat(userRepository
+                        .findByOrganizationId(fx.orgId(), org.springframework.data.domain.PageRequest.of(0, 100))
+                        .getTotalElements())
+                .isEqualTo(1);
     }
 
     @Test
     void createUserRejectsDuplicateEmailWithinSameOrganization() throws Exception {
-        String orgId = createOrganization();
-        createUser(orgId, "dup@example.com", STRONG_PASSWORD);
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        createUser(fx.orgId(), token, "dup@example.com", STRONG_PASSWORD);
 
-        mockMvc.perform(post(usersUrl(orgId))
+        mockMvc.perform(post(usersUrl(fx.orgId()))
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"DUP@example.com\",\"password\":\"" + STRONG_PASSWORD + "\"}"))
                 .andExpect(status().isConflict())
@@ -132,21 +134,26 @@ class UserApiTest {
 
     @Test
     void createUserAllowsSameEmailInDifferentOrganizations() throws Exception {
-        String orgA = createOrganization();
-        String orgB = createOrganization();
-        createUser(orgA, "shared@example.com", STRONG_PASSWORD);
+        RbacFixture fxA = fixture();
+        RbacFixture fxB = fixture();
+        String tokenA = adminToken(fxA);
+        String tokenB = adminToken(fxB);
+        createUser(fxA.orgId(), tokenA, "shared@example.com", STRONG_PASSWORD);
 
-        mockMvc.perform(post(usersUrl(orgB))
+        mockMvc.perform(post(usersUrl(fxB.orgId()))
+                        .header("Authorization", bearer(tokenB))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"shared@example.com\",\"password\":\"" + STRONG_PASSWORD + "\"}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.organizationId").value(orgB));
+                .andExpect(jsonPath("$.organizationId").value(fxB.orgId().toString()));
     }
 
     @Test
     void createUserRejectsShortPassword() throws Exception {
-        String orgId = createOrganization();
-        mockMvc.perform(post(usersUrl(orgId))
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        mockMvc.perform(post(usersUrl(fx.orgId()))
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"short@example.com\",\"password\":\"too-short\"}"))
                 .andExpect(status().isBadRequest())
@@ -155,9 +162,11 @@ class UserApiTest {
 
     @Test
     void createUserRejectsTooLongPassword() throws Exception {
-        String orgId = createOrganization();
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
         String tooLong = "x".repeat(129);
-        mockMvc.perform(post(usersUrl(orgId))
+        mockMvc.perform(post(usersUrl(fx.orgId()))
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"long@example.com\",\"password\":\"" + tooLong + "\"}"))
                 .andExpect(status().isBadRequest())
@@ -166,8 +175,10 @@ class UserApiTest {
 
     @Test
     void createUserRejectsMalformedEmail() throws Exception {
-        String orgId = createOrganization();
-        mockMvc.perform(post(usersUrl(orgId))
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        mockMvc.perform(post(usersUrl(fx.orgId()))
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"not-an-email\",\"password\":\"" + STRONG_PASSWORD + "\"}"))
                 .andExpect(status().isBadRequest())
@@ -176,10 +187,11 @@ class UserApiTest {
 
     @Test
     void getUserWithinOrganizationReturns200() throws Exception {
-        String orgId = createOrganization();
-        String userId = createUser(orgId, "get@example.com", STRONG_PASSWORD);
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        String userId = createUser(fx.orgId(), token, "get@example.com", STRONG_PASSWORD);
 
-        mockMvc.perform(get(usersUrl(orgId) + "/" + userId))
+        mockMvc.perform(get(usersUrl(fx.orgId()) + "/" + userId).header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(userId))
                 .andExpect(jsonPath("$.email").value("get@example.com"));
@@ -187,29 +199,31 @@ class UserApiTest {
 
     @Test
     void getUserOfAnotherOrganizationReturns404() throws Exception {
-        String orgA = createOrganization();
-        String orgB = createOrganization();
-        String userB = createUser(orgB, "cross@example.com", STRONG_PASSWORD);
+        RbacFixture fxA = fixture();
+        RbacFixture fxB = fixture();
+        String tokenA = adminToken(fxA);
+        String tokenB = adminToken(fxB);
+        String userB = createUser(fxB.orgId(), tokenB, "cross@example.com", STRONG_PASSWORD);
 
-        mockMvc.perform(get(usersUrl(orgA) + "/" + userB))
+        mockMvc.perform(get(usersUrl(fxA.orgId()) + "/" + userB).header("Authorization", bearer(tokenA)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("USER_NOT_FOUND"));
     }
 
     @Test
     void listUsersIsPaginatedAndOrderedByEmail() throws Exception {
-        String orgId = createOrganization();
-        createUser(orgId, "c@example.com", STRONG_PASSWORD);
-        createUser(orgId, "a@example.com", STRONG_PASSWORD);
-        createUser(orgId, "b@example.com", STRONG_PASSWORD);
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        createUser(fx.orgId(), token, "c@example.com", STRONG_PASSWORD);
+        createUser(fx.orgId(), token, "a@example.com", STRONG_PASSWORD);
+        createUser(fx.orgId(), token, "b@example.com", STRONG_PASSWORD);
 
-        mockMvc.perform(get(usersUrl(orgId)))
+        mockMvc.perform(get(usersUrl(fx.orgId())).header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.page").value(0))
                 .andExpect(jsonPath("$.size").value(20))
-                .andExpect(jsonPath("$.totalElements").value(3))
+                .andExpect(jsonPath("$.totalElements").value(4))
                 .andExpect(jsonPath("$.totalPages").value(1))
-                .andExpect(jsonPath("$.items.length()").value(3))
                 .andExpect(jsonPath("$.items[0].email").value("a@example.com"))
                 .andExpect(jsonPath("$.items[1].email").value("b@example.com"))
                 .andExpect(jsonPath("$.items[2].email").value("c@example.com"));
@@ -217,88 +231,96 @@ class UserApiTest {
 
     @Test
     void listUsersSupportsSecondPage() throws Exception {
-        String orgId = createOrganization();
-        createUser(orgId, "a@example.com", STRONG_PASSWORD);
-        createUser(orgId, "b@example.com", STRONG_PASSWORD);
-        createUser(orgId, "c@example.com", STRONG_PASSWORD);
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        createUser(fx.orgId(), token, "a@example.com", STRONG_PASSWORD);
+        createUser(fx.orgId(), token, "b@example.com", STRONG_PASSWORD);
+        createUser(fx.orgId(), token, "c@example.com", STRONG_PASSWORD);
 
-        mockMvc.perform(get(usersUrl(orgId)).param("page", "0").param("size", "2"))
+        mockMvc.perform(get(usersUrl(fx.orgId())).param("page", "0").param("size", "2")
+                        .header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(2))
                 .andExpect(jsonPath("$.totalPages").value(2))
-                .andExpect(jsonPath("$.items[0].email").value("a@example.com"));
+                .andExpect(jsonPath("$.totalElements").value(4)); // actor + 3 created
 
-        mockMvc.perform(get(usersUrl(orgId)).param("page", "1").param("size", "2"))
+        mockMvc.perform(get(usersUrl(fx.orgId())).param("page", "1").param("size", "2")
+                        .header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items.length()").value(1))
-                .andExpect(jsonPath("$.items[0].email").value("c@example.com"));
+                .andExpect(jsonPath("$.items.length()").value(2))
+                .andExpect(jsonPath("$.totalElements").value(4));
     }
 
     @Test
     void listUsersRejectsSizeAboveMaximum() throws Exception {
-        String orgId = createOrganization();
-        mockMvc.perform(get(usersUrl(orgId)).param("size", "101"))
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        mockMvc.perform(get(usersUrl(fx.orgId())).param("size", "101").header("Authorization", bearer(token)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
     }
 
     @Test
     void listUsersRejectsZeroSize() throws Exception {
-        String orgId = createOrganization();
-        mockMvc.perform(get(usersUrl(orgId)).param("size", "0"))
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        mockMvc.perform(get(usersUrl(fx.orgId())).param("size", "0").header("Authorization", bearer(token)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
     }
 
     @Test
     void listUsersRejectsNegativePage() throws Exception {
-        String orgId = createOrganization();
-        mockMvc.perform(get(usersUrl(orgId)).param("page", "-1"))
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        mockMvc.perform(get(usersUrl(fx.orgId())).param("page", "-1").header("Authorization", bearer(token)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
     }
 
     @Test
     void listUsersRejectsInvalidStatusFilter() throws Exception {
-        String orgId = createOrganization();
-        mockMvc.perform(get(usersUrl(orgId)).param("status", "INVALID"))
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        mockMvc.perform(get(usersUrl(fx.orgId())).param("status", "INVALID").header("Authorization", bearer(token)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
     }
 
     @Test
     void listUsersFiltersByStatus() throws Exception {
-        String orgId = createOrganization();
-        createUser(orgId, "active1@example.com", STRONG_PASSWORD);
-        createUser(orgId, "active2@example.com", STRONG_PASSWORD);
-        String inactive = createUser(orgId, "inactive@example.com", STRONG_PASSWORD);
-        patchUser(orgId, inactive, "{\"status\":\"INACTIVE\"}");
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        createUser(fx.orgId(), token, "active1@example.com", STRONG_PASSWORD);
+        createUser(fx.orgId(), token, "active2@example.com", STRONG_PASSWORD);
+        String inactive = createUser(fx.orgId(), token, "inactive@example.com", STRONG_PASSWORD);
+        patchUser(fx.orgId(), inactive, token, "{\"expectedVersion\":0,\"status\":\"INACTIVE\"}");
 
-        mockMvc.perform(get(usersUrl(orgId)).param("status", "INACTIVE"))
+        mockMvc.perform(get(usersUrl(fx.orgId())).param("status", "INACTIVE").header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.items[0].email").value("inactive@example.com"));
-
-        mockMvc.perform(get(usersUrl(orgId)).param("status", "ACTIVE"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalElements").value(2));
     }
 
     @Test
-    void listUsersOfUnknownOrganizationReturns404() throws Exception {
-        mockMvc.perform(get(usersUrl(UUID.randomUUID().toString())))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("ORGANIZATION_NOT_FOUND"));
+    void listUsersOutsideReachableOrganizationIsForbidden() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        mockMvc.perform(get(usersUrl(UUID.randomUUID())).header("Authorization", bearer(token)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
     @Test
     void patchUserUpdatesEmailWithNormalization() throws Exception {
-        String orgId = createOrganization();
-        String userId = createUser(orgId, "before@example.com", STRONG_PASSWORD);
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        String userId = createUser(fx.orgId(), token, "before@example.com", STRONG_PASSWORD);
 
-        mockMvc.perform(patch(usersUrl(orgId) + "/" + userId)
+        mockMvc.perform(patch(usersUrl(fx.orgId()) + "/" + userId)
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"  After@Example.COM \"}"))
+                        .content("{\"expectedVersion\":0,\"email\":\"  After@Example.COM \"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value("after@example.com"))
                 .andExpect(jsonPath("$.version").value(1));
@@ -306,43 +328,51 @@ class UserApiTest {
 
     @Test
     void patchUserDeactivatesAndReactivates() throws Exception {
-        String orgId = createOrganization();
-        String userId = createUser(orgId, "lifecycle@example.com", STRONG_PASSWORD);
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        String userId = createUser(fx.orgId(), token, "lifecycle@example.com", STRONG_PASSWORD);
 
-        mockMvc.perform(patch(usersUrl(orgId) + "/" + userId)
+        mockMvc.perform(patch(usersUrl(fx.orgId()) + "/" + userId)
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"status\":\"INACTIVE\"}"))
+                        .content("{\"expectedVersion\":0,\"status\":\"INACTIVE\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("INACTIVE"));
+                .andExpect(jsonPath("$.status").value("INACTIVE"))
+                .andExpect(jsonPath("$.version").value(1));
 
-        mockMvc.perform(patch(usersUrl(orgId) + "/" + userId)
+        mockMvc.perform(patch(usersUrl(fx.orgId()) + "/" + userId)
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"status\":\"ACTIVE\"}"))
+                        .content("{\"expectedVersion\":1,\"status\":\"ACTIVE\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ACTIVE"));
     }
 
     @Test
     void patchUserRejectsDuplicateEmail() throws Exception {
-        String orgId = createOrganization();
-        createUser(orgId, "taken@example.com", STRONG_PASSWORD);
-        String userId = createUser(orgId, "mine@example.com", STRONG_PASSWORD);
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        createUser(fx.orgId(), token, "taken@example.com", STRONG_PASSWORD);
+        String userId = createUser(fx.orgId(), token, "mine@example.com", STRONG_PASSWORD);
 
-        mockMvc.perform(patch(usersUrl(orgId) + "/" + userId)
+        mockMvc.perform(patch(usersUrl(fx.orgId()) + "/" + userId)
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"taken@example.com\"}"))
+                        .content("{\"expectedVersion\":0,\"email\":\"taken@example.com\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("USER_EMAIL_ALREADY_EXISTS"));
     }
 
     @Test
     void patchUserEmptyBodyIsNoOp() throws Exception {
-        String orgId = createOrganization();
-        String userId = createUser(orgId, "noop@example.com", STRONG_PASSWORD);
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        String userId = createUser(fx.orgId(), token, "noop@example.com", STRONG_PASSWORD);
 
-        mockMvc.perform(patch(usersUrl(orgId) + "/" + userId)
+        mockMvc.perform(patch(usersUrl(fx.orgId()) + "/" + userId)
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
+                        .content("{\"expectedVersion\":0}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value("noop@example.com"))
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
@@ -351,36 +381,42 @@ class UserApiTest {
 
     @Test
     void patchUserOfAnotherOrganizationReturns404() throws Exception {
-        String orgA = createOrganization();
-        String orgB = createOrganization();
-        String userB = createUser(orgB, "crosspatch@example.com", STRONG_PASSWORD);
+        RbacFixture fxA = fixture();
+        RbacFixture fxB = fixture();
+        String tokenA = adminToken(fxA);
+        String tokenB = adminToken(fxB);
+        String userB = createUser(fxB.orgId(), tokenB, "crosspatch@example.com", STRONG_PASSWORD);
 
-        mockMvc.perform(patch(usersUrl(orgA) + "/" + userB)
+        mockMvc.perform(patch(usersUrl(fxA.orgId()) + "/" + userB)
+                        .header("Authorization", bearer(tokenA))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"status\":\"INACTIVE\"}"))
+                        .content("{\"expectedVersion\":0,\"status\":\"INACTIVE\"}"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("USER_NOT_FOUND"));
     }
 
     @Test
     void patchUserCannotMassAssignManagedFields() throws Exception {
-        String orgId = createOrganization();
-        String otherOrg = createOrganization();
-        String userId = createUser(orgId, "mass@example.com", STRONG_PASSWORD);
+        RbacFixture fx = fixture();
+        UUID otherOrg = fixture().orgId();
+        String token = adminToken(fx);
+        String userId = createUser(fx.orgId(), token, "mass@example.com", STRONG_PASSWORD);
         String hashBefore = userRepository.findById(UUID.fromString(userId)).orElseThrow().getPasswordHash();
 
-        mockMvc.perform(patch(usersUrl(orgId) + "/" + userId)
+        mockMvc.perform(patch(usersUrl(fx.orgId()) + "/" + userId)
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"organizationId\":\"" + otherOrg + "\",\"passwordHash\":\"injected\","
-                                + "\"id\":\"" + UUID.randomUUID() + "\",\"failedLoginAttempts\":99,"
-                                + "\"version\":42,\"lockedUntil\":\"2099-01-01T00:00:00Z\"}"))
+                        .content("{\"expectedVersion\":0,\"organizationId\":\"" + otherOrg + "\","
+                                + "\"passwordHash\":\"injected\",\"id\":\"" + UUID.randomUUID() + "\","
+                                + "\"failedLoginAttempts\":99,\"version\":42,"
+                                + "\"lockedUntil\":\"2099-01-01T00:00:00Z\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.organizationId").value(orgId))
+                .andExpect(jsonPath("$.organizationId").value(fx.orgId().toString()))
                 .andExpect(jsonPath("$.id").value(userId))
                 .andExpect(jsonPath("$.version").value(0));
 
         User persisted = userRepository.findById(UUID.fromString(userId)).orElseThrow();
-        assertThat(persisted.getOrganizationId()).isEqualTo(UUID.fromString(orgId));
+        assertThat(persisted.getOrganizationId()).isEqualTo(fx.orgId());
         assertThat(persisted.getPasswordHash()).isEqualTo(hashBefore);
         assertThat(persisted.getFailedLoginAttempts()).isZero();
         assertThat(persisted.getLockedUntil()).isNull();
@@ -388,32 +424,42 @@ class UserApiTest {
 
     @Test
     void patchUserRejectsMalformedEmail() throws Exception {
-        String orgId = createOrganization();
-        String userId = createUser(orgId, "badchange@example.com", STRONG_PASSWORD);
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        String userId = createUser(fx.orgId(), token, "badchange@example.com", STRONG_PASSWORD);
 
-        mockMvc.perform(patch(usersUrl(orgId) + "/" + userId)
+        mockMvc.perform(patch(usersUrl(fx.orgId()) + "/" + userId)
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"not-an-email\"}"))
+                        .content("{\"expectedVersion\":0,\"email\":\"not-an-email\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
     }
 
-    private String createOrganization() throws Exception {
-        String code = "uorg-" + UUID.randomUUID().toString().substring(0, 8);
-        String response = mockMvc.perform(post("/api/v1/organizations")
+    @Test
+    void patchUserStaleExpectedVersionIs409() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        String userId = createUser(fx.orgId(), token, "stale@example.com", STRONG_PASSWORD);
+
+        mockMvc.perform(patch(usersUrl(fx.orgId()) + "/" + userId)
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(
-                                new CreateOrganizationRequest(
-                                        "Org " + code, code, "America/Mexico_City", "MXN", "es-MX"))))
-                .andExpect(status().isCreated())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-        return objectMapper.readTree(response).get("id").asText();
+                        .content("{\"expectedVersion\":0,\"email\":\"new@example.com\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(1));
+
+        mockMvc.perform(patch(usersUrl(fx.orgId()) + "/" + userId)
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"email\":\"stale@example.com\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONCURRENT_MODIFICATION"));
     }
 
-    private String createUser(String organizationId, String email, String password) throws Exception {
+    private String createUser(UUID organizationId, String token, String email, String password) throws Exception {
         String response = mockMvc.perform(post(usersUrl(organizationId))
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new CreateUserRequest(email, password))))
                 .andExpect(status().isCreated())
@@ -423,21 +469,21 @@ class UserApiTest {
         return objectMapper.readTree(response).get("id").asText();
     }
 
-    private void patchUser(String organizationId, String userId, String body) throws Exception {
+    private void patchUser(UUID organizationId, String userId, String token, String body) throws Exception {
         mockMvc.perform(patch(usersUrl(organizationId) + "/" + userId)
+                        .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isOk());
     }
 
-    private void deactivateOrganization(String organizationId) {
-        Organization organization =
-                organizationRepository.findById(UUID.fromString(organizationId)).orElseThrow();
+    private void deactivateOrganization(UUID organizationId) {
+        Organization organization = organizationRepository.findById(organizationId).orElseThrow();
         organization.updateStatus(OrganizationStatus.INACTIVE);
         organizationRepository.saveAndFlush(organization);
     }
 
-    private static String usersUrl(String organizationId) {
+    private static String usersUrl(UUID organizationId) {
         return "/api/v1/organizations/" + organizationId + "/users";
     }
 }

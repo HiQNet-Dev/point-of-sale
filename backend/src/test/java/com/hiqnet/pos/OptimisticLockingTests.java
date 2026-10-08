@@ -105,10 +105,10 @@ class OptimisticLockingTests {
     void sequentialUpdatesSucceedAndBumpVersion() {
         Organization created = organizationService.create("Org", "seq-lock", "UTC", "MXN", "es-MX");
         Organization v1 = organizationService.update(
-                created.getId(), new UpdateOrganizationCommand("New Name", null, null, null, null));
+                created.getId(), new UpdateOrganizationCommand(0, "New Name", null, null, null, null));
         assertEquals(1, v1.getVersion());
         Organization v2 = organizationService.update(
-                created.getId(), new UpdateOrganizationCommand("Newer Name", null, null, null, null));
+                created.getId(), new UpdateOrganizationCommand(1, "Newer Name", null, null, null, null));
         assertEquals(2, v2.getVersion());
     }
 
@@ -146,9 +146,11 @@ class OptimisticLockingTests {
         Organization org = organizationService.create("Org", "seq-user-lock", "UTC", "MXN", "es-MX");
         User created = userService.create(org.getId(), "seq-user@example.com", "correct-horse-1");
 
-        User v1 = userService.update(org.getId(), created.getId(), new UpdateUserCommand(null, UserStatus.INACTIVE));
+        User v1 = userService.update(
+                org.getId(), created.getId(), new UpdateUserCommand(0, null, UserStatus.INACTIVE));
         assertEquals(1, v1.getVersion());
-        User v2 = userService.update(org.getId(), created.getId(), new UpdateUserCommand("seq-new@example.com", null));
+        User v2 = userService.update(
+                org.getId(), created.getId(), new UpdateUserCommand(1, "seq-new@example.com", null));
         assertEquals(2, v2.getVersion());
     }
 
