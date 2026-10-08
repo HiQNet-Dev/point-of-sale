@@ -95,14 +95,15 @@ un usuario de otra organización devuelve **404 `USER_NOT_FOUND`** (nunca 200 ni
 ```text
 User identity            ✔
 User administration      ✔
-Roles / Permissions      ✘ (RBAC futuro)
+Roles / Permissions      ✔ (módulo rbac, ver docs/04-security/rbac.md)
 Branch Memberships       ✘ (futuro)
 ```
 
-La **API administrativa permanece cerrada en runtime productivo** hasta que
-  exista RBAC (`SecurityConfig` = `denyAll()`): un access JWT válido responde 403.
-El **bootstrap del primer ADMIN** (provisión segura del administrador inicial)
-sigue pendiente de Foundation; no hay credenciales por defecto.
+La **API administrativa** requiere autenticación y el permiso correspondiente
+(RBAC) para operar; `POST /organizations` y lo no definido permanecen
+**deny-by-default**. El **bootstrap del primer ADMIN** (provisión segura del
+administrador inicial) sigue pendiente de Foundation; no hay credenciales por
+defecto.
 
 ## Decisión pendiente (Foundation, transversal)
 

@@ -13,6 +13,7 @@ implementado** hasta que llegue su milestone (ver
 | `organization` | Empresas/organizaciones | organization, scoping de catálogo | **implementado** |
 | `branch` | Sucursales | branch, scoping de existencias | **implementado** |
 | `users` | Usuarios y permisos | users (identidad + administración por organización), roles, RBAC | **parcial (identidad + administración)** |
+| `rbac` | Roles, permisos y autorización | permissions (catálogo), roles por organización, assignments, method security | **implementado** |
 | `catalog` | Catálogo comercial | products, variants, precios, ingredientes | **no implementado** |
 | `sales` | Venta y tickets | sales, tickets, líneas, totales | **no implementado** |
 | `payments` | Pagos de la venta | methods, splits, vuelto | **no implementado** |
@@ -42,13 +43,20 @@ com.hiqnet.pos.<modulo>[.domain|.application|.infrastructure|.api]
 - `users` usa `domain` (`User`, `UserRepository`, `UserStatus`), `application`
   (`UserService`, `PasswordPolicy`, commands) y `api` (`UserController`, DTOs).
   Sin `infrastructure`.
+- `rbac` usa `domain` (`Permission`, `Role`, `RolePermission`,
+  `UserOrganizationRole` + repos), `application` (`RoleService`,
+  `RolePermissionService`, `UserRoleService`, `AuthorizationService`) y `api`
+  (`PermissionController`, `RoleController`, `RolePermissionController`,
+  `UserRoleController`).
 - Dependencia entre módulos (lectura): `branch` usa
   `OrganizationRepository` de `organization` para validar existencia y
   resolución de timezone; `auth` usa `User`/`UserRepository` de `users` y
   `OrganizationRepository` para resolver el login; `users` usa
-  `OrganizationRepository` y `shared`. Dirección única, sin ciclos:
-  `organization` no conoce a nadie y **`users` nunca depende de `auth`** (auth
-  reacciona a `User.status`, no al revés).
+  `OrganizationRepository` y `shared`; `rbac` usa `users` (User/UserRepository),
+  `organization` y `shared`. Dirección única, sin ciclos:
+  `organization` no conoce a nadie, **`users` nunca depende de `auth`** y
+  **`rbac` no depende de `auth`** (auth reacciona a `User.status`; la
+  autorización la evalúa `rbac`, no el JWT).
 - Compartido actual: `com.hiqnet.pos.shared.config` (`SecurityConfig`,
   `CorsConfig`, `AuthConfig`, `AuthProperties`) y `com.hiqnet.pos.shared.error`.
 
@@ -71,8 +79,12 @@ módulo `users` (identidad **y administración**: `create/get/list paginado/patc
 `UserService`, `PasswordPolicy`, scoping por organización, migración Flyway
 `V4`) y el módulo `auth` (migración Flyway `V3`, `AuthService`, refresh rotativo,
 `AuthController`, JWT, hardening de concurrencia de sesiones y de validación de
-claims/organización). **148 tests verdes**. Las clases de arranque siguen en
-su lugar. La API de negocio (incluida la administración de usuarios) está
-**deny-by-default** incluso con access
-válido hasta que exista RBAC (véase
-`docs/04-security/security-model.md` y `docs/04-security/authentication.md`).
+claims/organización), el módulo `rbac` (migración `V5`, catálogo de
+permissions, roles por organización, assignments, `AuthorizationService`
+database-authoritative, `@EnableMethodSecurity`, `expectedVersion`) y **207
+  tests verdes** (Testcontainers). Las clases de arranque siguen en
+su lugar. La API administrativa (organizations GET/PATCH, branches, users,
+roles, permissions) está **autorizada por permisos** con PostgreSQL como
+autoridad; `POST /organizations` y todo lo no definido permanecen
+**deny-by-default** (véase
+`docs/04-security/security-model.md` y `docs/04-security/rbac.md`).

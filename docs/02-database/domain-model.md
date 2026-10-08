@@ -26,6 +26,10 @@ Organization (organización / empresa)  ✔ implementado
 | Branch | organización | **implementada** — ver `docs/02-database/organization-branch-model.md` |
 | User | organización | **implementada (identidad + administración)** — email normalizado único por organización (CHECK `V4`), `password_hash` (BCrypt; `VARCHAR(255)`), intentos/lockout, `status ACTIVE/INACTIVE` sin hard delete; RBAC futuro — ver `docs/02-database/users-model.md` |
 | RefreshSession | usuario | **implementada** — refresh opaco rotativo; solo SHA-256 persistido; familia 30d absolutos; `refreshExpiresAt` = `min(expires_at, family_expires_at)` (`docs/04-security/authentication.md`) |
+| Role | organización | **implementada (`V5`)** — `code` slug único por org e inmutable; `status ACTIVE/INACTIVE`; sin DELETE; `@Version` |
+| Permission | sistema | **implementada (`V5`)** — catálogo global sembrado por Flyway; `code` PK; sin CRUD de cliente |
+| RolePermission | — | **implementada (`V5`)** — grant `role_id → permission_code` (unique compuesto) |
+| UserOrganizationRole | organización | **implementada (`V5`)** — user posee un rol para toda la org; FKs compuestas impiden cross-tenant |
 | Product / Variant | **organización** | Catálogo: tamaños, sabores, precios |
 | Ingredient | **organización** | Insumos del catálogo |
 | Recipe | **organización** | Producto → ingredientes + cantidades |
@@ -60,8 +64,9 @@ operación pasa por `organization_id` (`findByIdAndOrganizationId`).
 
 ## Relaciones
 
-- Organization 1—N Branch ✔; Organization 1—N User ✔; Organization 1—N Product/Ingredient (futuro).
-- User 1—N RefreshSession ✔ (sesiones de refresh por familia).
+- Organization 1—N Branch ✔; Organization 1—N User ✔; Organization 1—N Role ✔
+  (`V5`); Organization 1—N Product/Ingredient (futuro).
+- User 1—N RefreshSession ✔; User N—M Role (vía `user_organization_roles`, ✔).
 - Branch 1—N CashRegister, Branch 1—N Stock (futuro).
 - Product 1—N Variant; Recipe N—M Ingredient (con cantidades) (futuro).
 - Sale 1—N Payment; Sale 1—N SaleLine; Sale N—1 Branch/CashRegister (futuro).

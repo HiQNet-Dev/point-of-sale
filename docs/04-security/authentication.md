@@ -63,10 +63,12 @@ degradar silenciosamente. Solo el perfil `test` contiene un secreto de prueba.
 
 - `permitAll`: `POST /api/v1/auth/login|refresh|logout`,
   `/actuator/health`, `/error` y docs **si** `app.security.permit-opendoc`.
-- `authenticated`: `POST /api/v1/auth/logout-all`, `GET /api/v1/auth/me`.
-- **Todo lo demás sigue denegado** (`denyAll`): la API de negocio
-  (organizations/branches) no abre aunque se presente un access válido hasta
-  que exista RBAC (`users`). Verificado por tests de integración.
+- `authenticated`: `POST /api/v1/auth/logout-all`, `GET /api/v1/auth/me` y las
+  rutas administrativas concretas.
+- **Autorización fina por permissions** (RBAC, módulo `rbac` + method
+  security), con PostgreSQL como autoridad: el JWT es identidad únicamente.
+  Detalle y matriz en `docs/04-security/rbac.md`. `POST /organizations` y lo
+  no definido siguen denegados.
 - Los fallos de **bearer token** (firma, expiración, issuer, audiencia, tipo,
   claims) los responde el `ApiSecurityErrorHandler` de la propia cadena de
   resource-server, de modo que el contrato JSON `TOKEN_INVALID`/`TOKEN_EXPIRED`
@@ -137,10 +139,9 @@ el usuario debe autenticarse de nuevo (login nuevo).
 **Access JWT y reactivación:** la desactivación **no** blacklistea JWTs ya
 emitidos — un access token sigue siendo criptográficamente válido hasta su
 `exp` (10m); `/me` consulta User/Organization desde la DB y rechaza identidades
-no operativas, y las business APIs continúan deny-by-default. Antes de abrir
-RBAC revisaremos si hace falta un `securityVersion`/security stamp o si la
-resolución autoritativa desde la DB es suficiente (decisión pendiente, fuera de
-esta fundación).
+no operativas, y las business APIs administrativas requieren el permiso
+adecuado (RBAC, DB-authoritative). El `securityVersion`/security stamp no se
+implementa por ahora (ADR-0005).
 
 ## Protecciones aplicadas
 
