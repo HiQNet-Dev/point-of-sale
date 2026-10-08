@@ -4,8 +4,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -84,9 +84,9 @@ public class GlobalExceptionHandler {
                 request.getRequestURI()));
     }
 
-    @ExceptionHandler(OptimisticLockingFailureException.class)
+    @ExceptionHandler(ConcurrencyFailureException.class)
     public ResponseEntity<ApiError> handleConcurrentModification(
-            OptimisticLockingFailureException ex, HttpServletRequest request) {
+            ConcurrencyFailureException ex, HttpServletRequest request) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiError.of(
                 HttpStatus.CONFLICT.value(),
                 ErrorCodes.CONCURRENT_MODIFICATION,
