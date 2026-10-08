@@ -2,7 +2,8 @@
 
 Estado: **implementado** (identidad en `V3__create_users_and_auth_sessions.sql`,
 hardening `V4__harden_user_identity.sql`, módulos `users` + `auth`). La
-**autenticación** también está implementada; la **autorización (RBAC) no**.
+**autenticación** y la **autorización (RBAC + Branch Memberships)** también
+están implementadas (`V5`/`V6`).
 Versión `0.1.0-SNAPSHOT`.
 
 ## Entidad `users`
@@ -96,7 +97,7 @@ un usuario de otra organización devuelve **404 `USER_NOT_FOUND`** (nunca 200 ni
 User identity            ✔
 User administration      ✔
 Roles / Permissions      ✔ (módulo rbac, ver docs/04-security/rbac.md)
-Branch Memberships       ✘ (futuro)
+Branch Memberships       ✔ (módulo membership, ver docs/02-database/branch-memberships-model.md)
 ```
 
 La **API administrativa** requiere autenticación y el permiso correspondiente
@@ -105,9 +106,9 @@ La **API administrativa** requiere autenticación y el permiso correspondiente
 administrador inicial) sigue pendiente de Foundation; no hay credenciales por
 defecto.
 
-## Decisión pendiente (Foundation, transversal)
+## Decisión transversal (resuelta en RBAC)
 
-- **HTTP optimistic concurrency contract** (`ETag`/`If-Match`/`expectedVersion`)
-  para **Organization + Branch + User** se resolverá de forma transversal antes
-  de abrir las APIs administrativas en producción. `version` hoy se expone con
-  fines de observación; PATCH aún no recibe una versión esperada.
+- **HTTP optimistic concurrency contract**: resuelto como `expectedVersion`
+  (requerido, `>= 0`) en los PATCH de **Organization, Branch, User y Role**
+  (v0.1.x, sin ETag/If-Match todavía). Con Branch Memberships, `PATCH
+  /memberships/{userId}` también lo exige.
