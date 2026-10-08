@@ -5,6 +5,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.hiqnet.pos.organization.domain.Organization;
+import com.hiqnet.pos.organization.domain.OrganizationStatus;
 import com.hiqnet.pos.users.domain.User;
 import java.time.Instant;
 import java.util.Locale;
@@ -220,6 +222,29 @@ class AuthLoginApiTest extends AbstractAuthIntegrationTest {
                                 {"organizationCode":"%s ","email":"%s","password":"%s"}
                                 """.formatted(orgCode.toUpperCase(Locale.ROOT), emailOf(user), PASSWORD)))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void loginWithInactiveOrganizationIsGeneric() throws Exception {
+        String orgCode = createOrganizationAndGetCode();
+        String orgId = orgIdOf(orgCode);
+        User user = createUserForOrganization(orgId, uniqueEmail("inorg@"), PASSWORD);
+        deactivateOrganization(orgId);
+
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson(orgCode, emailOf(user), PASSWORD)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
+                .andExpect(jsonPath("$.message")
+                        .value(org.hamcrest.Matchers.not(
+                                org.hamcrest.Matchers.containsString("organization"))));
+    }
+
+    private void deactivateOrganization(String orgId) {
+        Organization organization = organizationRepository.findById(UUID.fromString(orgId)).orElseThrow();
+        organization.updateStatus(OrganizationStatus.INACTIVE);
+        organizationRepository.saveAndFlush(organization);
     }
 
     private String createOrganizationAndGetCode() {

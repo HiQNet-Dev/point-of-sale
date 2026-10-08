@@ -64,7 +64,8 @@ Existen `com.hiqnet.pos.shared`, los módulos `organization` y `branch`
 `POST/GET/PATCH` bajo `/api/v1`, tests de integración con Testcontainers), el
 módulo `users` (solo identidad: `User`, `UserRepository`, `UserStatus`) y el
 módulo `auth` (migración Flyway `V3`, `AuthService`, refresh rotativo,
-`AuthController`, JWT, 88 tests de integración verdes). Las clases de arranque siguen en
+`AuthController`, JWT, hardening de concurrencia de sesiones y de validación de
+claims/organización, **110 tests verdes**). Las clases de arranque siguen en
 su lugar. La API de negocio está **deny-by-default** incluso con access
 válido hasta que exista RBAC (véase
 `docs/04-security/security-model.md` y `docs/04-security/authentication.md`).

@@ -26,10 +26,15 @@ efectiva al cerrar sesión, y detección de reuso del refresh token.
    único en `refresh_sessions`) — el valor crudo jamás toca la base de datos.
 3. **Rotación atómica anti-reuso.** Cada refresh marca consumida la sesión
    (`rotated_at` + `replaced_by_session_id`) y crea una nueva en la misma
-   familia, bajo `SELECT ... FOR UPDATE` (`PESSIMISTIC_WRITE`). Presentar un
-   token ya rotado/revocado **revoca toda la familia** y genera warning de
-   seguridad: si alguien roba el token, el atacante y la víctima se invalidan
-   mutuamente.
+   familia. Presentar un token ya rotado/revocado **revoca toda la familia** y
+   genera warning de seguridad: si alguien roba el token, el atacante y la
+   víctima se invalidan mutuamente.
+   **Coordinación de concurrencia:** todas las mutaciones de sesiones de un
+   mismo usuario (`refresh`, `logout`, `logout-all`, revocación de familia)
+   se serializan con un lock de coordinación sobre la fila `users`
+   (`SELECT ... FOR UPDATE`), con **orden fijo `user` → `session`** y
+   PostgreSQL como autoridad → una rotación concurrente no puede dejar una
+   sesión viva detrás de una revocación.
 4. **TTLs configurables.** Access 10m, refresh 30d, familia 30d **absolutos**:
    la rotación nunca extiende `family_expires_at` (sesión no se auto-renueva
    para siempre).
@@ -37,22 +42,28 @@ efectiva al cerrar sesión, y detección de reuso del refresh token.
    fallidos (5 → 15m) configurables. Errores de login genéricos
    (`INVALID_CREDENTIALS`) con hash dummy para igualar el tiempo de respuesta
    y evitar enumeración de usuarios.
-6. **Secret fail-fast.** `AUTH_JWT_SECRET` (≥32 bytes) **sin default**: si el
-   entorno no la define, la aplicación no arranca. El único valor de test vive
-   en `src/test/resources`.
-7. **Logout.** `logout` revoca la sesión actual (idempotente, nunca revela si
-   el token existía); `logout-all` revoca todas las refrescables del usuario
-   (no invalida access ya emitidos: son cortos).
+6. **Secret fail-fast.** `AUTH_JWT_SECRET` es una clave **codificada en
+   Base64** (`openssl rand -base64 32`) **sin default**: se decodifica y debe
+   dar ≥32 bytes (256 bits); si el entorno no la define o no cumple, la
+   aplicación no arranca. El único valor de test vive en `src/test/resources`.
+   Las duraciones de tokens se validan como > 0 (fail-fast).
+7. **Logout.** `logout` revoca la **familia** de la sesión presentada
+   (cadena de rotación de ese dispositivo/login), idempotente y sin revelar si
+   el token existía; `logout-all` revoca todas las refrescables del usuario (no
+   invalida access ya emitidos: son cortos).
 
 ## Consequences
 
 - Revocación real vía refresh: un `logout` deja al token de refresh inútil en
   segundos; el access expira en ≤10m.
-- Detección de robo: reuso de token consumido mata la familia completa.
+- Detección de robo: reuso de token consumido mata la familia completa, sin
+  dejar sucesores vivos ante rotaciones concurrentes (lock de coordinación por
+  usuario en PostgreSQL).
 - Los access JWT siguen siendo verificables offline por otros servicios
   internos (firma compartida), pero el negocio que requiera revocación
   inmediata debe mirar la sesión.
 - `AUTH_JWT_SECRET` es obligatoria en todos los entornos excepto tests;
-  producción exige 256 bits de entropía real (p. ej. `openssl rand -base64 32`).
+  es una clave Base64 que debe decodificar a ≥256 bits (p. ej.
+  `openssl rand -base64 32`).
 - El módulo `auth` no introduce roles/permisos: la API de negocio continúa
   deny-by-default hasta el módulo `users` (RBAC).

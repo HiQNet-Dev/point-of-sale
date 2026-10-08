@@ -63,7 +63,13 @@ public class SecurityConfig {
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/auth/me").authenticated();
                     auth.anyRequest().denyAll();
                 })
-                .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))
+                .oauth2ResourceServer(oauth2 -> oauth2
+                        .jwt(Customizer.withDefaults())
+                        // Route invalid/expired bearer tokens through our handler so
+                        // the documented TOKEN_INVALID/TOKEN_EXPIRED JSON contract is
+                        // honored; otherwise Spring's default bearer entry point wins
+                        // and returns an empty 401 body.
+                        .authenticationEntryPoint(errorHandler))
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(errorHandler)
                         .accessDeniedHandler(errorHandler));

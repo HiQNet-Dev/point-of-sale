@@ -13,8 +13,9 @@ Roles/Permissions (RBAC) y autorización de negocio siguen siendo futuros.
    contexto de la organización y, cuando aplica, a la sucursal.
    **Sin fallbacks `branchId=1`, sin IDs mágicos, sin "por defecto la primera sucursal".**
 5. **Secretos por entorno.** Contraseñas y credenciales viven en variables de
-   entorno por perfil; nunca en Git. `AUTH_JWT_SECRET` no tiene default:
-   aplicación no arranca sin ella (excepto tests con secreto de prueba).
+   entorno por perfil; nunca en Git. `AUTH_JWT_SECRET` (clave Base64) no tiene
+   default: la aplicación no arranca sin ella (excepto tests con secreto de
+   prueba).
 6. **Auditoría.** Quién, cuándo, qué. Operaciones de dinero: inmutables
    (sin hard delete), trazables y transaccionales.
 7. **Protección de operaciones de dinero.** Re-autenticación para operaciones
@@ -41,13 +42,20 @@ Roles/Permissions (RBAC) y autorización de negocio siguen siendo futuros.
 
 Autenticación (detalle: `docs/04-security/authentication.md`):
 
-- Access JWT HS256 10m (`oauth2-resource-server`/Nimbus); refresh opaco
-  rotativo 30d, solo hash SHA-256 persistido; familia 30d absolutos.
-- Rotación atómica (`SELECT ... FOR UPDATE`); reuso de token consumido
-  revoca la familia completa.
+- Access JWT HS256 10m (`oauth2-resource-server`/Nimbus); se valida firma,
+  expiración, issuer, audiencia, `token_type` y que `sub`/`org_id` sean UUID.
+  Refresh opaco rotativo 30d, solo hash SHA-256 persistido; familia 30d
+  absolutos.
+- Rotación y revocación **serializadas por un lock de coordinación sobre la
+  fila `users`** (`SELECT ... FOR UPDATE`; orden fijo `user` → `session`,
+  PostgreSQL como autoridad); reuso de token consumido revoca la familia
+  completa sin dejar sucesores vivos ante rotaciones concurrentes.
+- Organización `INACTIVE` bloquea login/refresh/`/me` (errores genéricos, sin
+  revelar el estado del tenant).
 - BCrypt cost 12; lockout 5 intentos → 15m; errores genéricos
   (`INVALID_CREDENTIALS`) con hash dummy anti-enumeración.
-- `AUTH_JWT_SECRET` obligatoria (≥32 bytes), fail-fast.
+- `AUTH_JWT_SECRET` obligatoria como clave **Base64** (≥32 bytes decodificados),
+  fail-fast; duraciones de tokens validadas como > 0.
 
 No existe CORS wildcard, no existe `permitAll` global, no existen credenciales
 reales en el repositorio.

@@ -24,8 +24,8 @@ Organization (organización / empresa)  ✔ implementado
 | --- | --- | --- |
 | Organization | raíz | **implementada** — ver `docs/02-database/organization-branch-model.md` |
 | Branch | organización | **implementada** — ver `docs/02-database/organization-branch-model.md` |
-| User | organización | **implementada (identidad)** — email normalizado único por organización, `password_hash` BCrypt, intentos/lockout; RBAC futuro |
-| RefreshSession | usuario | **implementada** — refresh opaco rotativo; solo SHA-256 persistido; familia 30d absolutos (`docs/04-security/authentication.md`) |
+| User | organización | **implementada (identidad)** — email normalizado único por organización, `password_hash` (BCrypt; columna `VARCHAR(255)` para permitir prefijos/formatos versionados), intentos/lockout; RBAC futuro |
+| RefreshSession | usuario | **implementada** — refresh opaco rotativo; solo SHA-256 persistido; familia 30d absolutos; `refreshExpiresAt` = `min(expires_at, family_expires_at)` (`docs/04-security/authentication.md`) |
 | Product / Variant | **organización** | Catálogo: tamaños, sabores, precios |
 | Ingredient | **organización** | Insumos del catálogo |
 | Recipe | **organización** | Producto → ingredientes + cantidades |

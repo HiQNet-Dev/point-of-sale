@@ -9,6 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.hiqnet.pos.auth.domain.RefreshSession;
 import com.hiqnet.pos.auth.domain.RefreshSessionRepository;
 import com.hiqnet.pos.auth.infrastructure.RefreshTokenHasher;
+import com.hiqnet.pos.organization.domain.Organization;
+import com.hiqnet.pos.organization.domain.OrganizationStatus;
 import com.hiqnet.pos.users.domain.User;
 import java.time.Duration;
 import java.time.Instant;
@@ -218,6 +220,46 @@ class AuthSessionApiTest extends AbstractAuthIntegrationTest {
                 .andExpect(jsonPath("$.organizationId").value(user.getOrganizationId().toString()))
                 .andExpect(jsonPath("$.email").value("me.ident@example.com"))
                 .andExpect(jsonPath("$.status").value("ACTIVE"));
+    }
+
+    @Test
+    void refreshWithInactiveOrganizationIsRejectedAndRevokesFamily() throws Exception {
+        String orgCode = createOrganizationAndGetCode();
+        User user = createUserForOrganization(orgIdOf(orgCode), uniqueEmail("rint@"), PASSWORD);
+        String refresh = loginAndGetRefreshToken(orgCode, user.getEmail(), PASSWORD);
+        UUID familyId = refreshSessionRepository
+                .findByTokenHash(RefreshTokenHasher.hash(refresh))
+                .orElseThrow()
+                .getFamilyId();
+        deactivateOrganization(orgIdOf(orgCode));
+
+        mockMvc.perform(post("/api/v1/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(refreshBody(refresh)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_REFRESH_TOKEN"));
+
+        assertThat(refreshSessionRepository.findByFamilyId(familyId))
+                .isNotEmpty()
+                .allMatch(session -> !session.isReusable(Instant.now()));
+    }
+
+    @Test
+    void meWithInactiveOrganizationIsRejectedAsTokenInvalid() throws Exception {
+        String orgCode = createOrganizationAndGetCode();
+        User user = createUserForOrganization(orgIdOf(orgCode), uniqueEmail("meint@"), PASSWORD);
+        String access = postLoginExpectingToken(orgCode, user.getEmail(), PASSWORD);
+        deactivateOrganization(orgIdOf(orgCode));
+
+        mockMvc.perform(get("/api/v1/auth/me").header("Authorization", "Bearer " + access))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("TOKEN_INVALID"));
+    }
+
+    private void deactivateOrganization(String orgId) {
+        Organization organization = organizationRepository.findById(UUID.fromString(orgId)).orElseThrow();
+        organization.updateStatus(OrganizationStatus.INACTIVE);
+        organizationRepository.saveAndFlush(organization);
     }
 
     private String createManualSession(User user) {

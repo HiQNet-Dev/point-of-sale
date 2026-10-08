@@ -36,6 +36,9 @@ public class ApiSecurityErrorHandler implements AuthenticationEntryPoint, Access
             String code = isExpiryError(bearerException)
                     ? ErrorCodes.TOKEN_EXPIRED
                     : ErrorCodes.TOKEN_INVALID;
+            // Keep the RFC 6750 challenge that the default bearer entry point
+            // would have set, now that this handler owns the response.
+            response.setHeader("WWW-Authenticate", "Bearer");
             write(response, HttpServletResponse.SC_UNAUTHORIZED, code, "Invalid access token", request);
             return;
         }

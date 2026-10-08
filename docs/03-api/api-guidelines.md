@@ -33,7 +33,7 @@ PATCH /api/v1/organizations/{organizationId}/branches/{branchId}
 
 POST  /api/v1/auth/login        (público)
 POST  /api/v1/auth/refresh      (público)
-POST  /api/v1/auth/logout       (público; revoca la sesión presentada)
+POST  /api/v1/auth/logout       (público; revoca la familia de la sesión presentada)
 POST  /api/v1/auth/logout-all   (Bearer)
 GET   /api/v1/auth/me           (Bearer)
 ```
@@ -95,7 +95,7 @@ Códigos estables:
 | `INVALID_CREDENTIALS` | 401 | Login fallido (genérico: org, email o password) |
 | `INVALID_REFRESH_TOKEN` | 401 | Refresh desconocido, consumido, revocado o de familia muerta |
 | `AUTHENTICATION_REQUIRED` | 401 | Sin token de acceso |
-| `TOKEN_INVALID` | 401 | Access rechazado (firma, issuer, audiencia, tipo) |
+| `TOKEN_INVALID` | 401 | Access rechazado (firma, issuer, audiencia, tipo, `sub`/`org_id`) o identidad no operativa (`/me`) |
 | `TOKEN_EXPIRED` | 401 | Access expirado |
 | `FORBIDDEN` | 403 | Sin permiso (incluye APIs de negocio hasta RBAC) |
 | `ORGANIZATION_NOT_FOUND` | 404 | Organización inexistente |

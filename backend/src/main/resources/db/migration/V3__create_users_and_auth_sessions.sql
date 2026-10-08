@@ -7,7 +7,7 @@ CREATE TABLE users (
     id                    UUID         NOT NULL PRIMARY KEY,
     organization_id       UUID         NOT NULL REFERENCES organizations (id),
     email                 VARCHAR(254) NOT NULL,
-    password_hash         VARCHAR(60)  NOT NULL,
+    password_hash         VARCHAR(255) NOT NULL,
     status                VARCHAR(16)  NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE')),
     failed_login_attempts INTEGER      NOT NULL DEFAULT 0 CHECK (failed_login_attempts >= 0),
     locked_until          TIMESTAMPTZ,

@@ -48,7 +48,10 @@ public class User {
     @Column(nullable = false, length = MAX_EMAIL)
     private String email;
 
-    @Column(name = "password_hash", nullable = false, length = 60)
+    // 255 leaves room for future versioned/algorithm-prefixed hashes
+    // (e.g. {bcrypt}..., Argon2) without forcing a schema migration. BCrypt
+    // itself is ~60 chars.
+    @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
 
     @Enumerated(EnumType.STRING)

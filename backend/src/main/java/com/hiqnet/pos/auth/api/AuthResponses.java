@@ -20,7 +20,9 @@ public final class AuthResponses {
             long expiresIn,
             @Schema(description = "Opaque refresh token. Delivered once; never stored by the server.", example = "ab3Q_9...")
             String refreshToken,
-            @Schema(description = "Absolute expiry of the refresh session family (UTC ISO-8601).", example = "2026-11-07T00:00:00Z")
+            @Schema(
+                    description = "Instant the refresh token stops being usable: the earlier of the session TTL and the absolute family TTL (UTC ISO-8601).",
+                    example = "2026-11-07T00:00:00Z")
             Instant refreshExpiresAt) {
     }
 

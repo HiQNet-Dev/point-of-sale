@@ -92,6 +92,52 @@ class JwtTokenValidationTest {
                 .isInstanceOf(org.springframework.security.oauth2.jwt.JwtException.class);
     }
 
+    @Test
+    void nonUuidSubjectIsRejected() {
+        JwtClaimsSet claims = clonedClaims().subject("not-a-uuid").build();
+        assertThatThrownBy(() -> jwtDecoder.decode(encode(claims)))
+                .isInstanceOf(org.springframework.security.oauth2.jwt.JwtException.class);
+    }
+
+    @Test
+    void nonUuidOrganizationClaimIsRejected() {
+        JwtClaimsSet claims = clonedClaims().claim("org_id", "not-a-uuid").build();
+        assertThatThrownBy(() -> jwtDecoder.decode(encode(claims)))
+                .isInstanceOf(org.springframework.security.oauth2.jwt.JwtException.class);
+    }
+
+    @Test
+    void missingOrganizationClaimIsRejected() {
+        JwtClaimsSet base = validClaims();
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .issuer(properties.issuer())
+                .audience(base.getAudience())
+                .subject(base.getSubject())
+                .claim("token_type", "access")
+                .issuedAt(base.getIssuedAt())
+                .expiresAt(base.getExpiresAt())
+                .id(base.getId())
+                .build();
+        assertThatThrownBy(() -> jwtDecoder.decode(encode(claims)))
+                .isInstanceOf(org.springframework.security.oauth2.jwt.JwtException.class);
+    }
+
+    @Test
+    void missingSubjectIsRejected() {
+        JwtClaimsSet base = validClaims();
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .issuer(properties.issuer())
+                .audience(base.getAudience())
+                .claim("org_id", base.getClaimAsString("org_id"))
+                .claim("token_type", "access")
+                .issuedAt(base.getIssuedAt())
+                .expiresAt(base.getExpiresAt())
+                .id(base.getId())
+                .build();
+        assertThatThrownBy(() -> jwtDecoder.decode(encode(claims)))
+                .isInstanceOf(org.springframework.security.oauth2.jwt.JwtException.class);
+    }
+
     private JwtClaimsSet validClaims() {
         Instant now = Instant.now();
         return JwtClaimsSet.builder()
