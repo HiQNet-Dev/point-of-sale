@@ -65,6 +65,12 @@ public class BranchService {
     @Transactional
     public Branch update(UUID organizationId, UUID branchId, UpdateBranchCommand command) {
         Branch branch = get(organizationId, branchId);
+        if (branch.getVersion() != command.expectedVersion()) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.CONCURRENT_MODIFICATION,
+                    "The resource was modified concurrently; retry with fresh data");
+        }
         if (command.name() != null) {
             branch.updateName(command.name());
         }

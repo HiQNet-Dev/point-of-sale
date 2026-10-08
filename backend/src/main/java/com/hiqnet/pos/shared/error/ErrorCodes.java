@@ -27,6 +27,10 @@ public final class ErrorCodes {
     public static final String USER_EMAIL_ALREADY_EXISTS = "USER_EMAIL_ALREADY_EXISTS";
     public static final String WEAK_PASSWORD = "WEAK_PASSWORD";
 
+    public static final String ROLE_NOT_FOUND = "ROLE_NOT_FOUND";
+    public static final String ROLE_CODE_ALREADY_EXISTS = "ROLE_CODE_ALREADY_EXISTS";
+    public static final String PERMISSION_NOT_FOUND = "PERMISSION_NOT_FOUND";
+
     public static final String INVALID_CODE = "INVALID_CODE";
     public static final String INVALID_TIMEZONE = "INVALID_TIMEZONE";
     public static final String INVALID_CURRENCY = "INVALID_CURRENCY";

@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -22,17 +23,19 @@ import tools.jackson.databind.ObjectMapper;
  * token, validated as resource server: signature, expiry, issuer, audience,
  * token_type).</p>
  *
- * <p>Business APIs under /api/v1/** (organizations, branches, ...) stay
- * CLOSED in this task — there is no {@code authenticated()} wildcard that
- * would open them: any valid user could otherwise create/edit organizations
- * and branches, and Roles/Permissions do not exist yet.</p>
- *
- * <p>Test-only access to the real endpoints lives in the test sources
- * (com.hiqnet.pos.TestSecurityConfig) and is imported by legacy integration
- * tests; it can never be activated by a runtime profile.</p>
+ * <p>Administrative APIs (organizations GET/PATCH, branches, users admin,
+ * roles, permissions) require authentication here; the FINE-GRAINED
+ * authorization lives in method security ({@code @PreAuthorize} calling
+ * {@code AuthorizationService}, which is database-authoritative — the JWT is
+ * identity only, no roles/permissions in the token). Matchers are explicit per
+ * route: there is no blanket {@code /api/v1/**} rule and, critically, the
+ * collection {@code POST /api/v1/organizations} stays DENIED (creating an
+ * organization will belong to secure bootstrap / the Control Plane, not to a
+ * permission).</p>
  */
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class SecurityConfig {
 
     private static final String[] HEALTH_AND_DOCS = {"/actuator/health", "/error"};
@@ -61,6 +64,28 @@ public class SecurityConfig {
                     auth.requestMatchers(HttpMethod.POST, PUBLIC_AUTH).permitAll();
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/auth/logout-all").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/auth/me").authenticated();
+
+                    // Administrative APIs: authentication required here; the
+                    // fine-grained permission checks are in @PreAuthorize.
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*").authenticated();
+                    auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*").authenticated();
+                    auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*/branches/*").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/users").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/users").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/users/*").authenticated();
+                    auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*/users/*").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/users/*/roles").authenticated();
+                    auth.requestMatchers(HttpMethod.PUT, "/api/v1/organizations/*/users/*/roles").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/roles").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/roles").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/roles/*").authenticated();
+                    auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*/roles/*").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/roles/*/permissions").authenticated();
+                    auth.requestMatchers(HttpMethod.PUT, "/api/v1/organizations/*/roles/*/permissions").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/permissions").authenticated();
                     auth.anyRequest().denyAll();
                 })
                 .oauth2ResourceServer(oauth2 -> oauth2

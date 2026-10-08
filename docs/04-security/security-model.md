@@ -1,8 +1,10 @@
 # Modelo de seguridad
 
-**Estado actual:** autenticación implementada (`auth`) y administración de
-usuarios implementada (`users`), ambas en v0.1.x Foundation; Roles/Permissions
-(RBAC) y autorización de negocio siguen siendo futuros.
+**Estado actual:** autenticación implementada (`auth`), administración de
+usuarios implementada (`users`) y **Roles/Permissions/RBAC implementado
+(`rbac`)** — las business APIs administrativas abren **solo** con el permiso
+adecuado. La autorización para cada sucursal (Branch Memberships), Audit,
+Admin Bootstrap y Control Plane siguen siendo futuros.
 
 ## Principios
 
@@ -34,17 +36,17 @@ usuarios implementada (`users`), ambas en v0.1.x Foundation; Roles/Permissions
 - `permitAll` **solo** en `/actuator/health`, `/error`, docs (si
   `app.security.permit-opendoc`) y los endpoints públicos de auth:
   `POST /api/v1/auth/login|refresh|logout`.
-- `authenticated`: `POST /api/v1/auth/logout-all`, `GET /api/v1/auth/me`.
-- **Cualquier otra petición, incluida la API de negocio, sigue denegada**
-  → 401/403 con JSON `ApiError` (`ApiSecurityErrorHandler`), sin detalles
-  internos. La API de negocio **no abre** con un access válido hasta que
-  exista RBAC.
-- **Administración de usuarios:** los endpoints
-  `/api/v1/organizations/{organizationId}/users/**` existen y están
-  documentados, pero permanecen **denegados** en la cadena productiva hasta que
-  exista RBAC: un access JWT válido responde **403**, nunca 200. Verificado por
-  `SecurityDenyIntegrationTest`. No existe bypass productivo; solo la
-  configuración de `src/test` los abre.
+- `authenticated`: `POST /api/v1/auth/logout-all`, `GET /api/v1/auth/me` y las
+  **rutas administrativas concretas** (organizations GET/PATCH, branches,
+  users, roles, permissions) — matchers explícitos por ruta, nunca
+  `/api/v1/**`.
+- La **autorización fina vive en method security**
+  (`@EnableMethodSecurity` + `@PreAuthorize` sobre
+  `AuthorizationService.hasPermission(authentication, orgId, code)`), y la
+  autoridad es **PostgreSQL** (query `EXISTS` por petición; JWT = identidad).
+  Véase `docs/04-security/rbac.md` y ADR-0005.
+- **`POST /api/v1/organizations` y cualquier ruta no definida permanecen
+  denegados** (`anyRequest().denyAll()`).
 - Sesiones stateless, CSRF deshabilitado (API sin cookies de sesión hoy).
 
 Autenticación (detalle: `docs/04-security/authentication.md`):
@@ -76,9 +78,11 @@ reales en el repositorio.
 
 ## Futuro (no implementado)
 
-- **Autorización RBAC** (módulo `users`): roles y permisos por organización.
-- **Scoping efectivo** de organization/branch en cada endpoint (autorización
-  por pertenencia, no solo deny).
+- **Branch Memberships** (autorización por pertenencia de sucursal; RBAC
+  organization-wide ya está).
+- **Auditoría persistente** (el logging estructurado no es auditoría).
+- **Secure Admin Bootstrap** (provisión segura del primer administrador;
+  pendiente para Foundation).
 - **Rate limiting** por IP (futuro, no implementado).
 - **Seguridad de WebSockets** cuando ese módulo llegue (futuro, no implementado).
 - **Re-autenticación e idempotencia** en operaciones monetarias (futuro).

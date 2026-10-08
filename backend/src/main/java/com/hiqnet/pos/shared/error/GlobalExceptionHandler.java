@@ -9,6 +9,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -55,6 +56,22 @@ public class GlobalExceptionHandler {
                 ex.getStatus().value(),
                 ex.getCode(),
                 ex.getMessage(),
+                request.getRequestURI()));
+    }
+
+    /**
+     * Method-security denials ({@code @PreAuthorize}) surface as
+     * {@link AuthorizationDeniedException} inside the MVC layer; map them to
+     * the stable 403 FORBIDDEN contract (filter-chain denials already use the
+     * {@code AccessDeniedHandler}).
+     */
+    @ExceptionHandler(AuthorizationDeniedException.class)
+    public ResponseEntity<ApiError> handleAuthorizationDenied(
+            AuthorizationDeniedException ex, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiError.of(
+                HttpStatus.FORBIDDEN.value(),
+                ErrorCodes.FORBIDDEN,
+                "Access denied",
                 request.getRequestURI()));
     }
 

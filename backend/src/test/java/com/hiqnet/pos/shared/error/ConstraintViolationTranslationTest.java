@@ -41,6 +41,22 @@ class ConstraintViolationTranslationTest {
     }
 
     @Test
+    void userOrganizationEmailConstraintMapsToConflictWithStableCode() {
+        BusinessException translated = ConstraintTranslator.translate(violation("users_organization_email_unique"));
+
+        assertEquals(HttpStatus.CONFLICT, translated.getStatus());
+        assertEquals(ErrorCodes.USER_EMAIL_ALREADY_EXISTS, translated.getCode());
+    }
+
+    @Test
+    void roleOrganizationCodeConstraintMapsToConflictWithStableCode() {
+        BusinessException translated = ConstraintTranslator.translate(violation("roles_organization_code_unique"));
+
+        assertEquals(HttpStatus.CONFLICT, translated.getStatus());
+        assertEquals(ErrorCodes.ROLE_CODE_ALREADY_EXISTS, translated.getCode());
+    }
+
+    @Test
     void unknownConstraintIsNotGuessedAsDuplicate() {
         assertNull(ConstraintTranslator.translate(violation("branches_some_other_constraint")));
     }

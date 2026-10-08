@@ -47,11 +47,13 @@ class UserAuthIntegrationTest extends AbstractAuthIntegrationTest {
         String refreshA = objectMapper.readTree(loginA).get("refreshToken").asText();
 
         /* 2. deactivate; the DB must show every session revoked */
-        userService.update(fx.orgId(), fx.user().getId(), new UpdateUserCommand(null, UserStatus.INACTIVE));
+        userService.update(fx.orgId(), fx.user().getId(),
+                new UpdateUserCommand(currentVersion(fx.user().getId()), null, UserStatus.INACTIVE));
         assertAllSessionsRevoked(fx.user().getId());
 
         /* 3. reactivate WITHOUT ever using A */
-        userService.update(fx.orgId(), fx.user().getId(), new UpdateUserCommand(null, UserStatus.ACTIVE));
+        userService.update(fx.orgId(), fx.user().getId(),
+                new UpdateUserCommand(currentVersion(fx.user().getId()), null, UserStatus.ACTIVE));
 
         /* 4. old refresh token A stays dead */
         mockMvc.perform(post("/api/v1/auth/refresh")
@@ -85,13 +87,15 @@ class UserAuthIntegrationTest extends AbstractAuthIntegrationTest {
         assertThat(familyA).isNotEqualTo(familyB);
 
         /* Deactivate: every family must be revoked, not just the last session. */
-        userService.update(fx.orgId(), fx.user().getId(), new UpdateUserCommand(null, UserStatus.INACTIVE));
+        userService.update(fx.orgId(), fx.user().getId(),
+                new UpdateUserCommand(currentVersion(fx.user().getId()), null, UserStatus.INACTIVE));
         assertNoUsableSessionInFamily(familyA);
         assertNoUsableSessionInFamily(familyB);
         assertAllSessionsRevoked(fx.user().getId());
 
         /* Reactivate: neither family comes back to life. */
-        userService.update(fx.orgId(), fx.user().getId(), new UpdateUserCommand(null, UserStatus.ACTIVE));
+        userService.update(fx.orgId(), fx.user().getId(),
+                new UpdateUserCommand(currentVersion(fx.user().getId()), null, UserStatus.ACTIVE));
         mockMvc.perform(post("/api/v1/auth/refresh")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(refreshBody(refreshA)))
@@ -131,6 +135,10 @@ class UserAuthIntegrationTest extends AbstractAuthIntegrationTest {
                 .findByTokenHash(RefreshTokenHasher.hash(rawToken))
                 .orElseThrow()
                 .getFamilyId();
+    }
+
+    private long currentVersion(UUID userId) {
+        return userRepository.findById(userId).orElseThrow().getVersion();
     }
 
     private Fixture fixture() {

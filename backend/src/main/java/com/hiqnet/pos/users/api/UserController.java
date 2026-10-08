@@ -17,6 +17,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,11 +31,12 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Organization-scoped user administration.
  *
- * <p>These endpoints are intentionally NOT reachable in the production security
- * chain yet: {@code SecurityConfig} keeps {@code anyRequest().denyAll()} until
- * Roles/Permissions (RBAC) exist, so a valid access token alone does not grant
- * user administration. The endpoints exist and are exercised only through the
- * test-only chain, exactly like {@code organization}/{@code branch}.</p>
+ * <p>Reachable with authentication in production; the fine-grained permission
+ * checks ({@code user.read}/{@code user.create}/{@code user.update}) are
+ * enforced by method security against PostgreSQL (JWT is identity-only). The
+ * collection {@code POST /api/v1/organizations} remains closed by
+ * {@code SecurityConfig}; creating organizations belongs to secure bootstrap /
+ * the future Control Plane.</p>
  */
 @RestController
 @RequestMapping("/api/v1/organizations/{organizationId}/users")
@@ -58,8 +60,10 @@ public class UserController {
         @ApiResponse(responseCode = "201", description = "Created", content = @Content),
         @ApiResponse(responseCode = "400", description = "Invalid email or weak password (VALIDATION_ERROR, WEAK_PASSWORD)", content = @Content),
         @ApiResponse(responseCode = "404", description = "Organization not found (ORGANIZATION_NOT_FOUND)", content = @Content),
-        @ApiResponse(responseCode = "409", description = "Inactive organization or duplicate email (ORGANIZATION_INACTIVE, USER_EMAIL_ALREADY_EXISTS)", content = @Content)
+        @ApiResponse(responseCode = "409", description = "Inactive organization or duplicate email (ORGANIZATION_INACTIVE, USER_EMAIL_ALREADY_EXISTS)", content = @Content),
+        @ApiResponse(responseCode = "403", description = "Forbidden (user.create)", content = @Content)
     })
+    @PreAuthorize("@authorizationService.hasPermission(authentication, #organizationId, 'user.create')")
     public UserResponse create(
             @PathVariable UUID organizationId, @Valid @RequestBody CreateUserRequest request) {
         return UserResponse.from(userService.create(organizationId, request.email(), request.password()));
@@ -70,8 +74,10 @@ public class UserController {
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "OK", content = @Content),
         @ApiResponse(responseCode = "400", description = "Invalid paging parameters (VALIDATION_ERROR)", content = @Content),
-        @ApiResponse(responseCode = "404", description = "Organization not found (ORGANIZATION_NOT_FOUND)", content = @Content)
+        @ApiResponse(responseCode = "404", description = "Organization not found (ORGANIZATION_NOT_FOUND)", content = @Content),
+        @ApiResponse(responseCode = "403", description = "Forbidden (user.read)", content = @Content)
     })
+    @PreAuthorize("@authorizationService.hasPermission(authentication, #organizationId, 'user.read')")
     public PageResponse<UserResponse> list(
             @PathVariable UUID organizationId,
             @RequestParam(defaultValue = "0") int page,
@@ -86,8 +92,10 @@ public class UserController {
     @Operation(summary = "Get a user by id (scoped to the organization)")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "OK", content = @Content),
-        @ApiResponse(responseCode = "404", description = "Organization or user not found (ORGANIZATION_NOT_FOUND, USER_NOT_FOUND)", content = @Content)
+        @ApiResponse(responseCode = "404", description = "Organization or user not found (ORGANIZATION_NOT_FOUND, USER_NOT_FOUND)", content = @Content),
+        @ApiResponse(responseCode = "403", description = "Forbidden (user.read)", content = @Content)
     })
+    @PreAuthorize("@authorizationService.hasPermission(authentication, #organizationId, 'user.read')")
     public UserResponse get(@PathVariable UUID organizationId, @PathVariable UUID userId) {
         return UserResponse.from(userService.get(organizationId, userId));
     }
@@ -98,14 +106,16 @@ public class UserController {
         @ApiResponse(responseCode = "200", description = "Updated", content = @Content),
         @ApiResponse(responseCode = "400", description = "Malformed email (VALIDATION_ERROR)", content = @Content),
         @ApiResponse(responseCode = "404", description = "Organization or user not found (ORGANIZATION_NOT_FOUND, USER_NOT_FOUND)", content = @Content),
-        @ApiResponse(responseCode = "409", description = "Duplicate email or concurrent modification (USER_EMAIL_ALREADY_EXISTS, CONCURRENT_MODIFICATION)", content = @Content)
+        @ApiResponse(responseCode = "409", description = "Duplicate email or concurrent modification (USER_EMAIL_ALREADY_EXISTS, CONCURRENT_MODIFICATION)", content = @Content),
+        @ApiResponse(responseCode = "403", description = "Forbidden (user.update)", content = @Content)
     })
+    @PreAuthorize("@authorizationService.hasPermission(authentication, #organizationId, 'user.update')")
     public UserResponse update(
             @PathVariable UUID organizationId,
             @PathVariable UUID userId,
             @Valid @RequestBody UpdateUserRequest request) {
         return UserResponse.from(userService.update(
-                organizationId, userId, new UpdateUserCommand(request.email(), request.status())));
+                organizationId, userId, new UpdateUserCommand(request.expectedVersion(), request.email(), request.status())));
     }
 
     private static void validatePaging(int page, int size) {
