@@ -159,6 +159,14 @@ public class Organization {
         this.status = newStatus;
     }
 
+    /**
+     * An INACTIVE organization is not operational: authentication must refuse
+     * to issue or refresh a session for any of its users.
+     */
+    public boolean isActive() {
+        return status == OrganizationStatus.ACTIVE;
+    }
+
     private static void validateName(String value) {
         if (value == null || value.trim().isEmpty()) {
             throw new BusinessException(

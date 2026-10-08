@@ -26,4 +26,10 @@ public final class ErrorCodes {
     public static final String INVALID_TIMEZONE = "INVALID_TIMEZONE";
     public static final String INVALID_CURRENCY = "INVALID_CURRENCY";
     public static final String INVALID_LOCALE = "INVALID_LOCALE";
+
+    public static final String INVALID_CREDENTIALS = "INVALID_CREDENTIALS";
+    public static final String INVALID_REFRESH_TOKEN = "INVALID_REFRESH_TOKEN";
+    public static final String AUTHENTICATION_REQUIRED = "AUTHENTICATION_REQUIRED";
+    public static final String TOKEN_INVALID = "TOKEN_INVALID";
+    public static final String TOKEN_EXPIRED = "TOKEN_EXPIRED";
 }

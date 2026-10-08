@@ -1,12 +1,15 @@
 # Convenciones de API
 
 **Estado:** existen los primeros endpoints de negocio
-(Organization + Branch, `/api/v1`). Autenticación aún no implementada; la API
-está detrás de **deny-by-default** en todos los entornos. Los tests de
-integración abren `/api/v1/**` solo mediante una configuración exclusiva de
-`src/test` (`TestSecurityConfig`), nunca desde el artefacto productivo.
-Detalle de contrato: `docs/02-database/organization-branch-model.md`
-y la especificación OpenAPI (`/v3/api-docs`, swagger-ui activo solo en dev).
+(Organization + Branch, `/api/v1`) y la autenticación (`auth`,
+`/api/v1/auth`). La API de negocio está detrás de **deny-by-default** incluso
+con un access JWT válido: abrirá solo cuando exista RBAC (módulo `users`).
+Los tests legacy de Organization/Branch usan una configuración exclusiva de
+`src/test` (`TestSecurityConfig`), nunca del artefacto productivo; los tests
+de `auth` corren contra la configuración de seguridad **real**.
+Detalle de contrato: `docs/02-database/organization-branch-model.md`,
+`docs/04-security/authentication.md` y la especificación OpenAPI
+(`/v3/api-docs`, swagger-ui activo solo en dev con `permit-opendoc=true`).
 
 ## Base path y formato
 
@@ -27,6 +30,12 @@ POST  /api/v1/organizations/{organizationId}/branches
 GET   /api/v1/organizations/{organizationId}/branches
 GET   /api/v1/organizations/{organizationId}/branches/{branchId}
 PATCH /api/v1/organizations/{organizationId}/branches/{branchId}
+
+POST  /api/v1/auth/login        (público)
+POST  /api/v1/auth/refresh      (público)
+POST  /api/v1/auth/logout       (público; revoca la familia de la sesión presentada)
+POST  /api/v1/auth/logout-all   (Bearer)
+GET   /api/v1/auth/me           (Bearer)
 ```
 
 No hay `DELETE`: la baja es `status = INACTIVE` (sin hard delete sobre datos
@@ -83,8 +92,12 @@ Códigos estables:
 | `INVALID_TIMEZONE` | 400 | No es timezone IANA |
 | `INVALID_CURRENCY` | 400 | No es ISO 4217 |
 | `INVALID_LOCALE` | 400 | No es BCP 47 |
-| `UNAUTHORIZED` | 401 | Sin autenticación |
-| `FORBIDDEN` | 403 | Sin permiso |
+| `INVALID_CREDENTIALS` | 401 | Login fallido (genérico: org, email o password) |
+| `INVALID_REFRESH_TOKEN` | 401 | Refresh desconocido, consumido, revocado o de familia muerta |
+| `AUTHENTICATION_REQUIRED` | 401 | Sin token de acceso |
+| `TOKEN_INVALID` | 401 | Access rechazado (firma, issuer, audiencia, tipo, `sub`/`org_id`) o identidad no operativa (`/me`) |
+| `TOKEN_EXPIRED` | 401 | Access expirado |
+| `FORBIDDEN` | 403 | Sin permiso (incluye APIs de negocio hasta RBAC) |
 | `ORGANIZATION_NOT_FOUND` | 404 | Organización inexistente |
 | `BRANCH_NOT_FOUND` | 404 | Branch inexistente (o de otra organización) |
 | `RESOURCE_NOT_FOUND` | 404 | Ruta sin mapping |
