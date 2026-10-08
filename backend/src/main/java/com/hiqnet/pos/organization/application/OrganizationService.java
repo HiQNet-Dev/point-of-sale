@@ -49,6 +49,12 @@ public class OrganizationService {
     @Transactional
     public Organization update(UUID organizationId, UpdateOrganizationCommand command) {
         Organization organization = get(organizationId);
+        if (organization.getVersion() != command.expectedVersion()) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.CONCURRENT_MODIFICATION,
+                    "The resource was modified concurrently; retry with fresh data");
+        }
         if (command.name() != null) {
             organization.updateName(command.name());
         }

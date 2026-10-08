@@ -97,6 +97,14 @@ public class UserService {
         // the later session revocation against auth flows on the user row
         // (lock order user -> sessions).
         User user = requireUserForUpdate(organizationId, userId);
+        if (user.getVersion() != command.expectedVersion()) {
+            // Stale write: fail BEFORE any mutation (including the
+            // destructive session revocation of a deactivation).
+            throw new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.CONCURRENT_MODIFICATION,
+                    "The resource was modified concurrently; retry with fresh data");
+        }
         if (command.status() != null) {
             boolean wasActive = user.isActive();
             if (command.status() == UserStatus.ACTIVE) {

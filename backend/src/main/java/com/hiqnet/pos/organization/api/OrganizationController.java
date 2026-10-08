@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -49,8 +50,10 @@ public class OrganizationController {
     @Operation(summary = "Get an organization by id")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "OK", content = @Content),
-        @ApiResponse(responseCode = "404", description = "Organization not found (ORGANIZATION_NOT_FOUND)", content = @Content)
+        @ApiResponse(responseCode = "404", description = "Organization not found (ORGANIZATION_NOT_FOUND)", content = @Content),
+        @ApiResponse(responseCode = "403", description = "Forbidden (organization.read)", content = @Content)
     })
+    @PreAuthorize("@authorizationService.hasPermission(authentication, #organizationId, 'organization.read')")
     public OrganizationResponse get(@PathVariable UUID organizationId) {
         return OrganizationResponse.from(organizationService.get(organizationId));
     }
@@ -63,11 +66,13 @@ public class OrganizationController {
         @ApiResponse(responseCode = "404", description = "Organization not found (ORGANIZATION_NOT_FOUND)", content = @Content),
         @ApiResponse(responseCode = "409", description = "Concurrent modification (CONCURRENT_MODIFICATION)", content = @Content)
     })
+    @PreAuthorize("@authorizationService.hasPermission(authentication, #organizationId, 'organization.update')")
     public OrganizationResponse update(
             @PathVariable UUID organizationId, @Valid @RequestBody UpdateOrganizationRequest request) {
         return OrganizationResponse.from(organizationService.update(
                 organizationId,
                 new UpdateOrganizationCommand(
+                        request.expectedVersion(),
                         request.name(),
                         request.timezone(),
                         request.currency(),
