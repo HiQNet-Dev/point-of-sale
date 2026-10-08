@@ -24,6 +24,21 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByOrganizationIdAndEmail(
             @Param("organizationId") UUID organizationId, @Param("email") String email);
 
+    /**
+     * Per-user coordination lock for authentication mutations (refresh,
+     * logout, logout-all, family revocation). Postgres is the authority: the
+     * user row serializes every session mutation of the same user across
+     * application instances, so a concurrent rotation can never commit a live
+     * successor behind a revocation.
+     *
+     * <p>Lock ordering is fixed: the user row is ALWAYS acquired before any
+     * {@code refresh_sessions} row, never the other way around (this is what
+     * prevents deadlocks between the different mutation paths).</p>
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from User u where u.id = :id")
+    Optional<User> findByIdForUpdate(@Param("id") UUID id);
+
     @Query("""
             select count(u) > 0 from User u
             where u.organizationId = :organizationId and lower(u.email) = lower(:email)

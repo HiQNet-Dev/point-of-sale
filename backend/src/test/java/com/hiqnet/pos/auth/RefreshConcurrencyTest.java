@@ -6,8 +6,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.hiqnet.pos.auth.api.AuthResponses.TokenResponse;
 import com.hiqnet.pos.auth.application.AuthService;
+import com.hiqnet.pos.auth.domain.RefreshSession;
+import com.hiqnet.pos.auth.domain.RefreshSessionRepository;
+import com.hiqnet.pos.auth.infrastructure.RefreshTokenHasher;
 import com.hiqnet.pos.shared.error.BusinessException;
 import com.hiqnet.pos.users.domain.User;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -17,6 +21,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 
 /**
@@ -26,6 +31,9 @@ import org.springframework.http.MediaType;
  * tokens derived from token A are impossible.
  */
 class RefreshConcurrencyTest extends AbstractAuthIntegrationTest {
+
+    @Autowired
+    private RefreshSessionRepository refreshSessionRepository;
 
     @Test
     void concurrentRefreshOfSameTokenYieldsExactlyOneWinner() throws Exception {
@@ -73,6 +81,16 @@ class RefreshConcurrencyTest extends AbstractAuthIntegrationTest {
                                     {"refreshToken":"%s"}
                                     """.formatted(winner)))
                     .andExpect(status().isUnauthorized());
+
+            // Database check: no session of the family is reusable, so two
+            // valid successors are impossible.
+            UUID familyId = refreshSessionRepository
+                    .findByTokenHash(RefreshTokenHasher.hash(tokenA))
+                    .orElseThrow()
+                    .getFamilyId();
+            List<RefreshSession> family = refreshSessionRepository.findByFamilyId(familyId);
+            assertThat(family).isNotEmpty();
+            assertThat(family).allMatch(session -> !session.isReusable(Instant.now()));
         } finally {
             start.countDown();
             pool.shutdownNow();

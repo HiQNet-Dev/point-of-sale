@@ -28,6 +28,12 @@ import org.springframework.transaction.annotation.Transactional;
  * Public errors are deliberately generic (INVALID_CREDENTIALS /
  * INVALID_REFRESH_TOKEN) to avoid user enumeration; security-relevant events
  * are logged internally with safe metadata (ids, never tokens or passwords).
+ *
+ * <p>Concurrency: every path that mutates a user's refresh sessions first
+ * acquires the user row with {@code SELECT ... FOR UPDATE} (lock ordering:
+ * user -> session). PostgreSQL is the authority, so the guarantee holds across
+ * application instances; concurrent refresh/logout/logout-all/reuse cannot
+ * leave a live successor behind a revocation.</p>
  */
 @Service
 public class AuthService {
@@ -87,13 +93,16 @@ public class AuthService {
 
         Organization organization =
                 organizationRepository.findByCode(normalizedCode).orElse(null);
-        User user = organization == null
+        // An INACTIVE organization is treated exactly like an unknown one: no
+        // user lookup, dummy hash, generic INVALID_CREDENTIALS. This blocks any
+        // tenant user from logging in without revealing organization state.
+        User user = organization == null || !organization.isActive()
                 ? null
                 : userRepository.findByOrganizationIdAndEmail(organization.getId(), normalizedEmail)
                         .orElse(null);
 
         if (user == null) {
-            // Identical timing path for unknown organization/email.
+            // Identical timing path for unknown/deactivated organization/email.
             passwordEncoder.matches(passwordToCheck, dummyPasswordHash);
             throw invalidCredentials();
         }
@@ -134,13 +143,24 @@ public class AuthService {
     public TokenResponse refresh(String rawToken) {
         Instant now = clock.instant();
         String tokenHash = RefreshTokenHasher.hash(rawToken);
+
+        // Lock ordering (user -> session): resolve the owner WITHOUT locking,
+        // acquire the per-user coordination lock, and only then re-read the
+        // session FOR UPDATE. Every session mutation of this user (refresh,
+        // logout, logout-all, family revocation) serializes on the user row, so
+        // a concurrent rotation can never leave a live successor behind a
+        // revocation.
+        UUID userId = refreshSessionRepository.findUserIdByTokenHash(tokenHash).orElse(null);
+        if (userId == null) {
+            throw invalidRefreshToken();
+        }
+        User user = userRepository.findByIdForUpdate(userId).orElse(null);
         RefreshSession session = refreshSessionRepository
                 .findByTokenHashForUpdate(tokenHash)
-                .orElseThrow(() -> invalidRefreshToken());
+                .orElseThrow(AuthService::invalidRefreshToken);
 
         if (session.isReusable(now)) {
-            User user = userRepository.findById(session.getUserId()).orElse(null);
-            if (user == null || !user.isActive()) {
+            if (user == null || !user.isActive() || !isOrganizationActive(user.getOrganizationId())) {
                 refreshSessionRepository.revokeFamily(session.getFamilyId(), now);
                 throw invalidRefreshToken();
             }
@@ -159,7 +179,7 @@ public class AuthService {
                     "Bearer",
                     jwtTokenService.accessTokenTtlSeconds(),
                     newRawToken,
-                    session.getFamilyExpiresAt());
+                    next.usableUntil());
         }
 
         if (session.wasRotatedOrRevoked()) {
@@ -173,36 +193,54 @@ public class AuthService {
         throw invalidRefreshToken();
     }
 
+    /**
+     * Revokes the presented session's whole family (i.e. the device/login
+     * rotation chain) under the per-user coordination lock. Revoking the family
+     * rather than a single row is what makes logout safe against a concurrent
+     * rotation: if a rotation already created a successor, it dies too.
+     * Idempotent and silent: an unknown token is the same 204 as a known one.
+     */
     @Transactional
     public void logout(String rawToken) {
         if (rawToken == null || rawToken.isBlank()) {
             return;
         }
         Instant now = clock.instant();
+        String tokenHash = RefreshTokenHasher.hash(rawToken);
+
+        UUID userId = refreshSessionRepository.findUserIdByTokenHash(tokenHash).orElse(null);
+        if (userId == null) {
+            // Unknown token: same success, nothing to reveal.
+            return;
+        }
+        // Acquire the user lock BEFORE touching any session row so a concurrent
+        // rotation cannot commit a live successor after this logout.
+        userRepository.findByIdForUpdate(userId);
         refreshSessionRepository
-                .findByTokenHash(RefreshTokenHasher.hash(rawToken))
-                .ifPresent(session -> session.revoke(now));
-        // Unknown token: same success, nothing to reveal.
+                .findByTokenHashForUpdate(tokenHash)
+                .ifPresent(session -> refreshSessionRepository.revokeFamily(session.getFamilyId(), now));
     }
 
     @Transactional
     public void logoutAll(UUID userId) {
-        refreshSessionRepository.revokeActiveByUserId(userId, clock.instant());
+        Instant now = clock.instant();
+        // Serialize with any in-flight rotation of this user before the bulk
+        // revoke, so no successor escapes the logout-all.
+        userRepository.findByIdForUpdate(userId);
+        refreshSessionRepository.revokeActiveByUserId(userId, now);
         log.info("security-event=logout-all userId={}", userId);
     }
 
     /**
      * Resolves the identity behind a valid access token from the database:
-     * the client-supplied claims never drive the response.
+     * the client-supplied claims never drive the response. Both the user and
+     * its organization must be operational.
      */
     @Transactional(readOnly = true)
     public MeResponse me(UUID userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException(
-                        HttpStatus.UNAUTHORIZED, ErrorCodes.TOKEN_INVALID, "Invalid token identity"));
-        if (!user.isActive()) {
-            throw new BusinessException(
-                    HttpStatus.UNAUTHORIZED, ErrorCodes.TOKEN_INVALID, "Invalid token identity");
+        User user = userRepository.findById(userId).orElseThrow(AuthService::invalidTokenIdentity);
+        if (!user.isActive() || !isOrganizationActive(user.getOrganizationId())) {
+            throw invalidTokenIdentity();
         }
         return new MeResponse(user.getId(), user.getOrganizationId(), user.getEmail(), user.getStatus());
     }
@@ -225,6 +263,10 @@ public class AuthService {
                 session.getFamilyExpiresAt());
     }
 
+    private boolean isOrganizationActive(UUID organizationId) {
+        return organizationRepository.findById(organizationId).map(Organization::isActive).orElse(false);
+    }
+
     private static BusinessException invalidCredentials() {
         return new BusinessException(
                 HttpStatus.UNAUTHORIZED, ErrorCodes.INVALID_CREDENTIALS, "Invalid credentials");
@@ -233,5 +275,10 @@ public class AuthService {
     private static BusinessException invalidRefreshToken() {
         return new BusinessException(
                 HttpStatus.UNAUTHORIZED, ErrorCodes.INVALID_REFRESH_TOKEN, "Invalid refresh token");
+    }
+
+    private static BusinessException invalidTokenIdentity() {
+        return new BusinessException(
+                HttpStatus.UNAUTHORIZED, ErrorCodes.TOKEN_INVALID, "Invalid token identity");
     }
 }

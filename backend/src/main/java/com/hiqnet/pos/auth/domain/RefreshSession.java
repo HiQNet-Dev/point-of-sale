@@ -111,6 +111,17 @@ public class RefreshSession {
     }
 
     /**
+     * The instant this refresh token stops being usable: the earlier of the
+     * per-session TTL ({@code expiresAt}) and the family absolute TTL
+     * ({@code familyExpiresAt}). This is the value exposed to clients as
+     * {@code refreshExpiresAt}, so the contract is unambiguous when the two
+     * TTLs differ.
+     */
+    public Instant usableUntil() {
+        return expiresAt.isBefore(familyExpiresAt) ? expiresAt : familyExpiresAt;
+    }
+
+    /**
      * True when this exact session was already rotated or revoked: presenting
      * such a token is treated as reuse and revokes the whole family.
      */
