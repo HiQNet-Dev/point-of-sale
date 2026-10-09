@@ -1,10 +1,10 @@
 # Modelo de seguridad
 
 **Estado actual:** autenticación implementada (`auth`), administración de
-usuarios implementada (`users`) y **Roles/Permissions/RBAC implementado
-(`rbac`)** — las business APIs administrativas abren **solo** con el permiso
-adecuado. La autorización para cada sucursal (Branch Memberships), Audit,
-Admin Bootstrap y Control Plane siguen siendo futuros.
+usuarios implementada (`users`), **Roles/Permissions/RBAC implementado
+(`rbac`)** y **Branch Memberships implementado (`membership`)** — las business
+APIs administrativas abren **solo** con el permiso
+adecuado. Audit, Admin Bootstrap y Control Plane siguen siendo futuros.
 
 ## Principios
 
@@ -42,8 +42,13 @@ Admin Bootstrap y Control Plane siguen siendo futuros.
   `/api/v1/**`.
 - La **autorización fina vive en method security**
   (`@EnableMethodSecurity` + `@PreAuthorize` sobre
-  `AuthorizationService.hasPermission(authentication, orgId, code)`), y la
+  `AuthorizationService.hasPermission/hasBranchPermission(...)`), y la
   autoridad es **PostgreSQL** (query `EXISTS` por petición; JWT = identidad).
+  Dos scopes: organización (`hasPermission`) y sucursal
+  (`hasBranchPermission` = org-wide UNION membership ACTIVE de ESA branch).
+  La **gestión** de memberships usa SIEMPRE permisos organization-wide
+  (`branch.membership.*`): un rol branch-scoped jamás escala a la organización
+  (anti privilege-escalation, probado).
   Véase `docs/04-security/rbac.md` y ADR-0005.
 - **`POST /api/v1/organizations` y cualquier ruta no definida permanecen
   denegados** (`anyRequest().denyAll()`).
@@ -76,10 +81,13 @@ Autenticación (detalle: `docs/04-security/authentication.md`):
 No existe CORS wildcard, no existe `permitAll` global, no existen credenciales
 reales en el repositorio.
 
+Cambios de membership/roles/status de sucursal **no revocan sesiones**: la
+autorización es DB-authoritative y el mismo JWT pierde/recupera acceso en la
+siguiente petición (ADR-0005). Una branch `INACTIVE` deja de conceder su grant
+branch-scoped de inmediato (la `EXISTS` exige `branch.status='ACTIVE'`).
+
 ## Futuro (no implementado)
 
-- **Branch Memberships** (autorización por pertenencia de sucursal; RBAC
-  organization-wide ya está).
 - **Auditoría persistente** (el logging estructurado no es auditoría).
 - **Secure Admin Bootstrap** (provisión segura del primer administrador;
   pendiente para Foundation).

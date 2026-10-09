@@ -57,9 +57,9 @@ public class BranchController {
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "OK", content = @Content),
         @ApiResponse(responseCode = "404", description = "Organization or branch not found (ORGANIZATION_NOT_FOUND, BRANCH_NOT_FOUND)", content = @Content),
-        @ApiResponse(responseCode = "403", description = "Forbidden (branch.read)", content = @Content)
+        @ApiResponse(responseCode = "403", description = "Forbidden (branch.read via organization scope or branch membership)", content = @Content)
     })
-    @PreAuthorize("@authorizationService.hasPermission(authentication, #organizationId, 'branch.read')")
+    @PreAuthorize("@authorizationService.hasBranchPermission(authentication, #organizationId, #branchId, 'branch.read')")
     public BranchResponse get(@PathVariable UUID organizationId, @PathVariable UUID branchId) {
         return BranchResponse.from(branchService.get(organizationId, branchId));
     }
@@ -72,7 +72,7 @@ public class BranchController {
         @ApiResponse(responseCode = "404", description = "Organization or branch not found (ORGANIZATION_NOT_FOUND, BRANCH_NOT_FOUND)", content = @Content),
         @ApiResponse(responseCode = "409", description = "Concurrent modification (CONCURRENT_MODIFICATION)", content = @Content)
     })
-    @PreAuthorize("@authorizationService.hasPermission(authentication, #organizationId, 'branch.update')")
+    @PreAuthorize("@authorizationService.hasBranchPermission(authentication, #organizationId, #branchId, 'branch.update')")
     public BranchResponse update(
             @PathVariable UUID organizationId,
             @PathVariable UUID branchId,

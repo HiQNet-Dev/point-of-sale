@@ -21,6 +21,10 @@ class PermissionCatalogTest extends AbstractRbacIntegrationTest {
 
     private static final List<String> EXPECTED_CODES = List.of(
             "branch.create",
+            "branch.membership.create",
+            "branch.membership.read",
+            "branch.membership.roles.manage",
+            "branch.membership.update",
             "branch.read",
             "branch.update",
             "organization.read",
@@ -52,7 +56,9 @@ class PermissionCatalogTest extends AbstractRbacIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(EXPECTED_CODES.size()))
                 .andExpect(jsonPath("$[0].code").value("branch.create"))
-                .andExpect(jsonPath("$[9].code").value("role.read"));
+                .andExpect(jsonPath("$[2].code").value("branch.membership.read"))
+                .andExpect(jsonPath("$[9].code").value("permission.read"))
+                .andExpect(jsonPath("$[17].code").value("user.update"));
     }
 
     @Test

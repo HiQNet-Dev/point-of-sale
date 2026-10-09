@@ -52,6 +52,13 @@ PATCH /api/v1/organizations/{organizationId}/roles/{roleId}
 GET   /api/v1/organizations/{organizationId}/roles/{roleId}/permissions
 PUT   /api/v1/organizations/{organizationId}/roles/{roleId}/permissions
 
+POST  /api/v1/organizations/{organizationId}/branches/{branchId}/memberships
+GET   /api/v1/organizations/{organizationId}/branches/{branchId}/memberships     (paginado, ?page&size&status)
+GET   /api/v1/organizations/{organizationId}/branches/{branchId}/memberships/{userId}
+PATCH /api/v1/organizations/{organizationId}/branches/{branchId}/memberships/{userId}
+GET   /api/v1/organizations/{organizationId}/branches/{branchId}/memberships/{userId}/roles
+PUT   /api/v1/organizations/{organizationId}/branches/{branchId}/memberships/{userId}/roles
+
 POST  /api/v1/auth/login        (público)
 POST  /api/v1/auth/refresh      (público)
 POST  /api/v1/auth/logout       (público; revoca la familia de la sesión presentada)
@@ -88,9 +95,31 @@ concurrente), 500 (interno).
   `{"timezone": null}` = eliminar el override y volver a heredar
   `Organization.timezone`.
 
+## Branch Memberships (scopes de autorización)
+
+La gestión de memberships se autoriza SIEMPRE con permisos **organization-wide**
+(`branch.membership.read/.create/.update/.roles.manage`), nunca branch-scoped
+(anti privilege-escalation). En cambio `GET/PATCH /branches/{branchId}` usan
+`hasBranchPermission(…#branchId…)`: vale un permiso organization-wide **o** una
+membership ACTIVE de ESA branch (Branch ACTIVE incluido en la query).
+
+- **POST** crea la membership (`userId` en el body). Exige Organization, Branch y
+  User existentes, de la misma organización y `ACTIVE` (409 `USER_INACTIVE` /
+  `BRANCH_INACTIVE` / `ORGANIZATION_INACTIVE`; duplicado → 409
+  `BRANCH_MEMBERSHIP_ALREADY_EXISTS`).
+- **GET list**: `PageResponse`; `?page`(0) `?size`(20, máx 100); orden
+  `createdAt ASC, id ASC`; filtro `?status=ACTIVE|INACTIVE`.
+- **GET /{userId}** y **PATCH /{userId}**: la membership se direcciona por el
+  `userId` (máx. una membership por user+branch). PATCH exige `expectedVersion`;
+  sin DELETE (baja = `status INACTIVE`).
+- **PUT /{userId}/roles**: replace atómico del set completo; duplicados → 400
+  `VALIDATION_ERROR`; rol inexistente o de otra org → 404 `ROLE_NOT_FOUND` con
+  rollback total; `[]` limpia.
+
 ## Optimistic concurrency HTTP (expectedVersion)
 
-Desde RBAC, todo PATCH administrativo (Organization, Branch, User, Role) exige:
+Desde RBAC, todo PATCH administrativo (Organization, Branch, User, Role,
+**Membership**) exige:
 
 ```json
 { "expectedVersion": 3, "name": "Nuevo nombre" }
@@ -149,6 +178,10 @@ Códigos estables:
 | `ROLE_NOT_FOUND` | 404 | Rol inexistente (o de otra organización) |
 | `ROLE_CODE_ALREADY_EXISTS` | 409 | Code de rol duplicado dentro de la organización |
 | `PERMISSION_NOT_FOUND` | 404 | Permiso inexistente en el catálogo |
+| `BRANCH_MEMBERSHIP_NOT_FOUND` | 404 | Membership inexistente (usuario sin membership en esa branch) |
+| `BRANCH_MEMBERSHIP_ALREADY_EXISTS` | 409 | Membership duplicada (org+branch+user), incluida la carrera (constraint) |
+| `BRANCH_INACTIVE` | 409 | No se crean memberships en una branch inactiva |
+| `USER_INACTIVE` | 409 | No se crean memberships para un usuario inactivo |
 | `RESOURCE_NOT_FOUND` | 404 | Ruta sin mapping |
 | `ORGANIZATION_CODE_ALREADY_EXISTS` | 409 | Code de organización duplicado (global) |
 | `BRANCH_CODE_ALREADY_EXISTS` | 409 | Code de branch duplicado en la organización |
@@ -204,9 +237,12 @@ Convención estable desde la administración de usuarios (`shared.api.PageRespon
 
 ## Otros
 
-- **Optimistic concurrency HTTP** (futuro, transversal): contrato común
-  `ETag`/`If-Match`/`expectedVersion` para Organization + Branch + User antes
-  de abrir las APIs administrativas; `version` hoy es informativo.
+- **Optimistic concurrency HTTP**: resuelto como contrato `expectedVersion` en
+  Organization + Branch + User + Role + Membership (sin ETag/If-Match por ahora;
+  revisar antes de abrir las APIs administrativas en producción).
+- **SCOPES**: `hasOrganizationPermission` (organization-wide) vs
+  `hasBranchPermission` (org-wide UNION membership branch-scoped) —
+  documentado en `docs/04-security/rbac.md`.
 - **Idempotencia** (futuro): operaciones monetarias aceptarán
   `Idempotency-Key`. Aún no existe.
 - **Seguridad de respuestas:** nunca devolver contraseñas, hashes, tokens,

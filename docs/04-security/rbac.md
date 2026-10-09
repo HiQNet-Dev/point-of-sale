@@ -8,10 +8,15 @@ el JWT es identidad únicamente y PostgreSQL es la autoridad cada petición
 
 ```text
 User
-  ↓ user_organization_roles (organization_id, user_id, role_id)
+  ↓ user_organization_roles (organization_id, user_id, role_id)     [ORGANIZATION scope]
 Role  (per Organization; code slug único e inmutable; status ACTIVE|INACTIVE)
   ↓ role_permissions (role_id, permission_code)
-Permission (catálogo global, sembrado por V5; sin CRUD de cliente)
+Permission (catálogo global, sembrado por V5/V6; sin CRUD de cliente)
+
+User
+  ↓ branch_memberships (organization_id, branch_id, user_id, status)  [BRANCH scope]
+  ↓ branch_membership_roles (organization_id, membership_id, role_id)
+Role   (mismas definiciones de roles; sin modelo BranchRole separado)
 ```
 
 - **Permissions**: catálogo del SISTEMA (`permissions.code` PK natural).
@@ -23,8 +28,11 @@ Permission (catálogo global, sembrado por V5; sin CRUD de cliente)
 - **UserOrganizationRole**: `User posee este Role para toda la Organization`.
   **PostgreSQL impide** asignar un rol de organización B a un usuario de A
   mediante FKs compuestas (`UNIQUE (id, organization_id)` en users/roles).
-- **Borradores del alcance por sucursal** (Branch Memberships) NO están
-  implementados: RBAC es organization-wide por ahora.
+- **BranchMembership** (`V6`) y **BranchMembershipRole** (`V6`): vínculo
+  explícito User→Branch con roles branch-scoped (una membership por
+  org+branch+user; `status ACTIVE/INACTIVE`; `@Version`). Los roles reutilizan
+  el catálogo `roles`; FKs compuestas impiden membership/rol cross-org. Detalle:
+  `docs/02-database/branch-memberships-model.md`.
 
 ## Permisos efectivos
 
@@ -36,6 +44,28 @@ jerarquías, wildcards ni herencia.
 `AuthorizationService.hasPermission(authentication, organizationId, code)`
 (usado por `@PreAuthorize`) lo evalúa en una query `EXISTS` (sin N+1, sin cache,
 sin `securityVersion`).
+
+## Scopes: ORGANIZATION vs BRANCH
+
+Existen dos scopes de autorización explícitos:
+
+- **ORGANIZATION scope** — `hasPermission(authentication, orgId, code)`:
+  el usuario tiene el permiso organization-wide vía `user_organization_roles`.
+- **BRANCH scope** — `hasBranchPermission(authentication, orgId, branchId, code)`:
+  concede si el usuario tiene el permiso organization-wide (override) **O** una
+  membership ACTIVE de esa branch cuyo rol ACTIVE contenga el permiso (con
+  Branch ACTIVE).
+
+```text
+hasBranchPermission = organización (override) UNION branch membership
+NUNCA: branch role -> organización (anti privilege-escalation)
+```
+
+Los endpoints organization-wide SIEMPRE usan `hasPermission`; solo los detalles
+`GET/PATCH /branches/{branchId}` usan `hasBranchPermission` (un Branch Manager
+de su sucursal puede operarla, sin tocar otras). La branch membership leg se
+avala en una sola `EXISTS` (`BranchMembershipRoleRepository`
+`.existsEffectiveBranchPermission`) que exige User/Organization/Branch/ Membership/Role ACTIVE y misma organización.
 
 ## Method security
 
@@ -59,8 +89,8 @@ sin `securityVersion`).
 | PATCH /organizations/{id} | `organization.update` |
 | GET /organizations/{id}/branches | `branch.read` |
 | POST /organizations/{id}/branches | `branch.create` |
-| GET /organizations/{id}/branches/{branchId} | `branch.read` |
-| PATCH /organizations/{id}/branches/{branchId} | `branch.update` |
+| GET /organizations/{id}/branches/{branchId} | `branch.read` — `hasBranchPermission(…#branchId…)` |
+| PATCH /organizations/{id}/branches/{branchId} | `branch.update` — `hasBranchPermission(…#branchId…)` |
 | GET /organizations/{id}/users | `user.read` |
 | POST /organizations/{id}/users | `user.create` |
 | GET /organizations/{id}/users/{userId} | `user.read` |
@@ -74,13 +104,21 @@ sin `securityVersion`).
 | PUT /organizations/{id}/roles/{roleId}/permissions | `role.permissions.manage` |
 | GET /organizations/{id}/users/{userId}/roles | `role.read` |
 | PUT /organizations/{id}/users/{userId}/roles | `role.assign` |
+| POST /organizations/{id}/branches/{branchId}/memberships | `branch.membership.create` (org scope) |
+| GET /organizations/{id}/branches/{branchId}/memberships | `branch.membership.read` (org scope) |
+| GET /organizations/{id}/branches/{branchId}/memberships/{userId} | `branch.membership.read` (org scope) |
+| PATCH /organizations/{id}/branches/{branchId}/memberships/{userId} | `branch.membership.update` (org scope) |
+| GET /organizations/{id}/branches/{branchId}/memberships/{userId}/roles | `branch.membership.read` (org scope) |
+| PUT /organizations/{id}/branches/{branchId}/memberships/{userId}/roles | `branch.membership.roles.manage` (org scope) |
 
 ## Inmediatez (mismo JWT)
 
 Verificado por tests e2e con el MISMO access token: quitar un permiso,
 quitar/poner una asignación de rol, desactivar/reactivar un rol, o pasar
 User/Organization a INACTIVE se refleja en la **siguiente petición** (200 → 403
-→ 200 según aplique). Los access JWTs no se blacklistean (stateless, 10m).
+→ 200 según aplique). También los cambios de membership (assign/remove roles,
+membership INACTIVE, rol INACTIVE, Branch INACTIVE) se reflejan al instante con
+el mismo JWT (ADR-0005). Los access JWTs no se blacklistean (stateless, 10m).
 
 ## Límites de respuesta
 
@@ -106,8 +144,7 @@ volver `ACTIVE` vuelven a conceder (intencional; documentado).
 
 ## No implementado (fronteras)
 
-- **Branch Memberships** (rol por sucursal) — siguiente slice.
-- **Audit persistente** (el logging estructurado `security-event=role-*` no es
+- **Audit persistente** (el logging estructurado `security-event=*` no es
   auditoría).
 - **Secure Admin Bootstrap** (primer ADMIN) — pendiente de Foundation; sin
   credenciales por defecto.
@@ -115,3 +152,6 @@ volver `ACTIVE` vuelven a conceder (intencional; documentado).
   HiQNet vive en un futuro Control Plane separado (`Business Administration !=
   HiQNet Administration`).
 - **Frontend**, cache de permisos, `securityVersion`, blacklist JWT.
+- **Branch-scoped listing «mis sucursales»**: `GET /branches` (colección) sigue
+  siendo organization-scope; un endpoint de listing filtrado para memberships
+  se añadirá cuando el frontend/operación lo necesite (decisión consciente).

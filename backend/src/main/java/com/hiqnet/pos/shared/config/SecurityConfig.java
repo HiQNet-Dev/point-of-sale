@@ -73,6 +73,12 @@ public class SecurityConfig {
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*").authenticated();
                     auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*/branches/*").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/memberships").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/memberships").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/memberships/*").authenticated();
+                    auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*/branches/*/memberships/*").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/memberships/*/roles").authenticated();
+                    auth.requestMatchers(HttpMethod.PUT, "/api/v1/organizations/*/branches/*/memberships/*/roles").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/users").authenticated();
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/users").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/users/*").authenticated();

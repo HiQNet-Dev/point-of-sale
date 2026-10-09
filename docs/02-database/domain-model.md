@@ -10,9 +10,11 @@ Versión actual: `0.1.0-SNAPSHOT`.
 
 ```text
 Organization (organización / empresa)  ✔ implementado
- ├── User (usuario)                    ✔ implementado (identidad + administración; RBAC futuro)
+ ├── User (usuario)                    ✔ implementado (identidad + administración; RBAC implementado)
  │    └── RefreshSession (familia de refresh tokens)  ✔ implementado
+ ├── Role / RolePermission / UserOrganizationRole   ✔ implementado (V5)
  └── Branch (sucursal)                 ✔ implementado
+      ├── BranchMembership (user ↔ branch, con roles branch-scoped)  ✔ implementado (V6)
       ├── CashRegister (caja)  → Shift (turno) → Sale (venta) → Payment (pago)
       ├── Stock (existencias)  ← descuenta por venta, compra y mermas
       └── Inventory (ámbito de inventario de la sucursal)
@@ -30,6 +32,8 @@ Organization (organización / empresa)  ✔ implementado
 | Permission | sistema | **implementada (`V5`)** — catálogo global sembrado por Flyway; `code` PK; sin CRUD de cliente |
 | RolePermission | — | **implementada (`V5`)** — grant `role_id → permission_code` (unique compuesto) |
 | UserOrganizationRole | organización | **implementada (`V5`)** — user posee un rol para toda la org; FKs compuestas impiden cross-tenant |
+| BranchMembership | organización+sucursal | **implementada (`V6`)** — user pertenece a una branch (máx. 1 por org+branch+user), `status ACTIVE/INACTIVE`, `@Version`; ver `docs/02-database/branch-memberships-model.md` |
+| BranchMembershipRole | organización | **implementada (`V6`)** — roles branch-scoped de una membership; reutiliza las definiciones de `roles`; FKs compuestas impiden cross-tenant |
 | Product / Variant | **organización** | Catálogo: tamaños, sabores, precios |
 | Ingredient | **organización** | Insumos del catálogo |
 | Recipe | **organización** | Producto → ingredientes + cantidades |
@@ -67,6 +71,9 @@ operación pasa por `organization_id` (`findByIdAndOrganizationId`).
 - Organization 1—N Branch ✔; Organization 1—N User ✔; Organization 1—N Role ✔
   (`V5`); Organization 1—N Product/Ingredient (futuro).
 - User 1—N RefreshSession ✔; User N—M Role (vía `user_organization_roles`, ✔).
+- Branch 1—N BranchMembership ✔ (`V6`); BranchMembership N—M Role (vía
+  `branch_membership_roles`, ✔ — roles del catálogo de `roles`, sin modelo
+  BranchRole propio).
 - Branch 1—N CashRegister, Branch 1—N Stock (futuro).
 - Product 1—N Variant; Recipe N—M Ingredient (con cantidades) (futuro).
 - Sale 1—N Payment; Sale 1—N SaleLine; Sale N—1 Branch/CashRegister (futuro).
