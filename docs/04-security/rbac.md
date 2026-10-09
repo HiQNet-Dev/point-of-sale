@@ -110,6 +110,7 @@ avala en una sola `EXISTS` (`BranchMembershipRoleRepository`
 | PATCH /organizations/{id}/branches/{branchId}/memberships/{userId} | `branch.membership.update` (org scope) |
 | GET /organizations/{id}/branches/{branchId}/memberships/{userId}/roles | `branch.membership.read` (org scope) |
 | PUT /organizations/{id}/branches/{branchId}/memberships/{userId}/roles | `branch.membership.roles.manage` (org scope) |
+| GET /organizations/{id}/audit-events | `audit.read` (org scope; SOLO lectura) |
 
 ## Inmediatez (mismo JWT)
 

@@ -15,6 +15,7 @@ implementado** hasta que llegue su milestone (ver
 | `users` | Usuarios y permisos | users (identidad + administración por organización), roles, RBAC | **parcial (identidad + administración)** |
 | `rbac` | Roles, permisos y autorización | permissions (catálogo), roles por organización, assignments, method security | **implementado** |
 | `membership` | Memberships por sucursal | branch_memberships, branch_membership_roles, scope branch-scoped, port de acceso | **implementado** |
+| `audit` | Auditoría persistente append-only | audit_events, actor USER/SYSTEM, trigger DB, port transversal | **implementado (Foundation)** |
 | `catalog` | Catálogo comercial | products, variants, precios, ingredientes | **no implementado** |
 | `sales` | Venta y tickets | sales, tickets, líneas, totales | **no implementado** |
 | `payments` | Pagos de la venta | methods, splits, vuelto | **no implementado** |
@@ -57,6 +58,12 @@ com.hiqnet.pos.<modulo>[.domain|.application|.infrastructure|.api]
   implementa el adaptador en `membership.infrastructure` (patrón de inversión
   de dependencia como la revocación de sesiones):
   `membership -> rbac` es la única dirección de compilación, sin ciclo.
+- `audit` usa `domain` (`AuditEvent` inmutable + `AuditEventRepository`
+  restringido: solo `save`/query, sin delete), `infrastructure`
+  (`AuditRecorder`, implementa `shared.audit.AuditPort` resolviendo el actor
+  desde `SecurityContext` + `Clock`), `application` (`AuditQueryService` con
+  Specifications) y `api` (lectura). `shared.audit` solo define el contrato
+  (`AuditPort`, `AuditRecord`, `AuditMetadata`, `AuditException`).
 - Dependencia entre módulos (lectura): `branch` usa
   `OrganizationRepository` de `organization` para validar existencia y
   resolución de timezone; `auth` usa `User`/`UserRepository` de `users` y
@@ -67,6 +74,10 @@ com.hiqnet.pos.<modulo>[.domain|.application|.infrastructure|.api]
   `organization` no conoce a nadie, **`users` nunca depende de `auth`** y
   **`rbac`/`membership` no dependen de `auth`** (auth reacciona a `User.status`; la
   autorización la evalúa `rbac`/`membership` contra PostgreSQL, no el JWT).
+  **Todos los módulos de negocio dependen únicamente de `shared.audit`** (nunca
+  de `audit`); `audit` implementa el port y solo lee de repositorios ajenos
+  para validación de filtros — sin ciclos, sin imports de Spring Security en
+  los services de negocio por causa de auditoría.
 - Compartido actual: `com.hiqnet.pos.shared.config` (`SecurityConfig`,
   `CorsConfig`, `AuthConfig`, `AuthProperties`) y `com.hiqnet.pos.shared.error`.
 
@@ -91,16 +102,19 @@ módulo `users` (identidad **y administración**: `create/get/list paginado/patc
 `AuthController`, JWT, hardening de concurrencia de sesiones y de validación de
 claims/organización), el módulo `rbac` (migración `V5`, catálogo de
 permissions, roles por organización, assignments, `AuthorizationService`
-database-authoritative, `@EnableMethodSecurity`, `expectedVersion`) y el módulo
+database-authoritative, `@EnableMethodSecurity`, `expectedVersion`), el módulo
 `membership` (migración `V6`, `BranchMembership` + `BranchMembershipRole`,
 CRUD de memberships, replace atómico de roles branch-scoped, port
 `BranchMembershipAccessPort` + `hasBranchPermission`, catálogo de permissions
-14→18) y **248
+14→18) y el módulo `audit` (migración `V7`, `audit_events` append-only con
+trigger DB, actor USER/SYSTEM central, port `shared.audit.AuditPort` con
+`MANDATORY`, metadata JSONB segura/acotada, endpoint de lectura con
+`audit.read`, catálogo 18→19) y **299
   tests verdes** (Testcontainers). Las clases de arranque siguen en
 su lugar. La API administrativa (organizations GET/PATCH, branches,
-users, roles, permissions, memberships) está **autorizada por permisos** con
-PostgreSQL como
+users, roles, permissions, memberships, audit-events) está **autorizada por
+permisos** con PostgreSQL como
 autoridad; `POST /organizations` y todo lo no definido permanecen
 **deny-by-default** (véase
-`docs/04-security/security-model.md`, `docs/04-security/rbac.md` y
-`docs/02-database/branch-memberships-model.md`).
+`docs/04-security/security-model.md`, `docs/04-security/rbac.md`,
+`docs/04-security/audit.md` y `docs/02-database/branch-memberships-model.md`).
