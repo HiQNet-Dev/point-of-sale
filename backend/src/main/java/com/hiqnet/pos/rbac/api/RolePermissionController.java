@@ -62,7 +62,7 @@ public class RolePermissionController {
             @PathVariable UUID roleId,
             @Valid @RequestBody PutRolePermissionsRequest request) {
         roleService.get(organizationId, roleId);
-        rolePermissionService.replace(roleId, request.permissions());
+        rolePermissionService.replace(organizationId, roleId, request.permissions());
         return toResponses(rolePermissionService.list(roleId));
     }
 

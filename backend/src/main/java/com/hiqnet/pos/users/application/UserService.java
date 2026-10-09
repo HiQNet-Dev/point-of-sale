@@ -2,11 +2,16 @@ package com.hiqnet.pos.users.application;
 
 import com.hiqnet.pos.organization.domain.Organization;
 import com.hiqnet.pos.organization.domain.OrganizationRepository;
+import com.hiqnet.pos.shared.audit.AuditMetadata;
+import com.hiqnet.pos.shared.audit.AuditPort;
+import com.hiqnet.pos.shared.audit.AuditRecord;
 import com.hiqnet.pos.shared.error.BusinessException;
 import com.hiqnet.pos.shared.error.ErrorCodes;
 import com.hiqnet.pos.users.domain.User;
 import com.hiqnet.pos.users.domain.UserRepository;
 import com.hiqnet.pos.users.domain.UserStatus;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,16 +48,19 @@ public class UserService {
     private final OrganizationRepository organizationRepository;
     private final PasswordEncoder passwordEncoder;
     private final UserSessionRevocationPort sessionRevocationPort;
+    private final AuditPort auditPort;
 
     public UserService(
             UserRepository userRepository,
             OrganizationRepository organizationRepository,
             PasswordEncoder passwordEncoder,
-            UserSessionRevocationPort sessionRevocationPort) {
+            UserSessionRevocationPort sessionRevocationPort,
+            AuditPort auditPort) {
         this.userRepository = userRepository;
         this.organizationRepository = organizationRepository;
         this.passwordEncoder = passwordEncoder;
         this.sessionRevocationPort = sessionRevocationPort;
+        this.auditPort = auditPort;
     }
 
     @Transactional
@@ -73,7 +81,12 @@ public class UserService {
             throw emailAlreadyExists();
         }
         User user = User.create(organizationId, normalizedEmail, passwordEncoder.encode(rawPassword));
-        return userRepository.saveAndFlush(user);
+        User saved = userRepository.saveAndFlush(user);
+        // No password material and no duplicated email: the user is resolvable
+        // by id (privacy: the email is not copied into the audit history).
+        auditPort.record(AuditRecord.of(
+                organizationId, "user.created", "user", saved.getId(), AuditMetadata.empty()));
+        return saved;
     }
 
     @Transactional(readOnly = true)
@@ -105,6 +118,8 @@ public class UserService {
                     ErrorCodes.CONCURRENT_MODIFICATION,
                     "The resource was modified concurrently; retry with fresh data");
         }
+        UserStatus statusBefore = user.getStatus();
+        String emailBefore = user.getEmail();
         if (command.status() != null) {
             boolean wasActive = user.isActive();
             if (command.status() == UserStatus.ACTIVE) {
@@ -137,7 +152,39 @@ public class UserService {
             }
             user.changeEmail(normalizedEmail);
         }
-        return userRepository.saveAndFlush(user);
+        User saved = userRepository.saveAndFlush(user);
+        recordUserUpdate(organizationId, userId, statusBefore, emailBefore, saved, command);
+        return saved;
+    }
+
+    /**
+     * ONE audit event per operation. A real status transition wins over an
+     * email change (deactivate/reactivate are the security-relevant actions);
+     * an idempotent re-send of the same status produces no event.
+     */
+    private void recordUserUpdate(
+            UUID organizationId,
+            UUID userId,
+            UserStatus statusBefore,
+            String emailBefore,
+            User saved,
+            UpdateUserCommand command) {
+        boolean statusChanged = command.status() != null && command.status() != statusBefore;
+        boolean emailChanged = command.email() != null && !saved.getEmail().equals(emailBefore);
+        if (!statusChanged && !emailChanged) {
+            return;
+        }
+        String action;
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        if (statusChanged) {
+            action = command.status() == UserStatus.INACTIVE ? "user.deactivated" : "user.reactivated";
+            metadata.put("fromStatus", statusBefore.name());
+            metadata.put("toStatus", saved.getStatus().name());
+        } else {
+            action = "user.updated";
+            metadata.put("changedFields", java.util.List.of("email"));
+        }
+        auditPort.record(AuditRecord.of(organizationId, action, "user", userId, AuditMetadata.of(metadata)));
     }
 
     private User requireUser(UUID organizationId, UUID userId) {

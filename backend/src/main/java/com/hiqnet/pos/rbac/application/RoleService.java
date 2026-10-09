@@ -4,8 +4,15 @@ import com.hiqnet.pos.organization.domain.OrganizationRepository;
 import com.hiqnet.pos.rbac.domain.Role;
 import com.hiqnet.pos.rbac.domain.RoleRepository;
 import com.hiqnet.pos.rbac.domain.RoleStatus;
+import com.hiqnet.pos.shared.audit.AuditMetadata;
+import com.hiqnet.pos.shared.audit.AuditPort;
+import com.hiqnet.pos.shared.audit.AuditRecord;
 import com.hiqnet.pos.shared.error.BusinessException;
 import com.hiqnet.pos.shared.error.ErrorCodes;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,10 +34,13 @@ public class RoleService {
 
     private final RoleRepository roleRepository;
     private final OrganizationRepository organizationRepository;
+    private final AuditPort auditPort;
 
-    public RoleService(RoleRepository roleRepository, OrganizationRepository organizationRepository) {
+    public RoleService(
+            RoleRepository roleRepository, OrganizationRepository organizationRepository, AuditPort auditPort) {
         this.roleRepository = roleRepository;
         this.organizationRepository = organizationRepository;
+        this.auditPort = auditPort;
     }
 
     @Transactional
@@ -50,6 +60,8 @@ public class RoleService {
                 organizationId,
                 saved.getId(),
                 saved.getCode());
+        auditPort.record(AuditRecord.of(
+                organizationId, "role.created", "role", saved.getId(), AuditMetadata.of("code", saved.getCode())));
         return saved;
     }
 
@@ -75,11 +87,15 @@ public class RoleService {
                     ErrorCodes.CONCURRENT_MODIFICATION,
                     "The resource was modified concurrently; retry with fresh data");
         }
-        if (command.name() != null) {
+        List<String> changedFields = new ArrayList<>();
+        RoleStatus statusBefore = role.getStatus();
+        if (command.name() != null && !command.name().trim().equals(role.getName())) {
             role.updateName(command.name());
+            changedFields.add("name");
         }
-        if (command.status() != null) {
+        if (command.status() != null && command.status() != role.getStatus()) {
             role.updateStatus(command.status());
+            changedFields.add("status");
         }
         Role updated = roleRepository.saveAndFlush(role);
         log.info(
@@ -87,6 +103,16 @@ public class RoleService {
                 organizationId,
                 updated.getId(),
                 updated.getCode());
+        if (!changedFields.isEmpty()) {
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("changedFields", changedFields);
+            if (changedFields.contains("status")) {
+                metadata.put("fromStatus", statusBefore.name());
+                metadata.put("toStatus", updated.getStatus().name());
+            }
+            auditPort.record(AuditRecord.of(
+                    organizationId, "role.updated", "role", roleId, AuditMetadata.of(metadata)));
+        }
         return updated;
     }
 
