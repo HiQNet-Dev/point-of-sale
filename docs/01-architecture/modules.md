@@ -18,9 +18,10 @@ implementado** hasta que llegue su milestone (ver
 | `audit` | Auditoría persistente append-only | audit_events, actor USER/SYSTEM, trigger DB, port transversal | **implementado (Foundation)** |
 | `bootstrap` | Provisión one-shot del primer administrador | installation_bootstrap (singleton), X-Bootstrap-Token, provisioning transaccional auditado | **implementado (Foundation)** |
 | `catalog` | Catálogo comercial | categories, products, modifier groups/options, precios base (organización) | **implementado (Foundation)** |
+| `cashregister` | Cajas físicas (branch-owned) | cash_registers, slug único por branch, scope branch-scoped | **implementado (Foundation)** |
 | `sales` | Venta y tickets | sales, tickets, líneas, totales | **no implementado** |
 | `payments` | Pagos de la venta | methods, splits, vuelto | **no implementado** |
-| `cash` | Cajas y turnos | cash registers, shifts, arqueos | **no implementado** |
+| `cash` | Turnos de caja y arqueos | shifts, arqueos (cash registers viven en `cashregister`) | **no implementado** |
 | `inventory` | Existencias e insumos | stock por branch, ingredients, recipes, mermas | **no implementado** |
 | `purchasing` | Compras | suppliers, órdenes, recepción | **no implementado** |
 | `expenses` | Gastos del negocio | expenses, categorías | **no implementado** |
@@ -83,6 +84,12 @@ com.hiqnet.pos.<modulo>[.domain|.application|.infrastructure|.api]
   `ModifierOptionController`, `ProductModifierGroupController` y DTOs). Sin
   `infrastructure`. Dependencia de lectura única:
   `catalog -> organization` (valida existencia) y `shared`; no conoce `branch`.
+- `cashregister` usa `domain` (`CashRegister`, `CashRegisterStatus` +
+  `CashRegisterRepository` con `JpaSpecificationExecutor`), `application`
+  (`CashRegisterService`, `UpdateCashRegisterCommand`) y `api`
+  (`CashRegisterController` + DTOs). Sin `infrastructure`. Dependencia de lectura:
+  `cashregister -> branch, organization` (valida existencia y deriva el
+  `organization_id` de la branch) y `shared`; el recurso es **branch-owned**.
 - Dependencia entre módulos (lectura): `branch` usa
   `OrganizationRepository` de `organization` para validar existencia y
   resolución de timezone; `auth` usa `User`/`UserRepository` de `users` y
@@ -137,16 +144,21 @@ organización, filtros de producto `?status&categoryId&q`, FK compuesta same-org
 producto→categoría, SKU canónico inmutable, barcode único parcial; y el modelo de
 **modifiers** `V10`: `ModifierGroup`/`ModifierOption` reutilizables + relación
 `ProductModifierGroup` ordenada con FK compuestas same-org y replace atómico
-`product.modifiers.manage`; catálogo 19→25→32) y **453
+`product.modifiers.manage`; catálogo 19→25→32) y el módulo `cashregister`
+(migración `V11`, `CashRegister` **branch-owned**, slug `code` único por branch e
+inmutable, `name` no-blank, `status ACTIVE/INACTIVE`, FK compuesta same-org
+`(branch_id, organization_id) → branches`, autorización branch-scoped
+`cash-register.*`; catálogo 32→35) y **494
   tests verdes** (Testcontainers). Las clases de arranque siguen en
 su lugar. La API administrativa (organizations GET/PATCH, branches,
 users, roles, permissions, memberships, categories, products, modifier-groups,
-modifier-options, product modifier-groups, audit-events) está **autorizada por
+modifier-options, product modifier-groups, cash-registers, audit-events) está **autorizada por
 permisos** con PostgreSQL como
 autoridad; `POST /organizations` y todo lo no definido permanecen
 **deny-by-default** (el provisioning one-shot vive en `POST /api/v1/bootstrap`,
 gated por `BOOTSTRAP_SECRET`; véase
 `docs/04-security/security-model.md`, `docs/04-security/rbac.md`,
 `docs/04-security/audit.md`, `docs/04-security/secure-bootstrap.md`,
-`docs/02-database/catalog-model.md` y
-`docs/02-database/product-modifiers-model.md`).
+`docs/02-database/catalog-model.md`,
+`docs/02-database/product-modifiers-model.md` y
+`docs/02-database/cash-register-model.md`).

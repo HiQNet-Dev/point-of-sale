@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.hiqnet.pos.branch.application.BranchService;
 import com.hiqnet.pos.branch.domain.Branch;
+import com.hiqnet.pos.cashregister.application.CashRegisterService;
+import com.hiqnet.pos.cashregister.domain.CashRegister;
 import com.hiqnet.pos.organization.application.OrganizationService;
 import com.hiqnet.pos.organization.domain.Organization;
 import com.hiqnet.pos.shared.error.BusinessException;
@@ -48,6 +50,9 @@ class DuplicateConstraintDbTest {
     private BranchService branchService;
 
     @Autowired
+    private CashRegisterService cashRegisterService;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @Test
@@ -76,6 +81,23 @@ class DuplicateConstraintDbTest {
                         "INSERT INTO branches (id, organization_id, name, code, timezone, status, version, created_at, updated_at) "
                                 + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         UUID.randomUUID(), organization.getId(), "Otra", existing.getCode(), null,
+                        "ACTIVE", 0, Timestamp.from(Instant.now()), Timestamp.from(Instant.now())));
+
+        assertInstanceOf(DataIntegrityViolationException.class, violation);
+    }
+
+    @Test
+    void cashRegisterBranchCodeConstraintIsEnforcedByTheDatabase() {
+        Organization organization = organizationService.create("Org", "constraint-register-org", "UTC", "MXN", "es-MX");
+        Branch branch = branchService.create(organization.getId(), "Centro", "centro", null);
+        CashRegister existing = cashRegisterService.create(organization.getId(), branch.getId(), "register-1", "Front");
+
+        DataIntegrityViolationException violation = assertThrows(
+                DataIntegrityViolationException.class,
+                () -> jdbcTemplate.update(
+                        "INSERT INTO cash_registers (id, organization_id, branch_id, code, name, status, version, created_at, updated_at) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        UUID.randomUUID(), organization.getId(), branch.getId(), existing.getCode(), "Other",
                         "ACTIVE", 0, Timestamp.from(Instant.now()), Timestamp.from(Instant.now())));
 
         assertInstanceOf(DataIntegrityViolationException.class, violation);

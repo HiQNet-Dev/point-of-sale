@@ -39,6 +39,9 @@ public final class ErrorCodes {
     public static final String MODIFIER_OPTION_NOT_FOUND = "MODIFIER_OPTION_NOT_FOUND";
     public static final String MODIFIER_OPTION_CODE_ALREADY_EXISTS = "MODIFIER_OPTION_CODE_ALREADY_EXISTS";
 
+    public static final String CASH_REGISTER_NOT_FOUND = "CASH_REGISTER_NOT_FOUND";
+    public static final String CASH_REGISTER_CODE_ALREADY_EXISTS = "CASH_REGISTER_CODE_ALREADY_EXISTS";
+
     public static final String USER_NOT_FOUND = "USER_NOT_FOUND";
     public static final String USER_EMAIL_ALREADY_EXISTS = "USER_EMAIL_ALREADY_EXISTS";
     public static final String WEAK_PASSWORD = "WEAK_PASSWORD";

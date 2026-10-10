@@ -29,7 +29,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * (DB_URL/DB_USER/DB_PASSWORD/AUTH_JWT_SECRET) — but NO {@code BOOTSTRAP_SECRET}.
  *
  * <p>Verifies the production posture without external infrastructure: the
- * application starts with Flyway applied (V1-V9), OpenAPI stays closed, the
+ * application starts with Flyway applied (V1-V11), OpenAPI stays closed, the
  * bootstrap route is denied (no secret configured), and health is UP.</p>
  */
 @ActiveProfiles("prod")
@@ -97,7 +97,7 @@ class FoundationProdProfileTest {
         Long organizations = jdbcTemplate.queryForObject("select count(*) from organizations", Long.class);
         assertThat(organizations).isZero();
         Long permissions = jdbcTemplate.queryForObject("select count(*) from permissions", Long.class);
-        assertThat(permissions).isEqualTo(32L);
+        assertThat(permissions).isEqualTo(35L);
         Boolean completed = jdbcTemplate.queryForObject(
                 "select completed_at is not null from installation_bootstrap where id = 1", Boolean.class);
         assertThat(completed).isFalse();

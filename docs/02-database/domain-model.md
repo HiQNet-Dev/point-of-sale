@@ -2,8 +2,9 @@
 
 **Documento vivo.** `Organization`, `Branch`, `User` (identidad +
 administración), `RefreshSession`, RBAC, memberships, auditoría, bootstrap y el
-catálogo (`Category`/`Product` + modifiers) ya están implementados (migraciones
-`V1`–`V10`); el resto de las entidades descritas aquí son futuras.
+catálogo (`Category`/`Product` + modifiers + cash registers) ya están
+implementados (migraciones `V1`–`V11`); el resto de las entidades descritas aquí
+son futuras.
 
 Versión actual: `0.2.0-SNAPSHOT`.
 
@@ -20,7 +21,8 @@ Organization (organización / empresa)  ✔ implementado
  │    └── ProductModifierGroup (producto ↔ grupo, ordenado)  ✔ implementado (V10)
  └── Branch (sucursal)                 ✔ implementado
       ├── BranchMembership (user ↔ branch, con roles branch-scoped)  ✔ implementado (V6)
-      ├── CashRegister (caja)  → Shift (turno) → Sale (venta) → Payment (pago)
+      ├── CashRegister (caja)  ✔ implementado (V11)
+      ├── Shift (turno) → Sale (venta) → Payment (pago)  (futuro)
       ├── Stock (existencias)  ← descuenta por venta, compra y mermas
       └── Inventory (ámbito de inventario de la sucursal)
 ```
@@ -45,11 +47,12 @@ Organization (organización / empresa)  ✔ implementado
 | ModifierGroup | organización | **implementada (`V10`)** — grupo de modifiers reutilizable; `code` slug único por org e inmutable; bounds `min_selections`/`max_selections`; `required`/`singleChoice`/`multipleChoice` **derivados** (no persistidos); `status ACTIVE/INACTIVE`; sin DELETE; ver `docs/02-database/product-modifiers-model.md` |
 | ModifierOption | organización | **implementada (`V10`)** — opción de un grupo; `code` slug inmutable único dentro del grupo; `price_delta NUMERIC(19,4)` **con signo**; `display_order`; `status ACTIVE/INACTIVE`; sin DELETE |
 | ProductModifierGroup | organización | **implementada (`V10`)** — relación N—M producto↔grupo con `display_order`; PK `(product_id, modifier_group_id)`; FKs compuestas same-org; reemplazo atómico ordenado (`product.modifiers.manage`) |
+| CashRegister | sucursal | **implementada (`V11`)** — caja física **branch-owned**; `code` slug único por branch e inmutable; `name` no único; `status ACTIVE/INACTIVE`; FK compuesta same-org `(branch_id, organization_id)`; sin DELETE; ver `docs/02-database/cash-register-model.md` |
+| Shift | sucursal | Turnos y arqueos (futuro) |
 | ProductVariant | organización | tamaños, sabores (futuro) |
 | Ingredient | **organización** | Insumos del catálogo |
 | Recipe | **organización** | Producto → ingredientes + cantidades |
 | Stock | **sucursal** | Existencias por ingrediente/producto en cada branch |
-| CashRegister / Shift | sucursal | Cajas y arqueos |
 | Sale / SaleLine / Payment | sucursal | Dinero siempre en `BigDecimal` |
 | Supplier / PurchaseOrder | organización | Compras (futuro) |
 | Expense | sucursal u organización | Gastos (futuro) |
@@ -85,12 +88,13 @@ operación pasa por `organization_id` (`findByIdAndOrganizationId`).
 - Organization 1—N ModifierGroup ✔ (`V10`); ModifierGroup 1—N ModifierOption ✔
   (`V10`); Product N—M ModifierGroup (vía `product_modifier_groups`, ordenada) ✔
   (`V10`).
+- Branch 1—N CashRegister ✔ (`V11`).
 - User 1—N RefreshSession ✔; User N—M Role (vía `user_organization_roles`, ✔).
 - Branch 1—N BranchMembership ✔ (`V6`); BranchMembership N—M Role (vía
   `branch_membership_roles`, ✔ — roles del catálogo de `roles`, sin modelo
   BranchRole propio).
 - Organization 1—N AuditEvent ✔ (`V7`); Branch 0—N AuditEvent (opcional);
   User 0—N AuditEvent (como actor).
-- Branch 1—N CashRegister, Branch 1—N Stock (futuro).
+- Branch 1—N Stock (futuro).
 - Product 1—N Variant; Recipe N—M Ingredient (con cantidades) (futuro).
-- Sale 1—N Payment; Sale 1—N SaleLine; Sale N—1 Branch/CashRegister (futuro).
+- Sale 1—N Payment; Sale 1—N SaleLine; Sale N—1 Branch / Sale N—1 CashRegister (`V11`) (futuro).
