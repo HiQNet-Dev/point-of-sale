@@ -19,6 +19,7 @@ implementado** hasta que llegue su milestone (ver
 | `bootstrap` | Provisión one-shot del primer administrador | installation_bootstrap (singleton), X-Bootstrap-Token, provisioning transaccional auditado | **implementado (Foundation)** |
 | `catalog` | Catálogo comercial | categories, products, modifier groups/options, precios base (organización) | **implementado (Foundation)** |
 | `cashregister` | Cajas físicas (branch-owned) | cash_registers, slug único por branch, scope branch-scoped | **implementado (Foundation)** |
+| `cashshift` | Turnos de caja (register-owned) | cash_shifts, ciclo OPEN→CLOSED, un turno OPEN por caja (índice único parcial), scope branch-scoped | **implementado (Foundation)** |
 | `sales` | Venta y tickets | sales, tickets, líneas, totales | **no implementado** |
 | `payments` | Pagos de la venta | methods, splits, vuelto | **no implementado** |
 | `cash` | Turnos de caja y arqueos | shifts, arqueos (cash registers viven en `cashregister`) | **no implementado** |
@@ -90,6 +91,12 @@ com.hiqnet.pos.<modulo>[.domain|.application|.infrastructure|.api]
   (`CashRegisterController` + DTOs). Sin `infrastructure`. Dependencia de lectura:
   `cashregister -> branch, organization` (valida existencia y deriva el
   `organization_id` de la branch) y `shared`; el recurso es **branch-owned**.
+- `cashshift` usa `domain` (`CashShift`, `CashShiftStatus` + `CashShiftRepository`
+  con `JpaSpecificationExecutor`), `application` (`CashShiftService`) y `api`
+  (`CashShiftController` + DTOs). Sin `infrastructure`. Dependencia de lectura:
+  `cashshift -> branch, cashregister, organization` (valida existencia y deriva
+  `organization_id`/`branch_id`) y `shared`; el recurso es **register-owned**
+  (branch-scoped).
 - Dependencia entre módulos (lectura): `branch` usa
   `OrganizationRepository` de `organization` para validar existencia y
   resolución de timezone; `auth` usa `User`/`UserRepository` de `users` y
@@ -148,11 +155,15 @@ producto→categoría, SKU canónico inmutable, barcode único parcial; y el mod
 (migración `V11`, `CashRegister` **branch-owned**, slug `code` único por branch e
 inmutable, `name` no-blank, `status ACTIVE/INACTIVE`, FK compuesta same-org
 `(branch_id, organization_id) → branches`, autorización branch-scoped
-`cash-register.*`; catálogo 32→35) y **494
-  tests verdes** (Testcontainers). Las clases de arranque siguen en
+`cash-register.*`; catálogo 32→35) y el módulo `cashshift` (migración `V12`,
+`CashShift` **register-owned**, ciclo `OPEN → CLOSED`, actores y timestamps
+derivados del servidor, montos declarados `NUMERIC(19,4)`, un solo turno `OPEN`
+por caja vía índice único parcial, FKs compuestas same-org/same-branch,
+autorización branch-scoped `cash-shift.*`, auditoría append-only en open/close;
+catálogo 35→38) y **544 tests verdes** (Testcontainers). Las clases de arranque siguen en
 su lugar. La API administrativa (organizations GET/PATCH, branches,
 users, roles, permissions, memberships, categories, products, modifier-groups,
-modifier-options, product modifier-groups, cash-registers, audit-events) está **autorizada por
+modifier-options, product modifier-groups, cash-registers, cash-shifts, audit-events) está **autorizada por
 permisos** con PostgreSQL como
 autoridad; `POST /organizations` y todo lo no definido permanecen
 **deny-by-default** (el provisioning one-shot vive en `POST /api/v1/bootstrap`,
@@ -161,4 +172,5 @@ gated por `BOOTSTRAP_SECRET`; véase
 `docs/04-security/audit.md`, `docs/04-security/secure-bootstrap.md`,
 `docs/02-database/catalog-model.md`,
 `docs/02-database/product-modifiers-model.md` y
-`docs/02-database/cash-register-model.md`).
+`docs/02-database/cash-register-model.md` y
+`docs/02-database/cash-shift-model.md`).

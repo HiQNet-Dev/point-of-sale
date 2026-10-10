@@ -89,6 +89,11 @@ GET   /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers 
 GET   /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}
 PATCH /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}
 
+POST  /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}/cash-shifts
+GET   /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}/cash-shifts   (paginado, ?page&size&status)
+GET   /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}/cash-shifts/{cashShiftId}
+POST  /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}/cash-shifts/{cashShiftId}/close
+
 GET   /api/v1/organizations/{organizationId}/audit-events  (audit.read; SOLO lectura)
 
 POST  /api/v1/bootstrap   (ONE-SHOT provisioning; X-Bootstrap-Token; NO Bearer)
@@ -299,6 +304,34 @@ promovida a org-scope. Sin DELETE: `PUT`/`DELETE` no se implementan y caen en
   `CONCURRENT_MODIFICATION`; `PATCH` sin cambios efectivos es **no-op** (sin
   mutación, sin bump de versión, sin auditoría).
 
+## Cash Shifts (turnos de caja)
+
+Turnos **register-owned**, anidados bajo una cash register de una branch.
+Autorización branch-scoped (`cash-shift.read` / `cash-shift.open` /
+`cash-shift.close` con `hasBranchPermission`: org-wide **o** membership ACTIVE de
+esa branch). Sin DELETE/PUT/PATCH: caen en `denyAll()`. Cerrar exige
+`cash-shift.close` (no `cash-shift.open`). Detalle de modelo:
+`docs/02-database/cash-shift-model.md`.
+
+- **POST /cash-registers/{cashRegisterId}/cash-shifts** (open): body
+  `{openingAmount}`; la caja (y su branch) deben existir y estar `ACTIVE`; los
+  actores y timestamps los fija el servidor. Caja/branch de otra org o
+  inexistente → 404; caja `INACTIVE` → 409 `CASH_REGISTER_INACTIVE`; branch
+  `INACTIVE` → 409 `BRANCH_INACTIVE`; ya existe un turno `OPEN` → 409
+  `CASH_REGISTER_ALREADY_HAS_OPEN_SHIFT`; `openingAmount` negativo o con más de 4
+  decimales → 400 `VALIDATION_ERROR`.
+- **GET /cash-registers/{cashRegisterId}/cash-shifts**: `PageResponse` (`?page`(0)
+  `?size`(20, máx 100) `?status` — `OPEN`/`CLOSED`); orden `openedAt DESC, id
+  DESC`.
+- **GET /cash-shifts/{cashShiftId}**: turno scoped por
+  org+branch+caja+turno (`CASH_SHIFT_NOT_FOUND` si no coincide).
+- **POST /cash-shifts/{cashShiftId}/close**: body
+  `{expectedVersion, declaredCashAmount}`; cierra un turno `OPEN`. Ya cerrado →
+  409 `CASH_SHIFT_ALREADY_CLOSED`; mismatch de versión → 409
+  `CONCURRENT_MODIFICATION`; `declaredCashAmount` negativo o con más de 4
+  decimales → 400 `VALIDATION_ERROR`. El cierre funciona aunque la caja/branch se
+  hayan vuelto `INACTIVE`.
+
 ## POST /organizations permanece cerrado
 
 `POST /api/v1/organizations` NO tiene permiso (`organization.create` no existe)
@@ -353,7 +386,7 @@ Códigos estables:
 | `BOOTSTRAP_INVALID_TOKEN` | 401 | Bootstrap: token ausente/inválido/Base64 malformado, o bootstrap deshabilitado (siempre genérico) |
 | `BOOTSTRAP_ALREADY_COMPLETED` | 409 | Bootstrap: instalación ya provisionada |
 | `BOOTSTRAP_NOT_ALLOWED` | 409 | Bootstrap: instalación no pristina (organizations existentes) |
-| (`audit.read`) | 403 | Permiso organization-wide del catálogo (35 códigos desde `V11`) para leer el audit log |
+| (`audit.read`) | 403 | Permiso organization-wide del catálogo (38 códigos desde `V12`) para leer el audit log |
 | `RESOURCE_NOT_FOUND` | 404 | Ruta sin mapping |
 | `ORGANIZATION_CODE_ALREADY_EXISTS` | 409 | Code de organización duplicado (global) |
 | `BRANCH_CODE_ALREADY_EXISTS` | 409 | Code de branch duplicado en la organización |

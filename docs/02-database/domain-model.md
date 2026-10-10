@@ -2,8 +2,8 @@
 
 **Documento vivo.** `Organization`, `Branch`, `User` (identidad +
 administración), `RefreshSession`, RBAC, memberships, auditoría, bootstrap y el
-catálogo (`Category`/`Product` + modifiers + cash registers) ya están
-implementados (migraciones `V1`–`V11`); el resto de las entidades descritas aquí
+catálogo (`Category`/`Product` + modifiers + cash registers + cash shifts) ya están
+implementados (migraciones `V1`–`V12`); el resto de las entidades descritas aquí
 son futuras.
 
 Versión actual: `0.2.0-SNAPSHOT`.
@@ -22,7 +22,8 @@ Organization (organización / empresa)  ✔ implementado
  └── Branch (sucursal)                 ✔ implementado
       ├── BranchMembership (user ↔ branch, con roles branch-scoped)  ✔ implementado (V6)
       ├── CashRegister (caja)  ✔ implementado (V11)
-      ├── Shift (turno) → Sale (venta) → Payment (pago)  (futuro)
+      │    └── CashShift (turno de caja)  ✔ implementado (V12)
+      ├── Sale (venta) → Payment (pago)  (futuro)
       ├── Stock (existencias)  ← descuenta por venta, compra y mermas
       └── Inventory (ámbito de inventario de la sucursal)
 ```
@@ -48,7 +49,7 @@ Organization (organización / empresa)  ✔ implementado
 | ModifierOption | organización | **implementada (`V10`)** — opción de un grupo; `code` slug inmutable único dentro del grupo; `price_delta NUMERIC(19,4)` **con signo**; `display_order`; `status ACTIVE/INACTIVE`; sin DELETE |
 | ProductModifierGroup | organización | **implementada (`V10`)** — relación N—M producto↔grupo con `display_order`; PK `(product_id, modifier_group_id)`; FKs compuestas same-org; reemplazo atómico ordenado (`product.modifiers.manage`) |
 | CashRegister | sucursal | **implementada (`V11`)** — caja física **branch-owned**; `code` slug único por branch e inmutable; `name` no único; `status ACTIVE/INACTIVE`; FK compuesta same-org `(branch_id, organization_id)`; sin DELETE; ver `docs/02-database/cash-register-model.md` |
-| Shift | sucursal | Turnos y arqueos (futuro) |
+| CashShift | sucursal/caja | **implementada (`V12`)** — turno **register-owned**; ciclo `OPEN → CLOSED`, actores/timestamps del servidor, montos declarados `NUMERIC(19,4)` no negativos, un solo `OPEN` por caja (índice único parcial), FKs compuestas same-org/same-branch; sin DELETE; ver `docs/02-database/cash-shift-model.md` |
 | ProductVariant | organización | tamaños, sabores (futuro) |
 | Ingredient | **organización** | Insumos del catálogo |
 | Recipe | **organización** | Producto → ingredientes + cantidades |
@@ -88,7 +89,7 @@ operación pasa por `organization_id` (`findByIdAndOrganizationId`).
 - Organization 1—N ModifierGroup ✔ (`V10`); ModifierGroup 1—N ModifierOption ✔
   (`V10`); Product N—M ModifierGroup (vía `product_modifier_groups`, ordenada) ✔
   (`V10`).
-- Branch 1—N CashRegister ✔ (`V11`).
+- Branch 1—N CashRegister ✔ (`V11`); CashRegister 1—N CashShift ✔ (`V12`).
 - User 1—N RefreshSession ✔; User N—M Role (vía `user_organization_roles`, ✔).
 - Branch 1—N BranchMembership ✔ (`V6`); BranchMembership N—M Role (vía
   `branch_membership_roles`, ✔ — roles del catálogo de `roles`, sin modelo
