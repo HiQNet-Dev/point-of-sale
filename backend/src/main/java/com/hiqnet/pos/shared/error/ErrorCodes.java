@@ -34,6 +34,11 @@ public final class ErrorCodes {
     public static final String PRODUCT_SKU_ALREADY_EXISTS = "PRODUCT_SKU_ALREADY_EXISTS";
     public static final String PRODUCT_BARCODE_ALREADY_EXISTS = "PRODUCT_BARCODE_ALREADY_EXISTS";
 
+    public static final String MODIFIER_GROUP_NOT_FOUND = "MODIFIER_GROUP_NOT_FOUND";
+    public static final String MODIFIER_GROUP_CODE_ALREADY_EXISTS = "MODIFIER_GROUP_CODE_ALREADY_EXISTS";
+    public static final String MODIFIER_OPTION_NOT_FOUND = "MODIFIER_OPTION_NOT_FOUND";
+    public static final String MODIFIER_OPTION_CODE_ALREADY_EXISTS = "MODIFIER_OPTION_CODE_ALREADY_EXISTS";
+
     public static final String USER_NOT_FOUND = "USER_NOT_FOUND";
     public static final String USER_EMAIL_ALREADY_EXISTS = "USER_EMAIL_ALREADY_EXISTS";
     public static final String WEAK_PASSWORD = "WEAK_PASSWORD";
