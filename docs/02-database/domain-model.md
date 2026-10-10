@@ -2,8 +2,8 @@
 
 **Documento vivo.** `Organization`, `Branch`, `User` (identidad +
 administración), `RefreshSession`, RBAC, memberships, auditoría, bootstrap y el
-catálogo (`Category`/`Product`) ya están implementados (migraciones `V1`–`V9`);
-el resto de las entidades descritas aquí son futuras.
+catálogo (`Category`/`Product` + modifiers) ya están implementados (migraciones
+`V1`–`V10`); el resto de las entidades descritas aquí son futuras.
 
 Versión actual: `0.2.0-SNAPSHOT`.
 
@@ -16,6 +16,8 @@ Organization (organización / empresa)  ✔ implementado
  ├── Role / RolePermission / UserOrganizationRole   ✔ implementado (V5)
  ├── AuditEvent (historial append-only)  ✔ implementado (V7)
  ├── Category / Product (catálogo)     ✔ implementado (V9)
+ ├── ModifierGroup / ModifierOption (modifiers)  ✔ implementado (V10)
+ │    └── ProductModifierGroup (producto ↔ grupo, ordenado)  ✔ implementado (V10)
  └── Branch (sucursal)                 ✔ implementado
       ├── BranchMembership (user ↔ branch, con roles branch-scoped)  ✔ implementado (V6)
       ├── CashRegister (caja)  → Shift (turno) → Sale (venta) → Payment (pago)
@@ -40,6 +42,9 @@ Organization (organización / empresa)  ✔ implementado
 | AuditEvent | organización | **implementada (`V7`)** — historial append-only de mutaciones administrativas; trigger DB impide UPDATE/DELETE; actor USER/SYSTEM con FKs compuestas same-org; metadata JSONB acotada (≤16 KiB); ver `docs/02-database/audit-model.md` |
 | Category | organización | **implementada (`V9`)** — agrupador de catálogo; `code` slug único por org e inmutable; `status ACTIVE/INACTIVE`; sin DELETE; ver `docs/02-database/catalog-model.md` |
 | Product | organización | **implementada (`V9`)** — `sku` canónico (MAYÚSCULAS) inmutable y único por org, `barcode` opcional único cuando está presente, `unit_price NUMERIC(19,4)` (moneda heredada de la org), `category_id` opcional same-org; sin DELETE; ver `docs/02-database/catalog-model.md` |
+| ModifierGroup | organización | **implementada (`V10`)** — grupo de modifiers reutilizable; `code` slug único por org e inmutable; bounds `min_selections`/`max_selections`; `required`/`singleChoice`/`multipleChoice` **derivados** (no persistidos); `status ACTIVE/INACTIVE`; sin DELETE; ver `docs/02-database/product-modifiers-model.md` |
+| ModifierOption | organización | **implementada (`V10`)** — opción de un grupo; `code` slug inmutable único dentro del grupo; `price_delta NUMERIC(19,4)` **con signo**; `display_order`; `status ACTIVE/INACTIVE`; sin DELETE |
+| ProductModifierGroup | organización | **implementada (`V10`)** — relación N—M producto↔grupo con `display_order`; PK `(product_id, modifier_group_id)`; FKs compuestas same-org; reemplazo atómico ordenado (`product.modifiers.manage`) |
 | ProductVariant | organización | tamaños, sabores (futuro) |
 | Ingredient | **organización** | Insumos del catálogo |
 | Recipe | **organización** | Producto → ingredientes + cantidades |
@@ -77,6 +82,9 @@ operación pasa por `organization_id` (`findByIdAndOrganizationId`).
 - Organization 1—N Branch ✔; Organization 1—N User ✔; Organization 1—N Role ✔
   (`V5`); Organization 1—N Category/Product ✔ (`V9`); Organization 1—N
   Ingredient (futuro). Category 1—N Product (opcional) ✔ (`V9`).
+- Organization 1—N ModifierGroup ✔ (`V10`); ModifierGroup 1—N ModifierOption ✔
+  (`V10`); Product N—M ModifierGroup (vía `product_modifier_groups`, ordenada) ✔
+  (`V10`).
 - User 1—N RefreshSession ✔; User N—M Role (vía `user_organization_roles`, ✔).
 - Branch 1—N BranchMembership ✔ (`V6`); BranchMembership N—M Role (vía
   `branch_membership_roles`, ✔ — roles del catálogo de `roles`, sin modelo

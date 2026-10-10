@@ -14,6 +14,13 @@ Development for v0.2.x has started.
   organization) and optional same-organization category assignment (`V9`).
 - Added the `category.*` and `product.*` permissions (permission catalog
   19 → 25).
+- Added the Product Modifiers foundation: organization-owned, reusable
+  Modifier Groups and Modifier Options (immutable slug `code`, signed
+  `priceDelta`, derived required/single-/multiple-choice selection bounds) and
+  an ordered Product ↔ Modifier Group assignment with atomic replacement à la
+  `expectedVersion` of the product (`V10`).
+- Added the `modifier.group.*`, `modifier.option.*` and
+  `product.modifiers.manage` permissions (permission catalog 25 → 32).
 
 ## [0.1.0] - 2026-10-10
 

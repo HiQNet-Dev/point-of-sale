@@ -17,7 +17,7 @@ implementado** hasta que llegue su milestone (ver
 | `membership` | Memberships por sucursal | branch_memberships, branch_membership_roles, scope branch-scoped, port de acceso | **implementado** |
 | `audit` | Auditoría persistente append-only | audit_events, actor USER/SYSTEM, trigger DB, port transversal | **implementado (Foundation)** |
 | `bootstrap` | Provisión one-shot del primer administrador | installation_bootstrap (singleton), X-Bootstrap-Token, provisioning transaccional auditado | **implementado (Foundation)** |
-| `catalog` | Catálogo comercial | categories, products, precios base (organización) | **implementado (Foundation)** |
+| `catalog` | Catálogo comercial | categories, products, modifier groups/options, precios base (organización) | **implementado (Foundation)** |
 | `sales` | Venta y tickets | sales, tickets, líneas, totales | **no implementado** |
 | `payments` | Pagos de la venta | methods, splits, vuelto | **no implementado** |
 | `cash` | Cajas y turnos | cash registers, shifts, arqueos | **no implementado** |
@@ -74,11 +74,14 @@ com.hiqnet.pos.<modulo>[.domain|.application|.infrastructure|.api]
   evitar `shared -> bootstrap`; la dirección es única:
   `bootstrap -> shared, organization, users, rbac` — ningún módulo
   fundacional depende de `bootstrap`.
-- `catalog` usa `domain` (`Category`, `Product`, `CategoryStatus`,
-  `ProductStatus` + repositorios Spring Data; `ProductRepository` con
-  `JpaSpecificationExecutor`), `application` (`CategoryService`,
-  `ProductService`, commands) y `api` (`CategoryController`, `ProductController`
-  y DTOs). Sin `infrastructure`. Dependencia de lectura única:
+- `catalog` usa `domain` (`Category`, `Product`, `ModifierGroup`,
+  `ModifierOption`, `ProductModifierGroup`, sus enums + repositorios Spring Data;
+  `ProductRepository`/`ModifierGroupRepository` con `JpaSpecificationExecutor`),
+  `application` (`CategoryService`, `ProductService`, `ModifierGroupService`,
+  `ModifierOptionService`, `ProductModifierService`, commands) y `api`
+  (`CategoryController`, `ProductController`, `ModifierGroupController`,
+  `ModifierOptionController`, `ProductModifierGroupController` y DTOs). Sin
+  `infrastructure`. Dependencia de lectura única:
   `catalog -> organization` (valida existencia) y `shared`; no conoce `branch`.
 - Dependencia entre módulos (lectura): `branch` usa
   `OrganizationRepository` de `organization` para validar existencia y
@@ -128,17 +131,22 @@ trigger DB, actor USER/SYSTEM central, port `shared.audit.AuditPort` con
 `audit.read`, catálogo 18→19), el módulo `bootstrap` (migración `V8`,
 `installation_bootstrap` singleton con lock pesimista, guard `X-Bootstrap-Token`
 constant-time en `shared.config`, provisioning one-shot transaccional y
-auditado con actor SYSTEM) y el módulo `catalog` (migración `V9`, `Category` +
-`Product` organization-owned, `POST/GET/PATCH` scoped por organización, filtros
-de producto `?status&categoryId&q`, FK compuesta same-org producto→categoría,
-SKU canónico inmutable, barcode único parcial, catálogo 19→25) y **397
+auditado con actor SYSTEM) y el módulo `catalog` (migraciones `V9`/`V10`,
+`Category` + `Product` organization-owned, `POST/GET/PATCH` scoped por
+organización, filtros de producto `?status&categoryId&q`, FK compuesta same-org
+producto→categoría, SKU canónico inmutable, barcode único parcial; y el modelo de
+**modifiers** `V10`: `ModifierGroup`/`ModifierOption` reutilizables + relación
+`ProductModifierGroup` ordenada con FK compuestas same-org y replace atómico
+`product.modifiers.manage`; catálogo 19→25→32) y **453
   tests verdes** (Testcontainers). Las clases de arranque siguen en
 su lugar. La API administrativa (organizations GET/PATCH, branches,
-users, roles, permissions, memberships, categories, products, audit-events) está **autorizada por
+users, roles, permissions, memberships, categories, products, modifier-groups,
+modifier-options, product modifier-groups, audit-events) está **autorizada por
 permisos** con PostgreSQL como
 autoridad; `POST /organizations` y todo lo no definido permanecen
 **deny-by-default** (el provisioning one-shot vive en `POST /api/v1/bootstrap`,
 gated por `BOOTSTRAP_SECRET`; véase
 `docs/04-security/security-model.md`, `docs/04-security/rbac.md`,
-`docs/04-security/audit.md`, `docs/04-security/secure-bootstrap.md` y
-`docs/02-database/branch-memberships-model.md`).
+`docs/04-security/audit.md`, `docs/04-security/secure-bootstrap.md`,
+`docs/02-database/catalog-model.md` y
+`docs/02-database/product-modifiers-model.md`).

@@ -3,8 +3,8 @@
 **Estado:** existen los primeros endpoints de negocio
 (Organization + Branch, `/api/v1`), la autenticación (`auth`, `/api/v1/auth`),
 la **administración de usuarios**, la **administración de roles/permisos**
-(`rbac`) y el **catálogo** (`catalog`: categorías y productos), todas scoped por
-organización. Desde RBAC la API administrativa está
+(`rbac`) y el **catálogo** (`catalog`: categorías, productos y **modifiers**),
+todas scoped por organización. Desde RBAC la API administrativa está
 **autorizada por permisos** con PostgreSQL como autoridad (JWT = identidad;
 método security con `@PreAuthorize`); `POST /organizations` y todo lo no
 definido siguen **deny-by-default**. Los tests de negocio de los primeros
@@ -62,6 +62,19 @@ POST  /api/v1/organizations/{organizationId}/products
 GET   /api/v1/organizations/{organizationId}/products                (paginado, ?page&size&status&categoryId&q)
 GET   /api/v1/organizations/{organizationId}/products/{productId}
 PATCH /api/v1/organizations/{organizationId}/products/{productId}
+
+POST  /api/v1/organizations/{organizationId}/modifier-groups
+GET   /api/v1/organizations/{organizationId}/modifier-groups          (paginado, ?page&size&status&q)
+GET   /api/v1/organizations/{organizationId}/modifier-groups/{groupId}
+PATCH /api/v1/organizations/{organizationId}/modifier-groups/{groupId}
+
+POST  /api/v1/organizations/{organizationId}/modifier-groups/{groupId}/options
+GET   /api/v1/organizations/{organizationId}/modifier-groups/{groupId}/options          (paginado, ?page&size&status)
+GET   /api/v1/organizations/{organizationId}/modifier-groups/{groupId}/options/{optionId}
+PATCH /api/v1/organizations/{organizationId}/modifier-groups/{groupId}/options/{optionId}
+
+GET   /api/v1/organizations/{organizationId}/products/{productId}/modifier-groups   (product.read)
+PUT   /api/v1/organizations/{organizationId}/products/{productId}/modifier-groups   (product.modifiers.manage)
 
 POST  /api/v1/organizations/{organizationId}/branches/{branchId}/memberships
 GET   /api/v1/organizations/{organizationId}/branches/{branchId}/memberships     (paginado, ?page&size&status)
@@ -160,7 +173,8 @@ membership ACTIVE de ESA branch (Branch ACTIVE incluido en la query).
 ## Optimistic concurrency HTTP (expectedVersion)
 
 Desde RBAC, todo PATCH administrativo (Organization, Branch, User, Role,
-**Membership**) exige:
+**Membership**, Category, Product, **ModifierGroup**, **ModifierOption**) y el
+`PUT` de reemplazo producto↔modifier-group exige:
 
 ```json
 { "expectedVersion": 3, "name": "Nuevo nombre" }
@@ -218,6 +232,43 @@ Catálogo organization-scoped (`category.*` / `product.*`; `hasPermission`, no
 - **PATCH /products/{productId}**: campos opcionales + `expectedVersion`;
   `categoryId` tri-estado (omitir/null/valor); `sku` inmutable.
 
+## Product Modifiers (grupos, opciones y asignación)
+
+Modifiers organization-scoped (`modifier.group.*` / `modifier.option.*`; la
+asignación producto↔grupo usa `product.read` y `product.modifiers.manage`).
+`hasPermission`, no `hasBranchPermission`. Sin DELETE: `PUT`/`DELETE` no se
+implementan y caen en `denyAll()`. Detalle de modelo:
+`docs/02-database/product-modifiers-model.md`.
+
+- **POST /modifier-groups**: crea (`code` slug único por org, inmutable; `name`;
+  `minSelections` ≥0 / `maxSelections` ≥1 opcionales, default 0/1, con
+  `minSelections ≤ maxSelections`). Duplicado → 409
+  `MODIFIER_GROUP_CODE_ALREADY_EXISTS`; bounds inválidos o slug inválido → 400
+  `VALIDATION_ERROR`. La respuesta incluye los derivados `required`,
+  `singleChoice`, `multipleChoice`.
+- **GET /modifier-groups**: `PageResponse` (`?page`(0) `?size`(20, máx 100)
+  `?status` `?q` — `q` busca en `name`/`code`); orden `name ASC, id ASC`.
+- **GET /modifier-groups/{groupId}** y **PATCH**: `expectedVersion` requerido;
+  `code` inmutable.
+- **POST /modifier-groups/{groupId}/options**: crea dentro del grupo
+  (`code` slug inmutable único **dentro del grupo**; `name`; `priceDelta`
+  `NUMERIC(19,4)` **con signo**; `displayOrder` ≥0). Grupo inexistente o de otra
+  org → 404 `MODIFIER_GROUP_NOT_FOUND`; duplicado en el grupo → 409
+  `MODIFIER_OPTION_CODE_ALREADY_EXISTS`.
+- **GET /modifier-groups/{groupId}/options**: `PageResponse` (`?status`); orden
+  `displayOrder ASC, id ASC`.
+- **GET/PATCH /modifier-groups/{groupId}/options/{optionId}**: `expectedVersion`
+  requerido; `code` inmutable.
+- **GET /products/{productId}/modifier-groups**: lista ordenada (`displayOrder`)
+  de grupos asignados; requiere `product.read`.
+- **PUT /products/{productId}/modifier-groups**: **reemplazo atómico** completo
+  del set ordenado (`modifierGroupIds`; la posición es el `displayOrder`). `[]`
+  limpia; duplicados → 400 `VALIDATION_ERROR`; grupo inexistente o de otra org →
+  404 `MODIFIER_GROUP_NOT_FOUND`. `expectedVersion` del PRODUCTO es la frontera
+  de concurrencia (mismatch → 409 `CONCURRENT_MODIFICATION`); una lista idéntica
+  es **no-op** (sin mutación, sin bump de versión, sin auditoría). Requiere
+  `product.modifiers.manage`.
+
 ## POST /organizations permanece cerrado
 
 `POST /api/v1/organizations` NO tiene permiso (`organization.create` no existe)
@@ -272,7 +323,7 @@ Códigos estables:
 | `BOOTSTRAP_INVALID_TOKEN` | 401 | Bootstrap: token ausente/inválido/Base64 malformado, o bootstrap deshabilitado (siempre genérico) |
 | `BOOTSTRAP_ALREADY_COMPLETED` | 409 | Bootstrap: instalación ya provisionada |
 | `BOOTSTRAP_NOT_ALLOWED` | 409 | Bootstrap: instalación no pristina (organizations existentes) |
-| (`audit.read`) | 403 | Permiso organization-wide del catálogo (25 códigos desde `V9`) para leer el audit log |
+| (`audit.read`) | 403 | Permiso organization-wide del catálogo (32 códigos desde `V10`) para leer el audit log |
 | `RESOURCE_NOT_FOUND` | 404 | Ruta sin mapping |
 | `ORGANIZATION_CODE_ALREADY_EXISTS` | 409 | Code de organización duplicado (global) |
 | `BRANCH_CODE_ALREADY_EXISTS` | 409 | Code de branch duplicado en la organización |
@@ -282,6 +333,10 @@ Códigos estables:
 | `PRODUCT_NOT_FOUND` | 404 | Producto inexistente (o de otra organización) |
 | `PRODUCT_SKU_ALREADY_EXISTS` | 409 | `sku` duplicado dentro de la organización |
 | `PRODUCT_BARCODE_ALREADY_EXISTS` | 409 | `barcode` duplicado dentro de la organización |
+| `MODIFIER_GROUP_NOT_FOUND` | 404 | Grupo de modifiers inexistente (o de otra organización) |
+| `MODIFIER_GROUP_CODE_ALREADY_EXISTS` | 409 | `code` de grupo duplicado dentro de la organización |
+| `MODIFIER_OPTION_NOT_FOUND` | 404 | Opción inexistente (o de otro grupo/organización) |
+| `MODIFIER_OPTION_CODE_ALREADY_EXISTS` | 409 | `code` de opción duplicado dentro del grupo |
 | `CONCURRENT_MODIFICATION` | 409 | Falló optimistic locking |
 | `INTERNAL_ERROR` | 500 | Error inesperado |
 
@@ -301,10 +356,12 @@ Nunca se exponen stack traces, mensajes SQL ni detalles internos.
 
 Toda operación sobre un recurso scoped exige `organization_id`: un
 `GET /organizations/{A}/branches/{B1}`, `GET /organizations/{A}/users/{U1}`,
-`GET /organizations/{A}/roles/{R1}`, `GET /organizations/{A}/categories/{C1}` o
-`GET /organizations/{A}/products/{P1}` donde el recurso pertenece a otra
+`GET /organizations/{A}/roles/{R1}`, `GET /organizations/{A}/categories/{C1}`,
+`GET /organizations/{A}/products/{P1}` o
+`GET /organizations/{A}/modifier-groups/{G1}` donde el recurso pertenece a otra
 organización responde **404** (`BRANCH_NOT_FOUND` / `USER_NOT_FOUND` /
-`ROLE_NOT_FOUND` / `CATEGORY_NOT_FOUND` / `PRODUCT_NOT_FOUND`), nunca 200.
+`ROLE_NOT_FOUND` / `CATEGORY_NOT_FOUND` / `PRODUCT_NOT_FOUND` /
+`MODIFIER_GROUP_NOT_FOUND`), nunca 200.
 Distinción de capas con RBAC:
 
 - **Frontera de autorización** (sin permiso, identidad/org no operativa, otra
@@ -341,8 +398,9 @@ Convención estable desde la administración de usuarios (`shared.api.PageRespon
 ## Otros
 
 - **Optimistic concurrency HTTP**: resuelto como contrato `expectedVersion` en
-  Organization + Branch + User + Role + Membership + Category + Product (sin
-  ETag/If-Match por ahora;
+  Organization + Branch + User + Role + Membership + Category + Product +
+  ModifierGroup + ModifierOption + el reemplazo de modifier-groups de un producto
+  (sin ETag/If-Match por ahora;
   revisar antes de abrir las APIs administrativas en producción).
 - **SCOPES**: `hasOrganizationPermission` (organization-wide) vs
   `hasBranchPermission` (org-wide UNION membership branch-scoped) —

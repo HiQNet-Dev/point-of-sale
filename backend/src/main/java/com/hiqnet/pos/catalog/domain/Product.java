@@ -207,6 +207,17 @@ public class Product {
         }
     }
 
+    /**
+     * Marks the product's modifier-group configuration as changed. The product is
+     * the concurrency boundary of its modifier configuration: touching the
+     * entity makes it dirty so the JPA {@code @Version} increments on flush (no
+     * separate configuration-version column). Called only after a real (non
+     * no-op) replacement of {@code product_modifier_groups}.
+     */
+    public void markConfigurationChanged(Instant when) {
+        this.updatedAt = when;
+    }
+
     private static String normalizeOptional(String value) {
         if (value == null || value.trim().isEmpty()) {
             return null;
