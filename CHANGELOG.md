@@ -2,6 +2,12 @@
 
 All notable changes to HiQNet POS are documented in this file.
 
+## [Unreleased]
+
+### POS Core
+
+Development for v0.2.x has started.
+
 ## [0.1.0] - 2026-10-10
 
 ### Foundation

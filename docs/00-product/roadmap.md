@@ -3,14 +3,14 @@
 **Orientación, no contrato.** Los hitos y fechas pueden cambiar según aprendizajes.
 Ningún milestone posterior al actual está garantizado en contenido ni fecha.
 
-Versión actual: `0.1.0`.
+Versión en desarrollo: `0.2.0-SNAPSHOT`. Último milestone liberado: `v0.1.0` Foundation.
 
 ## Hitos
 
 | Milestone | Contenido (futuro salvo indicación) | Estado |
 | --- | --- | --- |
 | **v0.1.x Foundation** | Estructura backend + frontend, config, seguridad base, documentación, **Organization + Branch (implementado)**, **Authentication (implementado)**, **Users administration (implementado)**, **Roles/Permissions/RBAC (implementado)**, **Branch Memberships (implementado)**, **Audit Foundation (implementado)**, **Secure Admin Bootstrap (implementado)**, **Foundation Hardening**, **estado legal propietario** | **RELEASED — `v0.1.0` (2026-10-10, release técnica privada)** |
-| v0.2.x POS Core | Catálogo, cajas, turnos, ventas, pagos, tickets | Futuro / pendiente |
+| v0.2.x POS Core | Catálogo, cajas, turnos, ventas, pagos, tickets | **IN DEVELOPMENT** |
 | v0.3.x Inventory | Ingredientes, recetas, existencias por sucursal | Futuro / pendiente |
 | v0.4.x Purchasing | Proveedores, órdenes de compra, recepción | Futuro / pendiente |
 | v0.5.x Expenses & Management | Gastos, mermas/pérdidas, auditoría | Futuro / pendiente |
