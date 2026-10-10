@@ -11,6 +11,10 @@ import com.hiqnet.pos.AbstractRbacIntegrationTest;
 import com.hiqnet.pos.branch.domain.Branch;
 import com.hiqnet.pos.branch.domain.BranchRepository;
 import com.hiqnet.pos.branch.domain.BranchStatus;
+import com.hiqnet.pos.catalog.domain.Category;
+import com.hiqnet.pos.catalog.domain.CategoryRepository;
+import com.hiqnet.pos.catalog.domain.Product;
+import com.hiqnet.pos.catalog.domain.ProductRepository;
 import com.hiqnet.pos.membership.domain.BranchMembership;
 import com.hiqnet.pos.membership.domain.BranchMembershipRepository;
 import com.hiqnet.pos.membership.domain.BranchMembershipRole;
@@ -23,6 +27,7 @@ import com.hiqnet.pos.rbac.domain.Role;
 import com.hiqnet.pos.rbac.domain.RoleRepository;
 import com.hiqnet.pos.rbac.domain.RoleStatus;
 import com.hiqnet.pos.users.domain.User;
+import java.math.BigDecimal;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,6 +58,12 @@ class BranchAccessAuthorizationIntegrationTest extends AbstractRbacIntegrationTe
 
     @Autowired
     private BranchMembershipRoleRepository membershipRoleRepository;
+
+    @Autowired
+    private CategoryRepository categoryRepository;
+
+    @Autowired
+    private ProductRepository productRepository;
 
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -143,6 +154,47 @@ class BranchAccessAuthorizationIntegrationTest extends AbstractRbacIntegrationTe
         mockMvc.perform(get("/api/v1/organizations/" + fx.orgId() + "/branches")
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void branchScopedRoleNeverEscalatesToOrganizationWideCatalog() throws Exception {
+        RbacFixture fx = fixture();
+        String branchA = createBranch(fx, "suc-a");
+        UUID categoryId = categoryEntity(fx, "bebidas").getId();
+        UUID productId = productEntity(fx, "AGUA").getId();
+        // The branch-scoped role literally contains the organization-scope
+        // catalog permissions: they must NOT authorize the organization-wide
+        // catalog PATCH endpoints. This locks hasPermission(...) against an
+        // accidental refactor to hasBranchPermission(...) for the catalog.
+        UUID role = createRole(
+                fx,
+                "catalog-lead",
+                "Catalog Lead",
+                "branch.read",
+                "category.update",
+                "product.update");
+        UUID membershipA = createMembership(fx, UUID.fromString(branchA));
+        assignMembershipRole(fx, membershipA, role);
+        String token = login(fx); // NO organization-wide role
+
+        // Branch scope works for the own branch...
+        mockMvc.perform(get(branchUrl(fx, branchA)).header("Authorization", bearer(token)))
+                .andExpect(status().isOk());
+
+        // ...but the branch-scoped catalog permissions NEVER reach the
+        // organization-wide catalog endpoints, even for an existing resource.
+        mockMvc.perform(patch(categoryUrl(fx, categoryId))
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"name\":\"Hack\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mockMvc.perform(patch(productUrl(fx, productId))
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"name\":\"Hack\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
     @Test
@@ -284,6 +336,17 @@ class BranchAccessAuthorizationIntegrationTest extends AbstractRbacIntegrationTe
         return branchEntity(fx, code).getId().toString();
     }
 
+    private Category categoryEntity(RbacFixture fx, String code) {
+        Organization organization = organizationRepository.findById(fx.orgId()).orElseThrow();
+        return categoryRepository.saveAndFlush(Category.create(organization, code, "Category " + code));
+    }
+
+    private Product productEntity(RbacFixture fx, String sku) {
+        Organization organization = organizationRepository.findById(fx.orgId()).orElseThrow();
+        return productRepository.saveAndFlush(
+                Product.create(organization, sku, "Product " + sku, new BigDecimal("5.0000")));
+    }
+
     private Branch branchEntity(RbacFixture fx, String code) {
         Organization organization = organizationRepository.findById(fx.orgId()).orElseThrow();
         return branchRepository.saveAndFlush(Branch.create(organization, "Branch " + code, code, null));
@@ -349,6 +412,14 @@ class BranchAccessAuthorizationIntegrationTest extends AbstractRbacIntegrationTe
 
     private static String branchUrl(RbacFixture fx, String branchId) {
         return "/api/v1/organizations/" + fx.orgId() + "/branches/" + branchId;
+    }
+
+    private static String categoryUrl(RbacFixture fx, UUID categoryId) {
+        return "/api/v1/organizations/" + fx.orgId() + "/categories/" + categoryId;
+    }
+
+    private static String productUrl(RbacFixture fx, UUID productId) {
+        return "/api/v1/organizations/" + fx.orgId() + "/products/" + productId;
     }
 
     private static String usersUrl(RbacFixture fx) {
