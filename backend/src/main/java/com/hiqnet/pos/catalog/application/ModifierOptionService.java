@@ -70,12 +70,15 @@ public class ModifierOptionService {
         ModifierOption option =
                 ModifierOption.create(organization, group, normalizedCode, name, priceDelta, displayOrder);
         ModifierOption saved = modifierOptionRepository.save(option);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("code", saved.getCode());
+        metadata.put("modifierGroupId", saved.getModifierGroup().getId().toString());
         auditPort.record(AuditRecord.of(
                 organizationId,
                 "modifier.option.created",
                 "modifier_option",
                 saved.getId(),
-                AuditMetadata.of("code", saved.getCode())));
+                AuditMetadata.of(metadata)));
         return saved;
     }
 
