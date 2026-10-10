@@ -3,12 +3,22 @@ package com.hiqnet.pos.auth.api;
 import com.hiqnet.pos.auth.api.AuthResponses.MeResponse;
 import com.hiqnet.pos.auth.api.AuthResponses.TokenResponse;
 import com.hiqnet.pos.auth.application.AuthService;
+import com.hiqnet.pos.auth.application.SelfBranchService;
+import com.hiqnet.pos.branch.api.BranchResponse;
+import com.hiqnet.pos.branch.domain.Branch;
+import com.hiqnet.pos.branch.domain.BranchStatus;
+import com.hiqnet.pos.shared.api.PageResponse;
+import com.hiqnet.pos.shared.error.BusinessException;
+import com.hiqnet.pos.shared.error.ErrorCodes;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -16,6 +26,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -28,10 +39,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/auth")
 public class AuthController {
 
-    private final AuthService authService;
+    private static final int MAX_PAGE_SIZE = 100;
 
-    public AuthController(AuthService authService) {
+    /** Deterministic order: name ASC, id ASC as tiebreaker. */
+    private static final Sort BRANCH_ORDER = Sort.by(Sort.Order.asc("name"), Sort.Order.asc("id"));
+
+    private final AuthService authService;
+    private final SelfBranchService selfBranchService;
+
+    public AuthController(AuthService authService, SelfBranchService selfBranchService) {
         this.authService = authService;
+        this.selfBranchService = selfBranchService;
     }
 
     @PostMapping("/login")
@@ -93,6 +111,42 @@ public class AuthController {
     @SecurityRequirement(name = "bearerAuth")
     public MeResponse me(@AuthenticationPrincipal Jwt jwt) {
         return authService.me(userIdFrom(jwt));
+    }
+
+    @GetMapping("/me/branches")
+    @Operation(
+            summary = "Branches reachable by the current identity (paginated; filters status, q)",
+            description = "Self-scoped discovery: branches of the user's own organization that the "
+                    + "user is an ACTIVE member of, or every branch when the user holds branch.read "
+                    + "org-wide. Visibility only; it grants no operational authorization.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Visible branches (empty page when none)", content = @Content),
+        @ApiResponse(responseCode = "400", description = "Invalid paging parameters (VALIDATION_ERROR)", content = @Content),
+        @ApiResponse(responseCode = "401", description = "TOKEN_INVALID / TOKEN_EXPIRED / AUTHENTICATION_REQUIRED", content = @Content)
+    })
+    @SecurityRequirement(name = "bearerAuth")
+    public PageResponse<BranchResponse> myBranches(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) BranchStatus status,
+            @RequestParam(required = false) String q) {
+        validatePaging(page, size);
+        Page<Branch> branches =
+                selfBranchService.listMyBranches(userIdFrom(jwt), status, q, PageRequest.of(page, size, BRANCH_ORDER));
+        return PageResponse.from(branches, BranchResponse::from);
+    }
+
+    private static void validatePaging(int page, int size) {
+        if (page < 0) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_ERROR, "page must be >= 0");
+        }
+        if (size < 1 || size > MAX_PAGE_SIZE) {
+            throw new BusinessException(
+                    HttpStatus.BAD_REQUEST,
+                    ErrorCodes.VALIDATION_ERROR,
+                    "size must be between 1 and " + MAX_PAGE_SIZE);
+        }
     }
 
     private static java.util.UUID userIdFrom(Jwt jwt) {

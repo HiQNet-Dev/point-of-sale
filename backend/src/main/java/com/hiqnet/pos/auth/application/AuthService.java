@@ -1,6 +1,7 @@
 package com.hiqnet.pos.auth.application;
 
 import com.hiqnet.pos.auth.api.AuthResponses.MeResponse;
+import com.hiqnet.pos.auth.api.AuthResponses.OrganizationContext;
 import com.hiqnet.pos.auth.api.AuthResponses.TokenResponse;
 import com.hiqnet.pos.auth.domain.RefreshSession;
 import com.hiqnet.pos.auth.domain.RefreshSessionRepository;
@@ -239,10 +240,18 @@ public class AuthService {
     @Transactional(readOnly = true)
     public MeResponse me(UUID userId) {
         User user = userRepository.findById(userId).orElseThrow(AuthService::invalidTokenIdentity);
-        if (!user.isActive() || !isOrganizationActive(user.getOrganizationId())) {
+        Organization organization =
+                organizationRepository.findById(user.getOrganizationId()).orElse(null);
+        if (!user.isActive() || organization == null || !organization.isActive()) {
             throw invalidTokenIdentity();
         }
-        return new MeResponse(user.getId(), user.getOrganizationId(), user.getEmail(), user.getStatus());
+        return new MeResponse(
+                user.getId(),
+                user.getOrganizationId(),
+                user.getEmail(),
+                user.getStatus(),
+                new OrganizationContext(
+                        organization.getCurrency(), organization.getLocale(), organization.getTimezone()));
     }
 
     private TokenResponse issueTokens(User user) {

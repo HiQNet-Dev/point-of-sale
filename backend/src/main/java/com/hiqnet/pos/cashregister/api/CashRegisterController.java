@@ -30,10 +30,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Branch-scoped cash-register administration. Cash registers belong to the
- * branch, so every endpoint authorizes with branch-scope
- * {@code hasBranchPermission} (org-wide grant OR an ACTIVE membership of the
- * exact branch — never promoted to organization scope). There is no DELETE: a
- * register is retired via status INACTIVE.
+ * branch. Reads authorize with {@code hasBranchPermissionIgnoringBranchStatus}
+ * so an already-registered register stays reachable (recovery) after the branch
+ * is deactivated; writes keep {@code hasBranchPermission}, which DOES require
+ * the branch ACTIVE. Both never promote to organization scope. There is no
+ * DELETE: a register is retired via status INACTIVE.
  */
 @RestController
 @RequestMapping("/api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers")
@@ -77,7 +78,7 @@ public class CashRegisterController {
         @ApiResponse(responseCode = "404", description = "Organization or branch not found (ORGANIZATION_NOT_FOUND, BRANCH_NOT_FOUND)", content = @Content),
         @ApiResponse(responseCode = "403", description = "Forbidden (cash-register.read)", content = @Content)
     })
-    @PreAuthorize("@authorizationService.hasBranchPermission(authentication, #organizationId, #branchId, 'cash-register.read')")
+    @PreAuthorize("@authorizationService.hasBranchPermissionIgnoringBranchStatus(authentication, #organizationId, #branchId, 'cash-register.read')")
     public PageResponse<CashRegisterResponse> list(
             @PathVariable UUID organizationId,
             @PathVariable UUID branchId,
@@ -98,7 +99,7 @@ public class CashRegisterController {
         @ApiResponse(responseCode = "404", description = "Organization, branch or cash register not found (ORGANIZATION_NOT_FOUND, BRANCH_NOT_FOUND, CASH_REGISTER_NOT_FOUND)", content = @Content),
         @ApiResponse(responseCode = "403", description = "Forbidden (cash-register.read)", content = @Content)
     })
-    @PreAuthorize("@authorizationService.hasBranchPermission(authentication, #organizationId, #branchId, 'cash-register.read')")
+    @PreAuthorize("@authorizationService.hasBranchPermissionIgnoringBranchStatus(authentication, #organizationId, #branchId, 'cash-register.read')")
     public CashRegisterResponse get(
             @PathVariable UUID organizationId,
             @PathVariable UUID branchId,

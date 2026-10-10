@@ -30,10 +30,12 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Branch/register-scoped cash shifts. A shift belongs to a register of the
- * branch, so every endpoint authorizes with branch-scope
- * {@code hasBranchPermission} (org-wide grant OR an ACTIVE membership of the
- * exact branch — never promoted to organization scope). There is no update or
- * delete: a shift is opened and later closed, and a CLOSED shift is immutable.
+ * branch. Reads and close authorize with
+ * {@code hasBranchPermissionIgnoringBranchStatus} so an already-open shift stays
+ * reachable (recovery) after the branch is deactivated; opening keeps
+ * {@code hasBranchPermission}, which DOES require the branch ACTIVE. Both never
+ * promote to organization scope. There is no update or delete: a shift is
+ * opened and later closed, and a CLOSED shift is immutable.
  */
 @RestController
 @RequestMapping(
@@ -80,7 +82,7 @@ public class CashShiftController {
         @ApiResponse(responseCode = "404", description = "Organization, branch or register not found (ORGANIZATION_NOT_FOUND, BRANCH_NOT_FOUND, CASH_REGISTER_NOT_FOUND)", content = @Content),
         @ApiResponse(responseCode = "403", description = "Forbidden (cash-shift.read)", content = @Content)
     })
-    @PreAuthorize("@authorizationService.hasBranchPermission(authentication, #organizationId, #branchId, 'cash-shift.read')")
+    @PreAuthorize("@authorizationService.hasBranchPermissionIgnoringBranchStatus(authentication, #organizationId, #branchId, 'cash-shift.read')")
     public PageResponse<CashShiftResponse> list(
             @PathVariable UUID organizationId,
             @PathVariable UUID branchId,
@@ -101,7 +103,7 @@ public class CashShiftController {
         @ApiResponse(responseCode = "404", description = "Organization, branch, register or shift not found (ORGANIZATION_NOT_FOUND, BRANCH_NOT_FOUND, CASH_REGISTER_NOT_FOUND, CASH_SHIFT_NOT_FOUND)", content = @Content),
         @ApiResponse(responseCode = "403", description = "Forbidden (cash-shift.read)", content = @Content)
     })
-    @PreAuthorize("@authorizationService.hasBranchPermission(authentication, #organizationId, #branchId, 'cash-shift.read')")
+    @PreAuthorize("@authorizationService.hasBranchPermissionIgnoringBranchStatus(authentication, #organizationId, #branchId, 'cash-shift.read')")
     public CashShiftResponse get(
             @PathVariable UUID organizationId,
             @PathVariable UUID branchId,
