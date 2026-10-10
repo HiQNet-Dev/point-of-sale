@@ -8,6 +8,11 @@ app:
     jwt-secret: aGlxbmV0LXBvcy10ZXN0LW9ubHktand0LXNpZ25pbmcta2V5
     password-strength: 10
     lockout-duration: 1h
+  bootstrap:
+    # Test-only deployment secret (Base64, 40 decoded bytes). No production
+    # value exists anywhere; production receives BOOTSTRAP_SECRET from the
+    # environment and removes it after provisioning.
+    secret: aGlxbmV0LXBvcy10ZXN0LW9ubHktYm9vdHN0cmFwLXNlY3JldC0wMDAx
 
 logging:
   level:
