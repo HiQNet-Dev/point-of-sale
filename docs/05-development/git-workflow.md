@@ -17,6 +17,7 @@ Mensaje: `chore: initialize HiQNet POS foundation`.
 | `fix/*` | Corrección de defectos |
 | `refactor/*` | Reestructuración sin cambio de comportamiento |
 | `docs/*` | Solo documentación |
+| `chore/*` | Mantenimiento, hardening, limpieza, release-prep |
 
 Ejemplos: `feat/catalog-products`, `fix/sale-total-rounding`, `docs/security-model`.
 
