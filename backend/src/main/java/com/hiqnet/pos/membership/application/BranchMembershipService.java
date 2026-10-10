@@ -13,6 +13,9 @@ import com.hiqnet.pos.organization.domain.OrganizationRepository;
 import com.hiqnet.pos.organization.domain.OrganizationStatus;
 import com.hiqnet.pos.rbac.domain.Role;
 import com.hiqnet.pos.rbac.domain.RoleRepository;
+import com.hiqnet.pos.shared.audit.AuditMetadata;
+import com.hiqnet.pos.shared.audit.AuditPort;
+import com.hiqnet.pos.shared.audit.AuditRecord;
 import com.hiqnet.pos.shared.error.BusinessException;
 import com.hiqnet.pos.shared.error.ErrorCodes;
 import com.hiqnet.pos.users.domain.User;
@@ -20,7 +23,9 @@ import com.hiqnet.pos.users.domain.UserRepository;
 import com.hiqnet.pos.users.domain.UserStatus;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,6 +61,7 @@ public class BranchMembershipService {
     private final BranchRepository branchRepository;
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
+    private final AuditPort auditPort;
 
     public BranchMembershipService(
             BranchMembershipRepository membershipRepository,
@@ -63,13 +69,15 @@ public class BranchMembershipService {
             OrganizationRepository organizationRepository,
             BranchRepository branchRepository,
             UserRepository userRepository,
-            RoleRepository roleRepository) {
+            RoleRepository roleRepository,
+            AuditPort auditPort) {
         this.membershipRepository = membershipRepository;
         this.membershipRoleRepository = membershipRoleRepository;
         this.organizationRepository = organizationRepository;
         this.branchRepository = branchRepository;
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
+        this.auditPort = auditPort;
     }
 
     @Transactional
@@ -112,6 +120,13 @@ public class BranchMembershipService {
                 branchId,
                 userId,
                 membership.getId());
+        auditPort.record(AuditRecord.ofBranch(
+                organizationId,
+                branchId,
+                "branch.membership.created",
+                "branch_membership",
+                membership.getId(),
+                AuditMetadata.empty()));
         return membership;
     }
 
@@ -153,6 +168,7 @@ public class BranchMembershipService {
                     ErrorCodes.CONCURRENT_MODIFICATION,
                     "The resource was modified concurrently; retry with fresh data");
         }
+        BranchMembershipStatus statusBefore = membership.getStatus();
         if (command.status() != null) {
             membership.updateStatus(command.status());
         }
@@ -163,6 +179,18 @@ public class BranchMembershipService {
                 branchId,
                 userId,
                 membership.getStatus());
+        if (command.status() != null && command.status() != statusBefore) {
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("fromStatus", statusBefore.name());
+            metadata.put("toStatus", membership.getStatus().name());
+            auditPort.record(AuditRecord.ofBranch(
+                    organizationId,
+                    branchId,
+                    "branch.membership.updated",
+                    "branch_membership",
+                    membership.getId(),
+                    AuditMetadata.of(metadata)));
+        }
         return membership;
     }
 
@@ -211,6 +239,13 @@ public class BranchMembershipService {
                 branchId,
                 userId,
                 roleIds.size());
+        auditPort.record(AuditRecord.ofBranch(
+                organizationId,
+                branchId,
+                "branch.membership.roles.replaced",
+                "branch_membership",
+                membership.getId(),
+                AuditMetadata.of("roleCount", roleIds.size())));
     }
 
     private BranchMembership requireMembership(UUID organizationId, UUID branchId, UUID userId) {

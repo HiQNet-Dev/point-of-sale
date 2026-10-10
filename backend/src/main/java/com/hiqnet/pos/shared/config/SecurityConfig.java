@@ -92,6 +92,7 @@ public class SecurityConfig {
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/roles/*/permissions").authenticated();
                     auth.requestMatchers(HttpMethod.PUT, "/api/v1/organizations/*/roles/*/permissions").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/permissions").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/audit-events").authenticated();
                     auth.anyRequest().denyAll();
                 })
                 .oauth2ResourceServer(oauth2 -> oauth2

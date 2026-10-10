@@ -11,7 +11,7 @@ User
   ↓ user_organization_roles (organization_id, user_id, role_id)     [ORGANIZATION scope]
 Role  (per Organization; code slug único e inmutable; status ACTIVE|INACTIVE)
   ↓ role_permissions (role_id, permission_code)
-Permission (catálogo global, sembrado por V5/V6; sin CRUD de cliente)
+Permission (catálogo global, sembrado por V5/V6/V7; sin CRUD de cliente)
 
 User
   ↓ branch_memberships (organization_id, branch_id, user_id, status)  [BRANCH scope]
@@ -20,7 +20,7 @@ Role   (mismas definiciones de roles; sin modelo BranchRole separado)
 ```
 
 - **Permissions**: catálogo del SISTEMA (`permissions.code` PK natural).
-  Se crean únicamente vía Flyway (`V5`). Orden `code ASC`.
+  Se crean únicamente vía Flyway (`V5`/`V6`/`V7`). Orden `code ASC`.
 - **Role**: pertenece a una organización; `code` normalizado (trim+lowercase,
   slug) único por organización e inmutable; `name` editable; sin DELETE
   (baja = `status INACTIVE`).
@@ -110,6 +110,7 @@ avala en una sola `EXISTS` (`BranchMembershipRoleRepository`
 | PATCH /organizations/{id}/branches/{branchId}/memberships/{userId} | `branch.membership.update` (org scope) |
 | GET /organizations/{id}/branches/{branchId}/memberships/{userId}/roles | `branch.membership.read` (org scope) |
 | PUT /organizations/{id}/branches/{branchId}/memberships/{userId}/roles | `branch.membership.roles.manage` (org scope) |
+| GET /organizations/{id}/audit-events | `audit.read` (org scope; SOLO lectura) |
 
 ## Inmediatez (mismo JWT)
 
@@ -144,8 +145,6 @@ volver `ACTIVE` vuelven a conceder (intencional; documentado).
 
 ## No implementado (fronteras)
 
-- **Audit persistente** (el logging estructurado `security-event=*` no es
-  auditoría).
 - **Secure Admin Bootstrap** (primer ADMIN) — pendiente de Foundation; sin
   credenciales por defecto.
 - **SUPER_ADMIN / ROOT / HIQNET_ADMIN** dentro del POS: la administración

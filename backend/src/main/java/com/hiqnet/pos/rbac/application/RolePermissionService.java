@@ -4,6 +4,9 @@ import com.hiqnet.pos.rbac.domain.Permission;
 import com.hiqnet.pos.rbac.domain.PermissionRepository;
 import com.hiqnet.pos.rbac.domain.RolePermission;
 import com.hiqnet.pos.rbac.domain.RolePermissionRepository;
+import com.hiqnet.pos.shared.audit.AuditMetadata;
+import com.hiqnet.pos.shared.audit.AuditPort;
+import com.hiqnet.pos.shared.audit.AuditRecord;
 import com.hiqnet.pos.shared.error.BusinessException;
 import com.hiqnet.pos.shared.error.ErrorCodes;
 import java.util.HashSet;
@@ -30,11 +33,15 @@ public class RolePermissionService {
 
     private final RolePermissionRepository rolePermissionRepository;
     private final PermissionRepository permissionRepository;
+    private final AuditPort auditPort;
 
     public RolePermissionService(
-            RolePermissionRepository rolePermissionRepository, PermissionRepository permissionRepository) {
+            RolePermissionRepository rolePermissionRepository,
+            PermissionRepository permissionRepository,
+            AuditPort auditPort) {
         this.rolePermissionRepository = rolePermissionRepository;
         this.permissionRepository = permissionRepository;
+        this.auditPort = auditPort;
     }
 
     @Transactional(readOnly = true)
@@ -46,7 +53,7 @@ public class RolePermissionService {
     }
 
     @Transactional
-    public void replace(UUID roleId, List<String> permissionCodes) {
+    public void replace(UUID organizationId, UUID roleId, List<String> permissionCodes) {
         List<String> normalized = permissionCodes.stream().map(String::trim).toList();
         if (new HashSet<>(normalized).size() != normalized.size()) {
             throw new BusinessException(
@@ -76,5 +83,11 @@ public class RolePermissionService {
                 "security-event=role-permissions-updated roleId={} count={}",
                 roleId,
                 normalized.size());
+        auditPort.record(AuditRecord.of(
+                organizationId,
+                "role.permissions.replaced",
+                "role",
+                roleId,
+                AuditMetadata.of("permissionCount", normalized.size())));
     }
 }

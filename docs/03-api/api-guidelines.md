@@ -59,6 +59,8 @@ PATCH /api/v1/organizations/{organizationId}/branches/{branchId}/memberships/{us
 GET   /api/v1/organizations/{organizationId}/branches/{branchId}/memberships/{userId}/roles
 PUT   /api/v1/organizations/{organizationId}/branches/{branchId}/memberships/{userId}/roles
 
+GET   /api/v1/organizations/{organizationId}/audit-events  (audit.read; SOLO lectura)
+
 POST  /api/v1/auth/login        (público)
 POST  /api/v1/auth/refresh      (público)
 POST  /api/v1/auth/logout       (público; revoca la familia de la sesión presentada)
@@ -95,6 +97,26 @@ concurrente), 500 (interno).
   `{"timezone": null}` = eliminar el override y volver a heredar
   `Organization.timezone`.
 
+## Audit log (solo lectura)
+
+```text
+GET /api/v1/organizations/{organizationId}/audit-events   (audit.read, organization scope)
+```
+
+- **Append-only**: el historial NO tiene `POST/PATCH/PUT/DELETE` — esos
+  métodos no se implementan y caen en `denyAll()` (403).
+- Paginación `PageResponse` con `?page`(0) `?size`(50, máx 100); orden fijo
+  `occurredAt DESC, id DESC` (sin sort arbitrario).
+- Filtros opcionales: `branchId`, `actorUserId`, `action`, `entityType`,
+  `entityId`, `from`, `to`. Tiempo: `from` inclusivo / `to` exclusivo
+  (`[from, to)`); `from > to` → `400 VALIDATION_ERROR`.
+- `branchId`/`actorUserId` de otra organización → `404 BRANCH_NOT_FOUND` /
+  `404 USER_NOT_FOUND` (aislamiento; nunca un filtrado silencioso a cero).
+- `audit.read` SIEMPRE organization scope: un rol branch-scoped con `audit.read`
+  → 403 (anti privilege-escalation).
+- Detalle: `docs/04-security/audit.md`.
+
+## Contrato de error
 ## Branch Memberships (scopes de autorización)
 
 La gestión de memberships se autoriza SIEMPRE con permisos **organization-wide**
@@ -182,6 +204,7 @@ Códigos estables:
 | `BRANCH_MEMBERSHIP_ALREADY_EXISTS` | 409 | Membership duplicada (org+branch+user), incluida la carrera (constraint) |
 | `BRANCH_INACTIVE` | 409 | No se crean memberships en una branch inactiva |
 | `USER_INACTIVE` | 409 | No se crean memberships para un usuario inactivo |
+| (`audit.read`) | 403 | Permiso organization-wide del catálogo (19 códigos desde `V7`) para leer el audit log |
 | `RESOURCE_NOT_FOUND` | 404 | Ruta sin mapping |
 | `ORGANIZATION_CODE_ALREADY_EXISTS` | 409 | Code de organización duplicado (global) |
 | `BRANCH_CODE_ALREADY_EXISTS` | 409 | Code de branch duplicado en la organización |

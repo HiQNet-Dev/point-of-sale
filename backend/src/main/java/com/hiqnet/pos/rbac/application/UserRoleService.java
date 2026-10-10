@@ -4,6 +4,9 @@ import com.hiqnet.pos.rbac.domain.Role;
 import com.hiqnet.pos.rbac.domain.RoleRepository;
 import com.hiqnet.pos.rbac.domain.UserOrganizationRole;
 import com.hiqnet.pos.rbac.domain.UserOrganizationRoleRepository;
+import com.hiqnet.pos.shared.audit.AuditMetadata;
+import com.hiqnet.pos.shared.audit.AuditPort;
+import com.hiqnet.pos.shared.audit.AuditRecord;
 import com.hiqnet.pos.shared.error.BusinessException;
 import com.hiqnet.pos.shared.error.ErrorCodes;
 import com.hiqnet.pos.users.domain.UserRepository;
@@ -31,14 +34,17 @@ public class UserRoleService {
     private final UserOrganizationRoleRepository userOrganizationRoleRepository;
     private final RoleRepository roleRepository;
     private final UserRepository userRepository;
+    private final AuditPort auditPort;
 
     public UserRoleService(
             UserOrganizationRoleRepository userOrganizationRoleRepository,
             RoleRepository roleRepository,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            AuditPort auditPort) {
         this.userOrganizationRoleRepository = userOrganizationRoleRepository;
         this.roleRepository = roleRepository;
         this.userRepository = userRepository;
+        this.auditPort = auditPort;
     }
 
     @Transactional(readOnly = true)
@@ -79,6 +85,12 @@ public class UserRoleService {
                 organizationId,
                 userId,
                 roleIds.size());
+        auditPort.record(AuditRecord.of(
+                organizationId,
+                "user.roles.replaced",
+                "user",
+                userId,
+                AuditMetadata.of("roleCount", roleIds.size())));
     }
 
     private void requireUser(UUID organizationId, UUID userId) {

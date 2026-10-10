@@ -20,6 +20,7 @@ import org.springframework.http.MediaType;
 class PermissionCatalogTest extends AbstractRbacIntegrationTest {
 
     private static final List<String> EXPECTED_CODES = List.of(
+            "audit.read",
             "branch.create",
             "branch.membership.create",
             "branch.membership.read",
@@ -55,10 +56,11 @@ class PermissionCatalogTest extends AbstractRbacIntegrationTest {
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(EXPECTED_CODES.size()))
-                .andExpect(jsonPath("$[0].code").value("branch.create"))
-                .andExpect(jsonPath("$[2].code").value("branch.membership.read"))
-                .andExpect(jsonPath("$[9].code").value("permission.read"))
-                .andExpect(jsonPath("$[17].code").value("user.update"));
+                .andExpect(jsonPath("$[0].code").value("audit.read"))
+                .andExpect(jsonPath("$[1].code").value("branch.create"))
+                .andExpect(jsonPath("$[3].code").value("branch.membership.read"))
+                .andExpect(jsonPath("$[10].code").value("permission.read"))
+                .andExpect(jsonPath("$[18].code").value("user.update"));
     }
 
     @Test

@@ -16,8 +16,9 @@ import org.springframework.stereotype.Service;
  * Issues access tokens. A JWT is used ONLY as the short-lived access token:
  * it is never a refresh token. Claims are minimal: sub (user UUID), org_id,
  * token_type=access, jti, iss, aud, iat, exp. No password material, no
- * refresh material, no infrastructure data, no roles (Roles/Permissions does
- * not exist yet).
+ * refresh material, no infrastructure data, and — by design — no roles,
+ * permissions or branches: Roles/Permissions exist, but PostgreSQL is the
+ * authorization authority and the JWT stays identity-only (ADR-0005).
  */
 @Service
 public class JwtTokenService {

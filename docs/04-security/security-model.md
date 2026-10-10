@@ -2,9 +2,10 @@
 
 **Estado actual:** autenticación implementada (`auth`), administración de
 usuarios implementada (`users`), **Roles/Permissions/RBAC implementado
-(`rbac`)** y **Branch Memberships implementado (`membership`)** — las business
+(`rbac`)**, **Branch Memberships implementado (`membership`)** y **Audit
+Foundation implementado (`audit`)** — las business
 APIs administrativas abren **solo** con el permiso
-adecuado. Audit, Admin Bootstrap y Control Plane siguen siendo futuros.
+adecuado. Secure Admin Bootstrap y Control Plane siguen siendo futuros.
 
 ## Principios
 
@@ -71,8 +72,9 @@ Autenticación (detalle: `docs/04-security/authentication.md`):
   que `status=INACTIVE` (port implementado por `auth`; lock `user → sessions`);
   reactivar no revive sesiones: el usuario vuelve a autenticarse. Los access
   JWT ya emitidos no se blacklistean (válidos hasta `exp`; `/me` resuelve la
-  identidad desde la DB). Decisión pendiente para RBAC: `securityVersion`/
-  security stamp o resolución autoritativa desde la DB.
+  identidad desde la DB). RBAC se resuelve autoritativamente desde la DB en cada
+  petición: **sin `securityVersion`/security stamp** (ADR-0005, decisión
+  aceptada; evita estado de invalidación distribuido innecesario).
 - BCrypt cost 12; lockout 5 intentos → 15m; errores genéricos
   (`INVALID_CREDENTIALS`) con hash dummy anti-enumeración.
 - `AUTH_JWT_SECRET` obligatoria como clave **Base64** (≥32 bytes decodificados),
@@ -86,9 +88,28 @@ autorización es DB-authoritative y el mismo JWT pierde/recupera acceso en la
 siguiente petición (ADR-0005). Una branch `INACTIVE` deja de conceder su grant
 branch-scoped de inmediato (la `EXISTS` exige `branch.status='ACTIVE'`).
 
+**Audit Foundation** (`docs/04-security/audit.md`):
+
+- Historial **append-only** de mutaciones administrativas; trigger `BEFORE
+  UPDATE OR DELETE` en PostgreSQL (barrera final), sin API/repo de
+  mutación, sin retention (pendiente por diseño).
+- Actor **USER** (JWT `sub` → `actor_user_id`, same-org por FK compuesta) o
+  **SYSTEM** (sin usuario técnico); `token_jti` solo correlación, nunca el
+  JWT/Authorization/hash.
+- `AuditPort.record` exige transacción (`MANDATORY`): el evento se escribe en
+  la **misma transacción** que la mutación; si falla → rollback de la mutación.
+  Operaciones fallidas → cero eventos.
+- `metadata` JSONB acotada (≤16 KiB), con **rechazo defensivo** de keys
+  sensibles (password, token, jwt, secret, authorization, …) case-insensitive.
+- Lectura con `audit.read` **organization-wide** (un rol branch-scoped con
+  `audit.read` → 403), paginada y filtrable.
+- Distinción explícita: los logs `security-event=*` siguen siendo telemetría de
+  operación/seguridad; `audit_events` es historial persistente de negocio.
+
 ## Futuro (no implementado)
 
-- **Auditoría persistente** (el logging estructurado no es auditoría).
+- **Auditoría de autenticación unificada** en `audit_events` (hoy son
+  `security-event` logs) — solo si aparece el requerimiento.
 - **Secure Admin Bootstrap** (provisión segura del primer administrador;
   pendiente para Foundation).
 - **Rate limiting** por IP (futuro, no implementado).
