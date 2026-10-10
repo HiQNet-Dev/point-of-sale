@@ -72,8 +72,9 @@ Autenticación (detalle: `docs/04-security/authentication.md`):
   que `status=INACTIVE` (port implementado por `auth`; lock `user → sessions`);
   reactivar no revive sesiones: el usuario vuelve a autenticarse. Los access
   JWT ya emitidos no se blacklistean (válidos hasta `exp`; `/me` resuelve la
-  identidad desde la DB). Decisión pendiente para RBAC: `securityVersion`/
-  security stamp o resolución autoritativa desde la DB.
+  identidad desde la DB). RBAC se resuelve autoritativamente desde la DB en cada
+  petición: **sin `securityVersion`/security stamp** (ADR-0005, decisión
+  aceptada; evita estado de invalidación distribuido innecesario).
 - BCrypt cost 12; lockout 5 intentos → 15m; errores genéricos
   (`INVALID_CREDENTIALS`) con hash dummy anti-enumeración.
 - `AUTH_JWT_SECRET` obligatoria como clave **Base64** (≥32 bytes decodificados),
