@@ -11,7 +11,7 @@ User
   ↓ user_organization_roles (organization_id, user_id, role_id)     [ORGANIZATION scope]
 Role  (per Organization; code slug único e inmutable; status ACTIVE|INACTIVE)
   ↓ role_permissions (role_id, permission_code)
-Permission (catálogo global, sembrado por V5/V6/V7; sin CRUD de cliente)
+Permission (catálogo global, sembrado por V5/V6/V7/V9; sin CRUD de cliente)
 
 User
   ↓ branch_memberships (organization_id, branch_id, user_id, status)  [BRANCH scope]
@@ -20,7 +20,7 @@ Role   (mismas definiciones de roles; sin modelo BranchRole separado)
 ```
 
 - **Permissions**: catálogo del SISTEMA (`permissions.code` PK natural).
-  Se crean únicamente vía Flyway (`V5`/`V6`/`V7`). Orden `code ASC`.
+  Se crean únicamente vía Flyway (`V5`/`V6`/`V7`/`V9`). Orden `code ASC`.
 - **Role**: pertenece a una organización; `code` normalizado (trim+lowercase,
   slug) único por organización e inmutable; `name` editable; sin DELETE
   (baja = `status INACTIVE`).
@@ -111,6 +111,14 @@ avala en una sola `EXISTS` (`BranchMembershipRoleRepository`
 | GET /organizations/{id}/branches/{branchId}/memberships/{userId}/roles | `branch.membership.read` (org scope) |
 | PUT /organizations/{id}/branches/{branchId}/memberships/{userId}/roles | `branch.membership.roles.manage` (org scope) |
 | GET /organizations/{id}/audit-events | `audit.read` (org scope; SOLO lectura) |
+| GET /organizations/{id}/categories | `category.read` (org scope) |
+| POST /organizations/{id}/categories | `category.create` (org scope) |
+| GET /organizations/{id}/categories/{categoryId} | `category.read` (org scope) |
+| PATCH /organizations/{id}/categories/{categoryId} | `category.update` (org scope) |
+| GET /organizations/{id}/products | `product.read` (org scope; filtros `?status&categoryId&q`) |
+| POST /organizations/{id}/products | `product.create` (org scope) |
+| GET /organizations/{id}/products/{productId} | `product.read` (org scope) |
+| PATCH /organizations/{id}/products/{productId} | `product.update` (org scope) |
 | POST /api/v1/bootstrap | provisioning one-shot — `X-Bootstrap-Token` (secret), SIN permiso; `organization.create` sigue sin existir |
 
 ## Inmediatez (mismo JWT)
@@ -130,12 +138,14 @@ el mismo JWT (ADR-0005). Los access JWTs no se blacklistean (stateless, 10m).
 - Violación de scope de autorización (usuario con permisos solo en A que pide
   recursos de B) → **403** (la autorización ocurre primero).
 - Aislamiento de recurso (id ajeno con permiso válido en la org de la ruta) →
-  **404** (`USER_NOT_FOUND` / `BRANCH_NOT_FOUND` / `ROLE_NOT_FOUND`).
+  **404** (`USER_NOT_FOUND` / `BRANCH_NOT_FOUND` / `ROLE_NOT_FOUND` /
+  `CATEGORY_NOT_FOUND` / `PRODUCT_NOT_FOUND`).
 
 ## Optimistic concurrency HTTP
 
 Promovido de decisión pendiente a contrato v0.1.x: **`expectedVersion`**
-(requerido, `>= 0`) en PATCH de Organization, Branch, User y Role. El servidor
+(requerido, `>= 0`) en PATCH de Organization, Branch, User, Role, Membership,
+Category y Product. El servidor
 compara con `@Version`; mismatch → `409 CONCURRENT_MODIFICATION`. Sin ETag /
 If-Match todavía.
 

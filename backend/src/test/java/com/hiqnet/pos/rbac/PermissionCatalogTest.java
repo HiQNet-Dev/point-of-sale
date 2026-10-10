@@ -28,9 +28,15 @@ class PermissionCatalogTest extends AbstractRbacIntegrationTest {
             "branch.membership.update",
             "branch.read",
             "branch.update",
+            "category.create",
+            "category.read",
+            "category.update",
             "organization.read",
             "organization.update",
             "permission.read",
+            "product.create",
+            "product.read",
+            "product.update",
             "role.assign",
             "role.create",
             "role.permissions.manage",
@@ -59,8 +65,8 @@ class PermissionCatalogTest extends AbstractRbacIntegrationTest {
                 .andExpect(jsonPath("$[0].code").value("audit.read"))
                 .andExpect(jsonPath("$[1].code").value("branch.create"))
                 .andExpect(jsonPath("$[3].code").value("branch.membership.read"))
-                .andExpect(jsonPath("$[10].code").value("permission.read"))
-                .andExpect(jsonPath("$[18].code").value("user.update"));
+                .andExpect(jsonPath("$[13].code").value("permission.read"))
+                .andExpect(jsonPath("$[24].code").value("user.update"));
     }
 
     @Test

@@ -1,10 +1,11 @@
 # Modelo de dominio conceptual
 
 **Documento vivo.** `Organization`, `Branch`, `User` (identidad +
-administración) y `RefreshSession` ya están implementados (migraciones
-`V1`–`V4`); el resto de las entidades descritas aquí son futuras.
+administración), `RefreshSession`, RBAC, memberships, auditoría, bootstrap y el
+catálogo (`Category`/`Product`) ya están implementados (migraciones `V1`–`V9`);
+el resto de las entidades descritas aquí son futuras.
 
-Versión actual: `0.1.0`.
+Versión actual: `0.2.0-SNAPSHOT`.
 
 ## Jerarquía principal
 
@@ -14,6 +15,7 @@ Organization (organización / empresa)  ✔ implementado
  │    └── RefreshSession (familia de refresh tokens)  ✔ implementado
  ├── Role / RolePermission / UserOrganizationRole   ✔ implementado (V5)
  ├── AuditEvent (historial append-only)  ✔ implementado (V7)
+ ├── Category / Product (catálogo)     ✔ implementado (V9)
  └── Branch (sucursal)                 ✔ implementado
       ├── BranchMembership (user ↔ branch, con roles branch-scoped)  ✔ implementado (V6)
       ├── CashRegister (caja)  → Shift (turno) → Sale (venta) → Payment (pago)
@@ -36,7 +38,9 @@ Organization (organización / empresa)  ✔ implementado
 | BranchMembership | organización+sucursal | **implementada (`V6`)** — user pertenece a una branch (máx. 1 por org+branch+user), `status ACTIVE/INACTIVE`, `@Version`; ver `docs/02-database/branch-memberships-model.md` |
 | BranchMembershipRole | organización | **implementada (`V6`)** — roles branch-scoped de una membership; reutiliza las definiciones de `roles`; FKs compuestas impiden cross-tenant |
 | AuditEvent | organización | **implementada (`V7`)** — historial append-only de mutaciones administrativas; trigger DB impide UPDATE/DELETE; actor USER/SYSTEM con FKs compuestas same-org; metadata JSONB acotada (≤16 KiB); ver `docs/02-database/audit-model.md` |
-| Product / Variant | **organización** | Catálogo: tamaños, sabores, precios |
+| Category | organización | **implementada (`V9`)** — agrupador de catálogo; `code` slug único por org e inmutable; `status ACTIVE/INACTIVE`; sin DELETE; ver `docs/02-database/catalog-model.md` |
+| Product | organización | **implementada (`V9`)** — `sku` canónico (MAYÚSCULAS) inmutable y único por org, `barcode` opcional único cuando está presente, `unit_price NUMERIC(19,4)` (moneda heredada de la org), `category_id` opcional same-org; sin DELETE; ver `docs/02-database/catalog-model.md` |
+| ProductVariant | organización | tamaños, sabores (futuro) |
 | Ingredient | **organización** | Insumos del catálogo |
 | Recipe | **organización** | Producto → ingredientes + cantidades |
 | Stock | **sucursal** | Existencias por ingrediente/producto en cada branch |
@@ -71,7 +75,8 @@ operación pasa por `organization_id` (`findByIdAndOrganizationId`).
 ## Relaciones
 
 - Organization 1—N Branch ✔; Organization 1—N User ✔; Organization 1—N Role ✔
-  (`V5`); Organization 1—N Product/Ingredient (futuro).
+  (`V5`); Organization 1—N Category/Product ✔ (`V9`); Organization 1—N
+  Ingredient (futuro). Category 1—N Product (opcional) ✔ (`V9`).
 - User 1—N RefreshSession ✔; User N—M Role (vía `user_organization_roles`, ✔).
 - Branch 1—N BranchMembership ✔ (`V6`); BranchMembership N—M Role (vía
   `branch_membership_roles`, ✔ — roles del catálogo de `roles`, sin modelo

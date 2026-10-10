@@ -22,6 +22,9 @@ public final class ConstraintTranslator {
     public static final String USERS_EMAIL_NORMALIZED_CHECK = "users_email_normalized_check";
     public static final String ROLES_ORGANIZATION_CODE_UNIQUE = "roles_organization_code_unique";
     public static final String BRANCH_MEMBERSHIPS_ORG_BRANCH_USER_UNIQUE = "branch_memberships_org_branch_user_unique";
+    public static final String CATEGORIES_ORGANIZATION_CODE_UNIQUE = "categories_organization_code_unique";
+    public static final String PRODUCTS_ORGANIZATION_SKU_UNIQUE = "products_organization_sku_unique";
+    public static final String PRODUCTS_ORGANIZATION_BARCODE_UNIQUE = "products_organization_barcode_unique";
 
     /**
      * Returns the mapped {@link BusinessException} for a known constraint, or
@@ -59,6 +62,18 @@ public final class ConstraintTranslator {
                     HttpStatus.CONFLICT,
                     ErrorCodes.BRANCH_MEMBERSHIP_ALREADY_EXISTS,
                     "The user already has a membership in this branch");
+            case CATEGORIES_ORGANIZATION_CODE_UNIQUE -> new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.CATEGORY_CODE_ALREADY_EXISTS,
+                    "A category with this code already exists in the organization");
+            case PRODUCTS_ORGANIZATION_SKU_UNIQUE -> new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.PRODUCT_SKU_ALREADY_EXISTS,
+                    "A product with this sku already exists in the organization");
+            case PRODUCTS_ORGANIZATION_BARCODE_UNIQUE -> new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.PRODUCT_BARCODE_ALREADY_EXISTS,
+                    "A product with this barcode already exists in the organization");
             default -> null;
         };
     }

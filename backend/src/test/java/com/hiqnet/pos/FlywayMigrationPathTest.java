@@ -19,11 +19,15 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * contexts that reuse a Testcontainers DB across the suite):
  *
  * <ul>
- *   <li><b>Clean install</b>: V1 → V8 applies completely and validates, leaving
- *       the expected seed state (permission catalog = 19, bootstrap singleton = 1).</li>
- *   <li><b>Upgrade path</b>: a database migrated up to V7 (the state before the
- *       Secure Admin Bootstrap slice) applies V8 correctly in isolation — the
- *       real production upgrade, not a recreated dataset.</li>
+ *   <li><b>Clean install</b>: V1 → V9 applies completely and validates, leaving
+ *       the expected seed state (permission catalog = 25, bootstrap singleton = 1,
+ *       catalog tables present).</li>
+ *   <li><b>Upgrade path (V7)</b>: a database migrated up to V7 (the state before
+ *       the Secure Admin Bootstrap slice) applies V8 and V9 correctly in
+ *       isolation — the real production upgrade, not a recreated dataset.</li>
+ *   <li><b>Upgrade path (V8)</b>: a database migrated up to V8 (the state before
+ *       the Catalog Foundation slice) applies only V9, leaving existing data
+ *       untouched.</li>
  * </ul>
  */
 @Testcontainers
@@ -33,19 +37,21 @@ class FlywayMigrationPathTest {
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
 
     @Test
-    void cleanInstallationMigratesV1ThroughV8AndValidates() {
+    void cleanInstallationMigratesV1ThroughV9AndValidates() {
         Flyway flyway = flyway("clean_foundation");
 
         MigrateResult result = flyway.migrate();
 
-        assertThat(result.migrationsExecuted).isEqualTo(8);
+        assertThat(result.migrationsExecuted).isEqualTo(9);
         flyway.validate();
-        assertThat(countRows("clean_foundation", "permissions")).isEqualTo(19);
+        assertThat(countRows("clean_foundation", "permissions")).isEqualTo(25);
         assertThat(countRows("clean_foundation", "installation_bootstrap")).isEqualTo(1);
+        assertThat(tableExists("clean_foundation", "categories")).isTrue();
+        assertThat(tableExists("clean_foundation", "products")).isTrue();
     }
 
     @Test
-    void upgradeFromV7AppliesV8WithoutRecreatingData() {
+    void upgradeFromV7AppliesV8AndV9WithoutRecreatingData() {
         // Stop the migration history at V7: the exact pre-bootstrap state.
         Flyway upToV7 = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
@@ -56,18 +62,48 @@ class FlywayMigrationPathTest {
 
         assertThat(migratedToV7.migrationsExecuted).isEqualTo(7);
         assertThat(tableExists("upgrade_path", "installation_bootstrap")).isFalse();
+        assertThat(tableExists("upgrade_path", "categories")).isFalse();
 
-        // A fresh Flyway run (like a new backend version) applies only V8.
+        // A fresh Flyway run (like a new backend version) applies V8 and V9.
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas("upgrade_path")
                 .load();
         MigrateResult migratedToLatest = toLatest.migrate();
 
+        assertThat(migratedToLatest.migrationsExecuted).isEqualTo(2);
+        toLatest.validate();
+        assertThat(countRows("upgrade_path", "permissions")).isEqualTo(25);
+        assertThat(countRows("upgrade_path", "installation_bootstrap")).isEqualTo(1);
+        assertThat(tableExists("upgrade_path", "products")).isTrue();
+    }
+
+    @Test
+    void upgradeFromV8AppliesV9WithoutRecreatingData() {
+        // Stop the migration history at V8: the exact pre-catalog state.
+        Flyway upToV8 = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas("upgrade_catalog")
+                .target(MigrationVersion.fromVersion("8"))
+                .load();
+        MigrateResult migratedToV8 = upToV8.migrate();
+
+        assertThat(migratedToV8.migrationsExecuted).isEqualTo(8);
+        assertThat(countRows("upgrade_catalog", "permissions")).isEqualTo(19);
+        assertThat(tableExists("upgrade_catalog", "categories")).isFalse();
+
+        // A fresh Flyway run applies only V9.
+        Flyway toLatest = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas("upgrade_catalog")
+                .load();
+        MigrateResult migratedToLatest = toLatest.migrate();
+
         assertThat(migratedToLatest.migrationsExecuted).isEqualTo(1);
         toLatest.validate();
-        assertThat(countRows("upgrade_path", "permissions")).isEqualTo(19);
-        assertThat(countRows("upgrade_path", "installation_bootstrap")).isEqualTo(1);
+        assertThat(countRows("upgrade_catalog", "permissions")).isEqualTo(25);
+        assertThat(tableExists("upgrade_catalog", "categories")).isTrue();
+        assertThat(tableExists("upgrade_catalog", "products")).isTrue();
     }
 
     private static Flyway flyway(String schema) {

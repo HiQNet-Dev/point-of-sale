@@ -2,8 +2,9 @@
 
 **Estado:** existen los primeros endpoints de negocio
 (Organization + Branch, `/api/v1`), la autenticación (`auth`, `/api/v1/auth`),
-la **administración de usuarios** y la **administración de roles/permisos**
-(`rbac`), todas scoped por organización. Desde RBAC la API administrativa está
+la **administración de usuarios**, la **administración de roles/permisos**
+(`rbac`) y el **catálogo** (`catalog`: categorías y productos), todas scoped por
+organización. Desde RBAC la API administrativa está
 **autorizada por permisos** con PostgreSQL como autoridad (JWT = identidad;
 método security con `@PreAuthorize`); `POST /organizations` y todo lo no
 definido siguen **deny-by-default**. Los tests de negocio de los primeros
@@ -52,6 +53,16 @@ PATCH /api/v1/organizations/{organizationId}/roles/{roleId}
 GET   /api/v1/organizations/{organizationId}/roles/{roleId}/permissions
 PUT   /api/v1/organizations/{organizationId}/roles/{roleId}/permissions
 
+POST  /api/v1/organizations/{organizationId}/categories
+GET   /api/v1/organizations/{organizationId}/categories              (paginado, ?page&size&status)
+GET   /api/v1/organizations/{organizationId}/categories/{categoryId}
+PATCH /api/v1/organizations/{organizationId}/categories/{categoryId}
+
+POST  /api/v1/organizations/{organizationId}/products
+GET   /api/v1/organizations/{organizationId}/products                (paginado, ?page&size&status&categoryId&q)
+GET   /api/v1/organizations/{organizationId}/products/{productId}
+PATCH /api/v1/organizations/{organizationId}/products/{productId}
+
 POST  /api/v1/organizations/{organizationId}/branches/{branchId}/memberships
 GET   /api/v1/organizations/{organizationId}/branches/{branchId}/memberships     (paginado, ?page&size&status)
 GET   /api/v1/organizations/{organizationId}/branches/{branchId}/memberships/{userId}
@@ -98,6 +109,12 @@ concurrente), 500 (interno).
   `{"timezone": "America/Mexico_City"}` = establecer override;
   `{"timezone": null}` = eliminar el override y volver a heredar
   `Organization.timezone`.
+- `product.categoryId` tiene la misma semántica tri-estado, con `UuidPatchField`
+  en `shared.api`: omitir = sin cambios; `{"categoryId": null}` = desasignar la
+  categoría; `{"categoryId": "<uuid>"}` = asignar (misma organización y
+  `ACTIVE`).
+- `category.code` y `product.sku` son **inmutables** (no se aceptan en PATCH);
+  una `sku` presente en el body se ignora.
 
 ## Audit log (solo lectura)
 
@@ -175,6 +192,32 @@ configurado; si no, la ruta cae en deny-by-default.
   BOOTSTRAP_NOT_ALLOWED` (organizations ya existen).
 - Detalle: `docs/04-security/secure-bootstrap.md`, ADR-0006.
 
+## Catalog (categorías y productos)
+
+Catálogo organization-scoped (`category.*` / `product.*`; `hasPermission`, no
+`hasBranchPermission`). Sin DELETE: `PUT`/`DELETE` no se implementan y caen en
+`denyAll()`. Detalle de modelo: `docs/02-database/catalog-model.md`.
+
+- **POST /categories**: crea (`code` slug único por org, inmutable; `name`
+  trim). Duplicado → 409 `CATEGORY_CODE_ALREADY_EXISTS`; slug inválido → 400
+  `VALIDATION_ERROR`.
+- **GET /categories**: `PageResponse` (`?page`(0) `?size`(20, máx 100)
+  `?status`); orden `name ASC, id ASC`.
+- **PATCH /categories/{categoryId}**: `name` y/o `status`; `expectedVersion`
+  requerido; `code` inmutable.
+- **POST /products**: `sku` (canónico MAYÚSCULAS, inmutable, único por org),
+  `barcode` opcional (único por org cuando presente, texto con ceros a la
+  izquierda), `name`, `description` opcional, `categoryId` opcional (misma org
+  y ACTIVE) y `unitPrice` (`>= 0`, `NUMERIC(19,4)`; moneda heredada). Duplicados
+  → 409 `PRODUCT_SKU_ALREADY_EXISTS` / `PRODUCT_BARCODE_ALREADY_EXISTS`;
+  categoría inactiva → 409 `CATEGORY_INACTIVE`; categoría ajena → 404
+  `CATEGORY_NOT_FOUND`.
+- **GET /products**: `PageResponse` (filtros `?status&categoryId&q`; `q` busca
+  en `name`/`sku`/`barcode`); orden `name ASC, id ASC`. Un `categoryId` de otra
+  organización → 404 `CATEGORY_NOT_FOUND` (nunca página vacía).
+- **PATCH /products/{productId}**: campos opcionales + `expectedVersion`;
+  `categoryId` tri-estado (omitir/null/valor); `sku` inmutable.
+
 ## POST /organizations permanece cerrado
 
 `POST /api/v1/organizations` NO tiene permiso (`organization.create` no existe)
@@ -229,10 +272,16 @@ Códigos estables:
 | `BOOTSTRAP_INVALID_TOKEN` | 401 | Bootstrap: token ausente/inválido/Base64 malformado, o bootstrap deshabilitado (siempre genérico) |
 | `BOOTSTRAP_ALREADY_COMPLETED` | 409 | Bootstrap: instalación ya provisionada |
 | `BOOTSTRAP_NOT_ALLOWED` | 409 | Bootstrap: instalación no pristina (organizations existentes) |
-| (`audit.read`) | 403 | Permiso organization-wide del catálogo (19 códigos desde `V7`) para leer el audit log |
+| (`audit.read`) | 403 | Permiso organization-wide del catálogo (25 códigos desde `V9`) para leer el audit log |
 | `RESOURCE_NOT_FOUND` | 404 | Ruta sin mapping |
 | `ORGANIZATION_CODE_ALREADY_EXISTS` | 409 | Code de organización duplicado (global) |
 | `BRANCH_CODE_ALREADY_EXISTS` | 409 | Code de branch duplicado en la organización |
+| `CATEGORY_NOT_FOUND` | 404 | Categoría inexistente (o de otra organización) |
+| `CATEGORY_CODE_ALREADY_EXISTS` | 409 | Code de categoría duplicado dentro de la organización |
+| `CATEGORY_INACTIVE` | 409 | No se asigna una categoría INACTIVE a un producto |
+| `PRODUCT_NOT_FOUND` | 404 | Producto inexistente (o de otra organización) |
+| `PRODUCT_SKU_ALREADY_EXISTS` | 409 | `sku` duplicado dentro de la organización |
+| `PRODUCT_BARCODE_ALREADY_EXISTS` | 409 | `barcode` duplicado dentro de la organización |
 | `CONCURRENT_MODIFICATION` | 409 | Falló optimistic locking |
 | `INTERNAL_ERROR` | 500 | Error inesperado |
 
@@ -251,10 +300,12 @@ Nunca se exponen stack traces, mensajes SQL ni detalles internos.
 ## Aislamiento entre organizaciones (IDOR)
 
 Toda operación sobre un recurso scoped exige `organization_id`: un
-`GET /organizations/{A}/branches/{B1}`, `GET /organizations/{A}/users/{U1}` o
-`GET /organizations/{A}/roles/{R1}` donde el recurso pertenece a otra
+`GET /organizations/{A}/branches/{B1}`, `GET /organizations/{A}/users/{U1}`,
+`GET /organizations/{A}/roles/{R1}`, `GET /organizations/{A}/categories/{C1}` o
+`GET /organizations/{A}/products/{P1}` donde el recurso pertenece a otra
 organización responde **404** (`BRANCH_NOT_FOUND` / `USER_NOT_FOUND` /
-`ROLE_NOT_FOUND`), nunca 200. Distinción de capas con RBAC:
+`ROLE_NOT_FOUND` / `CATEGORY_NOT_FOUND` / `PRODUCT_NOT_FOUND`), nunca 200.
+Distinción de capas con RBAC:
 
 - **Frontera de autorización** (sin permiso, identidad/org no operativa, otra
   organización sin permiso): **403 `FORBIDDEN`**.
@@ -290,7 +341,8 @@ Convención estable desde la administración de usuarios (`shared.api.PageRespon
 ## Otros
 
 - **Optimistic concurrency HTTP**: resuelto como contrato `expectedVersion` en
-  Organization + Branch + User + Role + Membership (sin ETag/If-Match por ahora;
+  Organization + Branch + User + Role + Membership + Category + Product (sin
+  ETag/If-Match por ahora;
   revisar antes de abrir las APIs administrativas en producción).
 - **SCOPES**: `hasOrganizationPermission` (organization-wide) vs
   `hasBranchPermission` (org-wide UNION membership branch-scoped) —
