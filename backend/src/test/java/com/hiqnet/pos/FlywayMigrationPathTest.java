@@ -20,14 +20,14 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * contexts that reuse a Testcontainers DB across the suite):
  *
  * <ul>
- *   <li><b>Clean install</b>: V1 → V10 applies completely and validates, leaving
- *       the expected seed state (permission catalog = 32, bootstrap singleton = 1,
- *       catalog and modifier tables present).</li>
+ *   <li><b>Clean install</b>: V1 → V11 applies completely and validates, leaving
+ *       the expected seed state (permission catalog = 35, bootstrap singleton = 1,
+ *       catalog/modifier/cash-register tables present).</li>
  *   <li><b>Upgrade path (V7)</b>: a database migrated up to V7 (the state before
- *       the Secure Admin Bootstrap slice) applies V8, V9 and V10 correctly in
- *       isolation — the real production upgrade, not a recreated dataset.</li>
- *   <li><b>Upgrade path (V8)</b>: a database migrated up to V8 applies V9 and V10,
- *       leaving existing data untouched.</li>
+ *       the Secure Admin Bootstrap slice) applies V8, V9, V10 and V11 correctly
+ *       in isolation — the real production upgrade, not a recreated dataset.</li>
+ *   <li><b>Upgrade path (V8)</b>: a database migrated up to V8 applies V9, V10
+ *       and V11, leaving existing data untouched.</li>
  *   <li><b>Grant preservation</b>: upgrading an existing deployment ADDS new
  *       permission codes but NEVER rewrites an existing role's grants (upgrade
  *       never silently provisions access).</li>
@@ -40,24 +40,25 @@ class FlywayMigrationPathTest {
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
 
     @Test
-    void cleanInstallationMigratesV1ThroughV10AndValidates() {
+    void cleanInstallationMigratesV1ThroughV11AndValidates() {
         Flyway flyway = flyway("clean_foundation");
 
         MigrateResult result = flyway.migrate();
 
-        assertThat(result.migrationsExecuted).isEqualTo(10);
+        assertThat(result.migrationsExecuted).isEqualTo(11);
         flyway.validate();
-        assertThat(countRows("clean_foundation", "permissions")).isEqualTo(32);
+        assertThat(countRows("clean_foundation", "permissions")).isEqualTo(35);
         assertThat(countRows("clean_foundation", "installation_bootstrap")).isEqualTo(1);
         assertThat(tableExists("clean_foundation", "categories")).isTrue();
         assertThat(tableExists("clean_foundation", "products")).isTrue();
         assertThat(tableExists("clean_foundation", "modifier_groups")).isTrue();
         assertThat(tableExists("clean_foundation", "modifier_options")).isTrue();
         assertThat(tableExists("clean_foundation", "product_modifier_groups")).isTrue();
+        assertThat(tableExists("clean_foundation", "cash_registers")).isTrue();
     }
 
     @Test
-    void upgradeFromV7AppliesV8V9AndV10WithoutRecreatingData() {
+    void upgradeFromV7AppliesV8ThroughV11WithoutRecreatingData() {
         // Stop the migration history at V7: the exact pre-bootstrap state.
         Flyway upToV7 = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
@@ -70,24 +71,26 @@ class FlywayMigrationPathTest {
         assertThat(tableExists("upgrade_path", "installation_bootstrap")).isFalse();
         assertThat(tableExists("upgrade_path", "categories")).isFalse();
         assertThat(tableExists("upgrade_path", "modifier_groups")).isFalse();
+        assertThat(tableExists("upgrade_path", "cash_registers")).isFalse();
 
-        // A fresh Flyway run (like a new backend version) applies V8, V9 and V10.
+        // A fresh Flyway run (like a new backend version) applies V8, V9, V10 and V11.
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas("upgrade_path")
                 .load();
         MigrateResult migratedToLatest = toLatest.migrate();
 
-        assertThat(migratedToLatest.migrationsExecuted).isEqualTo(3);
+        assertThat(migratedToLatest.migrationsExecuted).isEqualTo(4);
         toLatest.validate();
-        assertThat(countRows("upgrade_path", "permissions")).isEqualTo(32);
+        assertThat(countRows("upgrade_path", "permissions")).isEqualTo(35);
         assertThat(countRows("upgrade_path", "installation_bootstrap")).isEqualTo(1);
         assertThat(tableExists("upgrade_path", "products")).isTrue();
         assertThat(tableExists("upgrade_path", "modifier_groups")).isTrue();
+        assertThat(tableExists("upgrade_path", "cash_registers")).isTrue();
     }
 
     @Test
-    void upgradeFromV8AppliesV9AndV10WithoutRecreatingData() {
+    void upgradeFromV8AppliesV9ThroughV11WithoutRecreatingData() {
         // Stop the migration history at V8: the exact pre-catalog state.
         Flyway upToV8 = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
@@ -100,23 +103,24 @@ class FlywayMigrationPathTest {
         assertThat(countRows("upgrade_catalog", "permissions")).isEqualTo(19);
         assertThat(tableExists("upgrade_catalog", "categories")).isFalse();
 
-        // A fresh Flyway run applies only V9 and V10.
+        // A fresh Flyway run applies only V9, V10 and V11.
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas("upgrade_catalog")
                 .load();
         MigrateResult migratedToLatest = toLatest.migrate();
 
-        assertThat(migratedToLatest.migrationsExecuted).isEqualTo(2);
+        assertThat(migratedToLatest.migrationsExecuted).isEqualTo(3);
         toLatest.validate();
-        assertThat(countRows("upgrade_catalog", "permissions")).isEqualTo(32);
+        assertThat(countRows("upgrade_catalog", "permissions")).isEqualTo(35);
         assertThat(tableExists("upgrade_catalog", "categories")).isTrue();
         assertThat(tableExists("upgrade_catalog", "products")).isTrue();
         assertThat(tableExists("upgrade_catalog", "modifier_groups")).isTrue();
+        assertThat(tableExists("upgrade_catalog", "cash_registers")).isTrue();
     }
 
     @Test
-    void upgradeFromV8PreservesExistingRoleGrantsAndOnlyAddsCatalogAndModifierPermissions() {
+    void upgradeFromV8PreservesExistingRoleGrantsAndOnlyAddsCatalogModifierAndCashRegisterPermissions() {
         String schema = "upgrade_grants";
         // 1. Migrate to V8: the exact pre-catalog state.
         Flyway upToV8 = Flyway.configure()
@@ -141,23 +145,23 @@ class FlywayMigrationPathTest {
                 + "select '" + administratorRoleId + "', code from " + schema + ".permissions");
         assertThat(countRows(schema, "role_permissions")).isEqualTo(19);
 
-        // 3. Apply V9 and V10 (the real catalog + modifiers upgrade).
+        // 3. Apply V9, V10 and V11 (the real catalog + modifiers + cash-register upgrade).
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas(schema)
                 .load();
-        assertThat(toLatest.migrate().migrationsExecuted).isEqualTo(2);
+        assertThat(toLatest.migrate().migrationsExecuted).isEqualTo(3);
         toLatest.validate();
 
-        // 4. The migrations ADD the catalog and modifier permissions (19 -> 32) but
-        //    NEVER rewrite an existing role's grants: upgrading never silently
-        //    provisions access.
-        assertThat(countRows(schema, "permissions")).isEqualTo(32);
+        // 4. The migrations ADD the catalog, modifier and cash-register permissions
+        //    (19 -> 35) but NEVER rewrite an existing role's grants: upgrading never
+        //    silently provisions access.
+        assertThat(countRows(schema, "permissions")).isEqualTo(35);
         assertThat(countRows(schema, "role_permissions")).isEqualTo(19);
     }
 
     @Test
-    void upgradeFromV9PreservesExistingRoleGrantsAndOnlyAddsModifierPermissions() {
+    void upgradeFromV9PreservesExistingRoleGrantsAndOnlyAddsModifierAndCashRegisterPermissions() {
         String schema = "upgrade_modifiers";
         // 1. Migrate to V9: the exact pre-modifiers state.
         Flyway upToV9 = Flyway.configure()
@@ -183,7 +187,52 @@ class FlywayMigrationPathTest {
                 + "select '" + administratorRoleId + "', code from " + schema + ".permissions");
         assertThat(countRows(schema, "role_permissions")).isEqualTo(25);
 
-        // 3. Apply only V10 (the real modifiers upgrade).
+        // 3. Apply V10 and V11 (the real modifiers + cash-register upgrade).
+        Flyway toLatest = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema)
+                .load();
+        assertThat(toLatest.migrate().migrationsExecuted).isEqualTo(2);
+        toLatest.validate();
+
+        // 4. V10 and V11 ADD the modifier and cash-register permissions (25 -> 35)
+        //    but NEVER rewrite the existing role's grants.
+        assertThat(countRows(schema, "permissions")).isEqualTo(35);
+        assertThat(countRows(schema, "role_permissions")).isEqualTo(25);
+        assertThat(tableExists(schema, "modifier_groups")).isTrue();
+        assertThat(tableExists(schema, "modifier_options")).isTrue();
+        assertThat(tableExists(schema, "product_modifier_groups")).isTrue();
+        assertThat(tableExists(schema, "cash_registers")).isTrue();
+    }
+
+    @Test
+    void upgradeFromV10PreservesExistingRoleGrantsAndOnlyAddsCashRegisterPermissions() {
+        String schema = "upgrade_registers";
+        // 1. Migrate to V10: the exact pre-cash-registers state.
+        Flyway upToV10 = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema)
+                .target(MigrationVersion.fromVersion("10"))
+                .load();
+        assertThat(upToV10.migrate().migrationsExecuted).isEqualTo(10);
+        assertThat(countRows(schema, "permissions")).isEqualTo(32);
+        assertThat(tableExists(schema, "cash_registers")).isFalse();
+
+        // 2. Existing deployment: an organization plus a role granted EVERY
+        //    permission present before V11 (32).
+        UUID organizationId = UUID.randomUUID();
+        UUID administratorRoleId = UUID.randomUUID();
+        execute("insert into " + schema + ".organizations "
+                + "(id, name, code, timezone, currency, locale, created_at, updated_at) values "
+                + "('" + organizationId + "', 'Existing Org', 'existing-org', 'UTC', 'MXN', 'es-MX', now(), now())");
+        execute("insert into " + schema + ".roles "
+                + "(id, organization_id, code, name, created_at, updated_at) values "
+                + "('" + administratorRoleId + "', '" + organizationId + "', 'administrator', 'Administrator', now(), now())");
+        execute("insert into " + schema + ".role_permissions (role_id, permission_code) "
+                + "select '" + administratorRoleId + "', code from " + schema + ".permissions");
+        assertThat(countRows(schema, "role_permissions")).isEqualTo(32);
+
+        // 3. Apply only V11 (the real cash-register upgrade).
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas(schema)
@@ -191,13 +240,11 @@ class FlywayMigrationPathTest {
         assertThat(toLatest.migrate().migrationsExecuted).isEqualTo(1);
         toLatest.validate();
 
-        // 4. V10 ADDS the modifier permissions (25 -> 32) but NEVER rewrites the
-        //    existing role's grants.
-        assertThat(countRows(schema, "permissions")).isEqualTo(32);
-        assertThat(countRows(schema, "role_permissions")).isEqualTo(25);
-        assertThat(tableExists(schema, "modifier_groups")).isTrue();
-        assertThat(tableExists(schema, "modifier_options")).isTrue();
-        assertThat(tableExists(schema, "product_modifier_groups")).isTrue();
+        // 4. V11 ADDS the cash-register permissions (32 -> 35) but NEVER rewrites
+        //    the existing role's grants.
+        assertThat(countRows(schema, "permissions")).isEqualTo(35);
+        assertThat(countRows(schema, "role_permissions")).isEqualTo(32);
+        assertThat(tableExists(schema, "cash_registers")).isTrue();
     }
 
     private static Flyway flyway(String schema) {

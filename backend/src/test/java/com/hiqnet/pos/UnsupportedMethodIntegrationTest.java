@@ -45,6 +45,21 @@ class UnsupportedMethodIntegrationTest extends AbstractRbacIntegrationTest {
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isForbidden());
 
+        // Cash registers are branch resources with no DELETE and no full PUT.
+        mockMvc.perform(delete("/api/v1/organizations/{org}/branches/{branch}/cash-registers/{register}",
+                        orgId, randomId, randomId)
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/v1/organizations/{org}/branches/{branch}/cash-registers", orgId, randomId)
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put("/api/v1/organizations/{org}/branches/{branch}/cash-registers/{register}",
+                        orgId, randomId, randomId)
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"X\"}"))
+                .andExpect(status().isForbidden());
+
         // Audit is read-only: no mutation API exists.
         for (var request : new org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder[] {
             post("/api/v1/organizations/{org}/audit-events", orgId),

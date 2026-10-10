@@ -57,6 +57,15 @@ class ConstraintViolationTranslationTest {
     }
 
     @Test
+    void cashRegisterBranchCodeConstraintMapsToConflictWithStableCode() {
+        BusinessException translated =
+                ConstraintTranslator.translate(violation("cash_registers_branch_code_unique"));
+
+        assertEquals(HttpStatus.CONFLICT, translated.getStatus());
+        assertEquals(ErrorCodes.CASH_REGISTER_CODE_ALREADY_EXISTS, translated.getCode());
+    }
+
+    @Test
     void unknownConstraintIsNotGuessedAsDuplicate() {
         assertNull(ConstraintTranslator.translate(violation("branches_some_other_constraint")));
     }
