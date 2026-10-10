@@ -6,6 +6,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
 import org.flywaydb.core.api.output.MigrateResult;
@@ -106,6 +107,46 @@ class FlywayMigrationPathTest {
         assertThat(tableExists("upgrade_catalog", "products")).isTrue();
     }
 
+    @Test
+    void upgradeFromV8PreservesExistingRoleGrantsAndOnlyAddsCatalogPermissions() {
+        String schema = "upgrade_grants";
+        // 1. Migrate to V8: the exact pre-catalog state.
+        Flyway upToV8 = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema)
+                .target(MigrationVersion.fromVersion("8"))
+                .load();
+        assertThat(upToV8.migrate().migrationsExecuted).isEqualTo(8);
+        assertThat(countRows(schema, "permissions")).isEqualTo(19);
+
+        // 2. Simulate an existing deployment's administrator role: an organization
+        //    plus a role granted EVERY permission present before V9 (19).
+        UUID organizationId = UUID.randomUUID();
+        UUID administratorRoleId = UUID.randomUUID();
+        execute("insert into " + schema + ".organizations "
+                + "(id, name, code, timezone, currency, locale, created_at, updated_at) values "
+                + "('" + organizationId + "', 'Existing Org', 'existing-org', 'UTC', 'MXN', 'es-MX', now(), now())");
+        execute("insert into " + schema + ".roles "
+                + "(id, organization_id, code, name, created_at, updated_at) values "
+                + "('" + administratorRoleId + "', '" + organizationId + "', 'administrator', 'Administrator', now(), now())");
+        execute("insert into " + schema + ".role_permissions (role_id, permission_code) "
+                + "select '" + administratorRoleId + "', code from " + schema + ".permissions");
+        assertThat(countRows(schema, "role_permissions")).isEqualTo(19);
+
+        // 3. Apply V9 (the real catalog upgrade).
+        Flyway toLatest = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema)
+                .load();
+        assertThat(toLatest.migrate().migrationsExecuted).isEqualTo(1);
+        toLatest.validate();
+
+        // 4. V9 ADDS the catalog permissions (19 -> 25) but NEVER rewrites an
+        //    existing role's grants: upgrading never silently provisions access.
+        assertThat(countRows(schema, "permissions")).isEqualTo(25);
+        assertThat(countRows(schema, "role_permissions")).isEqualTo(19);
+    }
+
     private static Flyway flyway(String schema) {
         return Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
@@ -143,5 +184,14 @@ class FlywayMigrationPathTest {
     private static Connection connect() throws Exception {
         return DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+    }
+
+    private static void execute(String sql) {
+        try (Connection connection = connect();
+                PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.execute();
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 }
