@@ -11,7 +11,7 @@ User
   ↓ user_organization_roles (organization_id, user_id, role_id)     [ORGANIZATION scope]
 Role  (per Organization; code slug único e inmutable; status ACTIVE|INACTIVE)
   ↓ role_permissions (role_id, permission_code)
-Permission (catálogo global, sembrado por V5/V6/V7/V9/V10/V11; sin CRUD de cliente)
+Permission (catálogo global, sembrado por V5/V6/V7/V9/V10/V11/V12; sin CRUD de cliente)
 
 User
   ↓ branch_memberships (organization_id, branch_id, user_id, status)  [BRANCH scope]
@@ -133,6 +133,10 @@ avala en una sola `EXISTS` (`BranchMembershipRoleRepository`
 | GET /organizations/{id}/branches/{branchId}/cash-registers | `cash-register.read` (branch scope; filtros `?status&q`) |
 | GET /organizations/{id}/branches/{branchId}/cash-registers/{cashRegisterId} | `cash-register.read` (branch scope) |
 | PATCH /organizations/{id}/branches/{branchId}/cash-registers/{cashRegisterId} | `cash-register.update` (branch scope) |
+| POST /organizations/{id}/branches/{branchId}/cash-registers/{cashRegisterId}/cash-shifts | `cash-shift.open` (branch scope) |
+| GET /organizations/{id}/branches/{branchId}/cash-registers/{cashRegisterId}/cash-shifts | `cash-shift.read` (branch scope; filtro `?status`) |
+| GET /organizations/{id}/branches/{branchId}/cash-registers/{cashRegisterId}/cash-shifts/{cashShiftId} | `cash-shift.read` (branch scope) |
+| POST /organizations/{id}/branches/{branchId}/cash-registers/{cashRegisterId}/cash-shifts/{cashShiftId}/close | `cash-shift.close` (branch scope) |
 | POST /api/v1/bootstrap | provisioning one-shot — `X-Bootstrap-Token` (secret), SIN permiso; `organization.create` sigue sin existir |
 
 ## Inmediatez (mismo JWT)

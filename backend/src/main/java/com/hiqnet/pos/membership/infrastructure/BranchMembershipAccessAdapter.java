@@ -27,4 +27,11 @@ public class BranchMembershipAccessAdapter implements BranchMembershipAccessPort
         return branchMembershipRoleRepository.existsEffectiveBranchPermission(
                 userId, organizationId, branchId, permissionCode);
     }
+
+    @Override
+    public boolean hasBranchPermissionIgnoringBranchStatus(
+            UUID userId, UUID organizationId, UUID branchId, String permissionCode) {
+        return branchMembershipRoleRepository.existsBranchPermissionIgnoringBranchStatus(
+                userId, organizationId, branchId, permissionCode);
+    }
 }

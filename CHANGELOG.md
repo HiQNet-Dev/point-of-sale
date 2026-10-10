@@ -27,6 +27,14 @@ Development for v0.2.x has started.
   audit (`V11`).
 - Added the `cash-register.read`, `cash-register.create` and
   `cash-register.update` permissions (permission catalog 32 → 35).
+- Added the Cash Shifts foundation: register-owned Cash Shifts with an
+  `OPEN → CLOSED` lifecycle, server-derived actors and timestamps, `BigDecimal`
+  (`NUMERIC(19,4)`) declaration amounts (`>= 0`, at most 4 decimals), a
+  database-enforced "at most one OPEN shift per register" partial unique index,
+  same-organization composite foreign keys, branch-scoped authorization and
+  append-only audit for open and close (`V12`).
+- Added the `cash-shift.read`, `cash-shift.open` and `cash-shift.close`
+  permissions (permission catalog 35 → 38).
 
 ## [0.1.0] - 2026-10-10
 

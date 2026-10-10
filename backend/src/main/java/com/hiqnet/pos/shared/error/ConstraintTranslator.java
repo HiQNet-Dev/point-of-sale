@@ -28,6 +28,7 @@ public final class ConstraintTranslator {
     public static final String MODIFIER_GROUPS_ORGANIZATION_CODE_UNIQUE = "modifier_groups_organization_code_unique";
     public static final String MODIFIER_OPTIONS_GROUP_CODE_UNIQUE = "modifier_options_group_code_unique";
     public static final String CASH_REGISTERS_BRANCH_CODE_UNIQUE = "cash_registers_branch_code_unique";
+    public static final String CASH_SHIFTS_ONE_OPEN_PER_REGISTER = "cash_shifts_one_open_per_register";
 
     /**
      * Returns the mapped {@link BusinessException} for a known constraint, or
@@ -89,6 +90,10 @@ public final class ConstraintTranslator {
                     HttpStatus.CONFLICT,
                     ErrorCodes.CASH_REGISTER_CODE_ALREADY_EXISTS,
                     "A cash register with this code already exists in the branch");
+            case CASH_SHIFTS_ONE_OPEN_PER_REGISTER -> new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.CASH_REGISTER_ALREADY_HAS_OPEN_SHIFT,
+                    "The cash register already has an open cash shift");
             default -> null;
         };
     }
