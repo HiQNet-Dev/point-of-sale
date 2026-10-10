@@ -27,6 +27,7 @@ public final class ConstraintTranslator {
     public static final String PRODUCTS_ORGANIZATION_BARCODE_UNIQUE = "products_organization_barcode_unique";
     public static final String MODIFIER_GROUPS_ORGANIZATION_CODE_UNIQUE = "modifier_groups_organization_code_unique";
     public static final String MODIFIER_OPTIONS_GROUP_CODE_UNIQUE = "modifier_options_group_code_unique";
+    public static final String CASH_REGISTERS_BRANCH_CODE_UNIQUE = "cash_registers_branch_code_unique";
 
     /**
      * Returns the mapped {@link BusinessException} for a known constraint, or
@@ -84,6 +85,10 @@ public final class ConstraintTranslator {
                     HttpStatus.CONFLICT,
                     ErrorCodes.MODIFIER_OPTION_CODE_ALREADY_EXISTS,
                     "A modifier option with this code already exists in the group");
+            case CASH_REGISTERS_BRANCH_CODE_UNIQUE -> new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.CASH_REGISTER_CODE_ALREADY_EXISTS,
+                    "A cash register with this code already exists in the branch");
             default -> null;
         };
     }

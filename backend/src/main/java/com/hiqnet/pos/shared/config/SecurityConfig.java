@@ -121,6 +121,10 @@ public class SecurityConfig {
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/modifier-groups/*/options").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/modifier-groups/*/options/*").authenticated();
                     auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*/modifier-groups/*/options/*").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/cash-registers").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/cash-registers").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/cash-registers/*").authenticated();
+                    auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*/branches/*/cash-registers/*").authenticated();
                     auth.anyRequest().denyAll();
                 })
                 // Bootstrap token guard runs before authorization/body parsing:
