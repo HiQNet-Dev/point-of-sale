@@ -122,6 +122,28 @@ class CashRegisterAuthorizationIntegrationTest extends AbstractRbacIntegrationTe
     }
 
     @Test
+    void branchScopedCashRegisterGrantDoesNotEscalateToOtherDomains() throws Exception {
+        RbacFixture fx = fixture();
+        Branch branchA = branchEntity(fx, "suc-a");
+        UUID role = createRole(fx, "centro-manager", "Centro Manager", "cash-register.read");
+        assignMembershipRole(fx, membershipEntity(fx, branchA.getId()).getId(), role);
+        String token = login(fx); // only a branch-scoped cash-register.read grant
+
+        mockMvc.perform(get("/api/v1/organizations/" + fx.orgId() + "/products")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/organizations/" + fx.orgId() + "/modifier-groups")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/organizations/" + fx.orgId() + "/roles")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v1/organizations/" + fx.orgId() + "/users")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void membershipStatusChangeIsImmediateWithTheSameJwt() throws Exception {
         RbacFixture fx = fixture();
         Branch branchA = branchEntity(fx, "suc-a");

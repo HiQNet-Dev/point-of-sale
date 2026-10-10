@@ -3,6 +3,7 @@ package com.hiqnet.pos.cashregister;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.hiqnet.pos.audit.AbstractAuditIntegrationTest;
@@ -94,7 +95,8 @@ class CashRegisterAuditIntegrationTest extends AbstractAuditIntegrationTest {
                         .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"expectedVersion\":0}"))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value(0));
 
         assertThat(auditCount(fx.orgId())).isEqualTo(before);
     }

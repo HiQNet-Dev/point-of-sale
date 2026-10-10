@@ -100,6 +100,12 @@ class CashRegisterConcurrencyTest extends AbstractRbacIntegrationTest {
 
         assertThat(statuses.stream().filter(s -> s == 200).count()).isEqualTo(1);
         assertThat(statuses.stream().filter(s -> s == 409).count()).isEqualTo(THREADS - 1);
+        Long version = jdbcTemplate.queryForObject(
+                "select version from cash_registers where id = ?", Long.class, UUID.fromString(registerId));
+        String storedName = jdbcTemplate.queryForObject(
+                "select name from cash_registers where id = ?", String.class, UUID.fromString(registerId));
+        assertThat(version).isEqualTo(1);
+        assertThat(storedName).isEqualTo("Front 2");
     }
 
     private List<Integer> runParallel(int threads, Callable<Integer> action) throws Exception {
