@@ -34,7 +34,7 @@ import com.nimbusds.jose.jwk.source.ImmutableSecret;
  * the signature check.
  */
 @Configuration
-@EnableConfigurationProperties(AuthProperties.class)
+@EnableConfigurationProperties({AuthProperties.class, BootstrapProperties.class})
 @SecurityScheme(
         name = "bearerAuth",
         type = SecuritySchemeType.HTTP,

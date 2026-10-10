@@ -53,7 +53,7 @@ Detalle de schema: `docs/02-database/audit-model.md`.
   `AuditException` — un evento de usuario sin correlación de sesión no se
   registra).
 - **SYSTEM** → `actor_user_id = NULL` (invocaciones internas: contexto de
-  seguridad vacío o token anónimo/no autenticado; futuro secure bootstrap,
+  seguridad vacío o token anónimo/no autenticado; secure bootstrap,
   mantenimiento, procesos controlados). No existen usuarios técnicos falsos.
 - **Fail-closed**: un **principal autenticado que NO sea un JWT** (p. ej. un
   mecanismo de autenticación futuro o mal configurado) → `AuditException` y la
@@ -86,9 +86,9 @@ refresh token, ni token hashes.
 
 ## Convenciones de naming
 
-- `action`: `entity.action` — `organization.updated`, `branch.created`,
-  `branch.updated`, `user.created`, `user.updated`, `user.deactivated`,
-  `user.reactivated`, `role.created`, `role.updated`,
+- `action`: `entity.action` — `organization.created`, `organization.updated`,
+  `branch.created`, `branch.updated`, `user.created`, `user.updated`,
+  `user.deactivated`, `user.reactivated`, `role.created`, `role.updated`,
   `role.permissions.replaced`, `user.roles.replaced`,
   `branch.membership.created`, `branch.membership.updated`,
   `branch.membership.roles.replaced`.
@@ -152,6 +152,16 @@ GET /api/v1/organizations/{organizationId}/audit-events   (audit.read, organizat
   de otras branches, users, roles, organization, administración de seguridad) —
   probado explícitamente (403).
 
+## Bootstrap
+
+El Secure Admin Bootstrap (provisión de la primera Organization, administrador y
+rol) registra `organization.created` + `user.created` + `role.created` +
+`role.permissions.replaced` + `user.roles.replaced`, todos con actor
+**SYSTEM** (aún no existe un usuario autenticado y el guard HTTP no introduce
+una Authentication falsa), en la misma transacción del provisioning: si el
+Audit falla, TODO el bootstrap hace rollback. Detalle:
+`docs/04-security/secure-bootstrap.md`.
+
 ## No implementado (fronteras)
 
 - **Auditoría de autenticación** (login failures, refresh rotation, reuse,
@@ -161,7 +171,5 @@ GET /api/v1/organizations/{organizationId}/audit-events   (audit.read, organizat
   terminal identity** (llegará con la fundación de hardware/cajas), **client IP**
   (topología de proxies sin definir), **partitioning / Elasticsearch /
   OpenSearch / async / outbox**.
-- `organization.created` no se audita todavía: `POST /organizations` sigue
-  cerrado y el provisioning real llegará con el Secure Admin Bootstrap.
 - El futuro **Control Plane** tendrá su propia auditoría; este audit pertenece
   únicamente al POS cliente.

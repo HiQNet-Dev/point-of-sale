@@ -52,3 +52,10 @@ app:
 
   security:
     permit-opendoc: false
+  bootstrap:
+    # One-shot deployment secret for the first-run provisioning (POST
+    # /api/v1/bootstrap). OPTIONAL: when empty/absent the bootstrap route is
+    # CLOSED (deny-by-default). When set it must be Base64 decoding to >= 32
+    # bytes (`openssl rand -base64 32`) or startup fails. DISTINCT from
+    # AUTH_JWT_SECRET; remove it after provisioning and restart.
+    secret: ${BOOTSTRAP_SECRET:}

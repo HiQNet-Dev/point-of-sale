@@ -11,6 +11,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -48,6 +49,7 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             ObjectMapper objectMapper,
+            BootstrapTokenGuard bootstrapGuard,
             @Value("${app.security.permit-opendoc:false}") boolean permitOpenDoc)
             throws Exception {
         ApiSecurityErrorHandler errorHandler = new ApiSecurityErrorHandler(objectMapper);
@@ -62,6 +64,14 @@ public class SecurityConfig {
                         auth.requestMatchers("/v3/api-docs/**", "/swagger-ui/**").permitAll();
                     }
                     auth.requestMatchers(HttpMethod.POST, PUBLIC_AUTH).permitAll();
+                    // One-shot bootstrap: the route is reachable ONLY while a
+                    // deployment secret is configured, and even then it is gated
+                    // by BootstrapTokenFilter (verified before the body is read).
+                    // With no secret configured the matcher is not added and the
+                    // route falls through to anyRequest().denyAll().
+                    if (bootstrapGuard.enabled()) {
+                        auth.requestMatchers(HttpMethod.POST, "/api/v1/bootstrap").permitAll();
+                    }
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/auth/logout-all").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/auth/me").authenticated();
 
@@ -95,6 +105,9 @@ public class SecurityConfig {
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/audit-events").authenticated();
                     auth.anyRequest().denyAll();
                 })
+                // Bootstrap token guard runs before authorization/body parsing:
+                // a missing/invalid token never reaches the controller.
+                .addFilterBefore(new BootstrapTokenFilter(bootstrapGuard, objectMapper), AuthorizationFilter.class)
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(Customizer.withDefaults())
                         // Route invalid/expired bearer tokens through our handler so

@@ -46,4 +46,8 @@ public final class ErrorCodes {
     public static final String AUTHENTICATION_REQUIRED = "AUTHENTICATION_REQUIRED";
     public static final String TOKEN_INVALID = "TOKEN_INVALID";
     public static final String TOKEN_EXPIRED = "TOKEN_EXPIRED";
+
+    public static final String BOOTSTRAP_INVALID_TOKEN = "BOOTSTRAP_INVALID_TOKEN";
+    public static final String BOOTSTRAP_ALREADY_COMPLETED = "BOOTSTRAP_ALREADY_COMPLETED";
+    public static final String BOOTSTRAP_NOT_ALLOWED = "BOOTSTRAP_NOT_ALLOWED";
 }
