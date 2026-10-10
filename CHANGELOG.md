@@ -8,6 +8,13 @@ All notable changes to HiQNet POS are documented in this file.
 
 Development for v0.2.x has started.
 
+- Added the Catalog Foundation: organization-owned Categories and Products
+  with an immutable normalized `code`/`sku`, an optional per-organization
+  unique `barcode`, a base `unitPrice` (currency inherited from the
+  organization) and optional same-organization category assignment (`V9`).
+- Added the `category.*` and `product.*` permissions (permission catalog
+  19 → 25).
+
 ## [0.1.0] - 2026-10-10
 
 ### Foundation
