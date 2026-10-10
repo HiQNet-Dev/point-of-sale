@@ -96,9 +96,13 @@ public class CashRegisterService {
         requireOrganization(organizationId);
         requireBranch(organizationId, branchId);
         CashRegister register = cashRegisterRepository
-                .findByIdAndOrganizationIdAndBranchIdForUpdate(cashRegisterId, organizationId, branchId)
+                .findByIdAndOrganizationIdAndBranchId(cashRegisterId, organizationId, branchId)
                 .orElseThrow(() -> new BusinessException(
                         HttpStatus.NOT_FOUND, ErrorCodes.CASH_REGISTER_NOT_FOUND, "Cash register not found"));
+        // Optimistic concurrency: the explicit expectedVersion guard rejects a
+        // stale write with 409, and @Version on the row makes the DB update
+        // predicate (WHERE version = expected) the final authority under a real
+        // race, so exactly one concurrent update can win.
         if (register.getVersion() != command.expectedVersion()) {
             throw new BusinessException(
                     HttpStatus.CONFLICT,
