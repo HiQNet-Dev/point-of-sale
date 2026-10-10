@@ -181,7 +181,17 @@ volver `ACTIVE` vuelven a conceder (intencional; documentado).
   HiQNet vive en un futuro Control Plane separado (`Business Administration !=
   HiQNet Administration`).
 - **Frontend**, cache de permisos, `securityVersion`, blacklist JWT.
-- **Branch-scoped listing «mis sucursales»**: `GET /branches` (colección) sigue
-  siendo organization-scope; un endpoint de listing filtrado para memberships
-  se añadirá cuando el frontend/operación lo necesite (decisión consciente).
+- **Branch-scoped listing «mis sucursales»**: implementado como
+  `GET /api/v1/auth/me/branches` (self-scoped, paginado). Sin `branch.read`
+  org-wide devuelve solo las sucursales con membership ACTIVE del usuario; con
+  `branch.read` org-wide, todas las de su organización. Es **visibilidad, no
+  autorización**: no promueve a scope de organización, no requiere
+  `branch.membership.read`, y una branch INACTIVE sigue siendo descubrible para
+  sus miembros (recovery). `GET /branches` (colección) sigue siendo
+  organization-scope.
+- **Read-recovery tras desactivar una branch**: las lecturas de Cash Register y
+  Cash Shift (`GET` list/detail) y el `close` de Cash Shift usan
+  `hasBranchPermissionIgnoringBranchStatus` (la branch leg no exige branch
+  ACTIVE), para que un recurso ya abierto siga siendo recuperable. `open` y las
+  escrituras de Cash Register siguen exigiendo la branch ACTIVE.
 - **Recovery/backdoor** para el administrador destruido: no (operativo/futuro).

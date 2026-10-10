@@ -450,8 +450,18 @@ Convención estable desde la administración de usuarios (`shared.api.PageRespon
   en `users`, `email ASC, id ASC`.
 - **Excepción deliberada:** `GET /organizations/{id}/branches` (colección) NO
   está paginado — las sucursales de una organización son pocas por naturaleza y
-  su listado completo es el contrato actual; se revisará (paginación o endpoint
-  filtrado "mis sucursales") si una organización supera un tamaño razonable.
+  su listado completo es el contrato actual. El descubrimiento self-scoped
+  `GET /api/v1/auth/me/branches` (paginado, ver abajo) cubre el caso "mis
+  sucursales".
+- **Self operational context:** `GET /api/v1/auth/me` incluye el contexto
+  operativo de la organización (`organization.currency/locale/timezone`,
+  derivado del servidor). `GET /api/v1/auth/me/branches` lista, paginado
+  (`page`/`size` máx 100, filtros opcionales `status`/`q`, orden `name ASC,
+  id ASC`), las sucursales visibles para la identidad: sin `branch.read`
+  org-wide solo las de membership ACTIVE del usuario; con `branch.read`
+  org-wide todas las de su organización. Es **visibilidad, no autorización**:
+  no concede operar, una branch INACTIVE sigue siendo descubrible para sus
+  miembros y sin sucursales visibles responde `200` con página vacía.
 - Nunca se serializa `Page`/`Pageable` de Spring Data directamente.
 
 ## OpenAPI

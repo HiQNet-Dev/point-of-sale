@@ -165,10 +165,11 @@ class CashRegisterAuthorizationIntegrationTest extends AbstractRbacIntegrationTe
     }
 
     @Test
-    void branchDeactivationDeniesBranchScopedPermissionImmediately() throws Exception {
+    void branchDeactivationKeepsReadsRecoverableButStillDeniesWrites() throws Exception {
         RbacFixture fx = fixture();
         Branch branchA = branchEntity(fx, "suc-a");
-        UUID role = createRole(fx, "centro-manager", "Centro Manager", "cash-register.read");
+        UUID role = createRole(
+                fx, "centro-manager", "Centro Manager", "cash-register.read", "cash-register.create");
         assignMembershipRole(fx, membershipEntity(fx, branchA.getId()).getId(), role);
         String token = login(fx);
 
@@ -176,7 +177,17 @@ class CashRegisterAuthorizationIntegrationTest extends AbstractRbacIntegrationTe
                 .andExpect(status().isOk());
 
         setBranchStatus(branchA.getId(), BranchStatus.INACTIVE);
+
+        // Reads recover: an already-registered register stays reachable so an
+        // open operation can be recovered after the branch is deactivated.
         mockMvc.perform(get(url(fx, branchA.getId())).header("Authorization", bearer(token)))
+                .andExpect(status().isOk());
+
+        // Writes still require the branch ACTIVE (recovery is read-only).
+        mockMvc.perform(post(url(fx, branchA.getId()))
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"new-register\",\"name\":\"New Register\"}"))
                 .andExpect(status().isForbidden());
 
         setBranchStatus(branchA.getId(), BranchStatus.ACTIVE);

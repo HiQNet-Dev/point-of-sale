@@ -34,6 +34,17 @@ public final class AuthResponses {
             @Schema(description = "Normalized email (trimmed, lowercase). This is the database identity.")
             String email,
             @Schema(description = "User status from the database.", example = "ACTIVE")
-            UserStatus status) {
+            UserStatus status,
+            @Schema(description = "Organization operational context, resolved from the database (never from token claims).")
+            OrganizationContext organization) {
+    }
+
+    public record OrganizationContext(
+            @Schema(description = "Organization currency (ISO 4217).", example = "MXN")
+            String currency,
+            @Schema(description = "Organization locale (BCP 47).", example = "es-MX")
+            String locale,
+            @Schema(description = "Organization timezone (IANA).", example = "America/Mexico_City")
+            String timezone) {
     }
 }

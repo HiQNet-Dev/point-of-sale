@@ -1,6 +1,7 @@
 package com.hiqnet.pos.membership.domain;
 
 import jakarta.persistence.LockModeType;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -49,4 +50,22 @@ public interface BranchMembershipRepository extends JpaRepository<BranchMembersh
 
     Page<BranchMembership> findByOrganizationIdAndBranchIdAndStatus(
             UUID organizationId, UUID branchId, BranchMembershipStatus status, Pageable pageable);
+
+    /**
+     * Self-discovery projection: the branch ids the user is ACTIVELY a member of
+     * inside one organization. Only {@code membership.status = ACTIVE} is
+     * required — branch status and role state are deliberately NOT filtered, so
+     * a branch that was deactivated remains discoverable to its members
+     * (recovery), and discovery is never an authorization decision.
+     */
+    @Query("""
+            select bm.branchId from BranchMembership bm
+            where bm.organizationId = :organizationId
+              and bm.userId = :userId
+              and bm.status = :status
+            """)
+    List<UUID> findBranchIdsByOrganizationIdAndUserIdAndStatus(
+            @Param("organizationId") UUID organizationId,
+            @Param("userId") UUID userId,
+            @Param("status") BranchMembershipStatus status);
 }

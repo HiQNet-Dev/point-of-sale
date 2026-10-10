@@ -74,6 +74,7 @@ public class SecurityConfig {
                     }
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/auth/logout-all").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/auth/me").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/auth/me/branches").authenticated();
 
                     // Administrative APIs: authentication required here; the
                     // fine-grained permission checks are in @PreAuthorize.

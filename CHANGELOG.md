@@ -35,6 +35,15 @@ Development for v0.2.x has started.
   append-only audit for open and close (`V12`).
 - Added the `cash-shift.read`, `cash-shift.open` and `cash-shift.close`
   permissions (permission catalog 35 → 38).
+- Added the Self Operational Context: `GET /api/v1/auth/me` now returns the
+  organization operational context (`organization.currency/locale/timezone`,
+  server-derived) and a new self-scoped `GET /api/v1/auth/me/branches`
+  (paginated) lists the branches visible to the identity — membership-scoped by
+  default, organization-wide with `branch.read`. Visibility only; a deactivated
+  branch stays discoverable to its members.
+- Read-recovery after branch deactivation: Cash Register and Cash Shift reads
+  (and cash-shift close) no longer require the branch to be ACTIVE, so an
+  already-open resource stays reachable; writes still require an ACTIVE branch.
 
 ## [0.1.0] - 2026-10-10
 
