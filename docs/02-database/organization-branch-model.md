@@ -1,7 +1,7 @@
 # Modelo Organization — Branch (implementado)
 
 Estado: **implementado** (migración `V2__create_organizations_and_branches.sql`,
-módulos `organization` y `branch`). Versión `0.1.0-SNAPSHOT`.
+módulos `organization` y `branch`). Versión `0.1.0`.
 
 ## Entidades
 
