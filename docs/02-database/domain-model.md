@@ -4,7 +4,7 @@
 administración) y `RefreshSession` ya están implementados (migraciones
 `V1`–`V4`); el resto de las entidades descritas aquí son futuras.
 
-Versión actual: `0.1.0-SNAPSHOT`.
+Versión actual: `0.1.0`.
 
 ## Jerarquía principal
 

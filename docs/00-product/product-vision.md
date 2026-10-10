@@ -1,6 +1,6 @@
 # Visión de producto — HiQNet POS
 
-**Estado:** fundación (v0.1.0-SNAPSHOT). Ninguna funcionalidad de negocio existe todavía.
+**Estado:** fundación (v0.1.0). Ninguna funcionalidad de negocio existe todavía.
 
 ## Qué es
 

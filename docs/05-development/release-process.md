@@ -1,13 +1,9 @@
 # Proceso de release
 
-**Estado: no existe ninguna release ni tag.** Versión en desarrollo:
-`0.1.0-SNAPSHOT` — fuente canónica: archivo `VERSION` (raíz). El `pom.xml` del
-backend debe coincidir; el `package.json` del frontend se mantiene sincronizado
-(`0.1.0-SNAPSHOT`) pero, por ser un paquete privado, **no es autoridad de
-release** — solo `VERSION` lo es.
-
-Este documento convierte el antiguo "esquema futuro" en un proceso **ejecutable
-para v0.1.0**. Hasta que HiQNet lo autorice, nada de esto se ejecuta.
+**Estado: primera release técnica privada preparada — `v0.1.0` (Foundation,
+2026-10-10).** El texto siguiente describe el proceso ejecutable; los gates
+técnicos y legales del repositorio están cerrados y la release se materializa
+en un único commit `chore(release): v0.1.0`.
 
 ## Versionado: SemVer
 
@@ -81,9 +77,11 @@ comerciales** correspondientes (EULA/acuerdos de servicio, futuros).
 
 ## Hoy
 
-- **Cero releases publicadas.**
-- **Cero tags** (verificado en cada política de proyecto).
+- **Primera release preparada: `v0.1.0`** (release técnica privada de la
+  Foundation; tag y GitHub Release privada publicados tras CI final verde).
 - Producto **no comercialmente estable**; sin garantías entre snapshots.
 - **Distribución legal del repositorio resuelta**: propietario / All Rights
   Reserved, `LICENSE` presente, repo privado (no open-source).
-- Sin pipeline externo de publicación (imágenes, paquetes, instaladores).
+- Sin pipeline externo de publicación (imágenes, paquetes, instaladores); los
+  artefactos binarios para clientes requerirán contratos comerciales y política
+  de distribución propia.

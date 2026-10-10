@@ -5,7 +5,7 @@
 solo la fundación técnica (estructura compilable, ejecutable y documentada).
 Todo lo descrito aquí está **no implementado / futuro**.
 
-Versión actual: `0.1.0-SNAPSHOT`. La v1.0.0 **no está alcanzada**.
+Versión actual: `0.1.0` (Foundation). La v1.0.0 **no está alcanzada**.
 
 ## Must-have (futuro, no implementado)
 

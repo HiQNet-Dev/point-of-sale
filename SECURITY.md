@@ -29,5 +29,6 @@ La base: **deny by default** y **least privilege**. Detalle completo en
 
 ## Alcance
 
-Este repositorio mantiene `0.1.0-SNAPSHOT` (pre-release). Las vulnerabilidades se
-tratan igual que en etapa estable: reporta y corregimos antes de release comercial.
+Este repositorio mantiene `0.1.0` (release técnica privada de la Foundation;
+pre-1.0, no comercial). Las vulnerabilidades se tratan igual que en etapa
+estable: reporta y corregimos antes de release comercial.

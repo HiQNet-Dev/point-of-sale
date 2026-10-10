@@ -3,13 +3,13 @@
 **Orientación, no contrato.** Los hitos y fechas pueden cambiar según aprendizajes.
 Ningún milestone posterior al actual está garantizado en contenido ni fecha.
 
-Versión actual: `0.1.0-SNAPSHOT`.
+Versión actual: `0.1.0`.
 
 ## Hitos
 
 | Milestone | Contenido (futuro salvo indicación) | Estado |
 | --- | --- | --- |
-| **v0.1.x Foundation** | Estructura backend + frontend, config, seguridad base, documentación, **Organization + Branch (implementado)**, **Authentication (implementado)**, **Users administration (implementado)**, **Roles/Permissions/RBAC (implementado)**, **Branch Memberships (implementado)**, **Audit Foundation (implementado)**, **Secure Admin Bootstrap (implementado)**, **Foundation Hardening (candidate)** | **Implementación completa — candidate a hardening; release `v0.1.0` pendiente de decisión (PR abierto, sin tag)** |
+| **v0.1.x Foundation** | Estructura backend + frontend, config, seguridad base, documentación, **Organization + Branch (implementado)**, **Authentication (implementado)**, **Users administration (implementado)**, **Roles/Permissions/RBAC (implementado)**, **Branch Memberships (implementado)**, **Audit Foundation (implementado)**, **Secure Admin Bootstrap (implementado)**, **Foundation Hardening**, **estado legal propietario** | **RELEASED — `v0.1.0` (2026-10-10, release técnica privada)** |
 | v0.2.x POS Core | Catálogo, cajas, turnos, ventas, pagos, tickets | Futuro / pendiente |
 | v0.3.x Inventory | Ingredientes, recetas, existencias por sucursal | Futuro / pendiente |
 | v0.4.x Purchasing | Proveedores, órdenes de compra, recepción | Futuro / pendiente |
@@ -22,7 +22,7 @@ Versión actual: `0.1.0-SNAPSHOT`.
 
 ## Notas
 
-- El **tag `v0.1.0` se creará solo cuando el milestone Foundation esté completo**;
-  hoy no existe ningún tag ni release.
+- El **tag `v0.1.0`** existe (release técnica privada de la Foundation,
+  2026-10-10); `v1.0.0` sigue siendo la primera release comercial estable.
 - Alcance detallado en `docs/00-product/scope-v1.md` (todo futuro).
 - Versiones y proceso en `docs/05-development/release-process.md`.

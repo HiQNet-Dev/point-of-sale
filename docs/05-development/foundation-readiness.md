@@ -2,10 +2,12 @@
 
 **Propósito:** resumen de gates reales para cortar `v0.1.0-Foundation`. Cada
 gate es `PASS`/`DEFERRED` (con motivo explícito). Documento vivo: se actualiza
-en cada slice de hardening. **No** es una declaración de release: la decisión
-final de publicar pertenece a HiQNet (ver `release-process.md`).
+en cada slice de hardening.
 
-Versión auditada: `0.1.0-SNAPSHOT` (Foundation, V1–V8).
+Release candidate / release: `0.1.0` (Foundation, V1–V8).
+
+Gates técnicos = **PASS**; gate legal/distribución del repositorio = **PASS**
+(software propietario, All Rights Reserved, `LICENSE` presente, repo privado).
 
 ## Gates
 
@@ -37,7 +39,7 @@ Versión auditada: `0.1.0-SNAPSHOT` (Foundation, V1–V8).
 | CI | PASS | permisos mínimos (`contents: read`); backend+frontend+compose verdes en main |
 | Docs | PASS | roadmap/módulos/seguridad/API alineados; README con Foundation y `BOOTSTRAP_SECRET` |
 | Legal/distribución | PASS | Propietario / All Rights Reserved; `LICENSE` presente; repo privado; acuerdos comerciales separados para clientes |
-| Versiones | PASS | `VERSION`=fuente canónica; backend `0.1.0-SNAPSHOT`; frontend sincronizado (`0.1.0-SNAPSHOT`) |
+| Versiones | PASS | `VERSION`=fuente canónica; backend `0.1.0`; frontend sincronizado (`0.1.0`) |
 | Tests | PASS | `./mvnw clean verify` (361 tests) + frontend `lint/typecheck/test/build` + Compose |
 | Rendimiento | PASS | sin N+1 (dominio sin asociaciones; checks `EXISTS` únicos), paginación acotada, índices críticos presentes |
 
