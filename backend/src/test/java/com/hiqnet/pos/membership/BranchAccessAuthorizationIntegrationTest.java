@@ -13,6 +13,8 @@ import com.hiqnet.pos.branch.domain.BranchRepository;
 import com.hiqnet.pos.branch.domain.BranchStatus;
 import com.hiqnet.pos.catalog.domain.Category;
 import com.hiqnet.pos.catalog.domain.CategoryRepository;
+import com.hiqnet.pos.catalog.domain.ModifierGroup;
+import com.hiqnet.pos.catalog.domain.ModifierGroupRepository;
 import com.hiqnet.pos.catalog.domain.Product;
 import com.hiqnet.pos.catalog.domain.ProductRepository;
 import com.hiqnet.pos.membership.domain.BranchMembership;
@@ -64,6 +66,9 @@ class BranchAccessAuthorizationIntegrationTest extends AbstractRbacIntegrationTe
 
     @Autowired
     private ProductRepository productRepository;
+
+    @Autowired
+    private ModifierGroupRepository modifierGroupRepository;
 
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -198,8 +203,39 @@ class BranchAccessAuthorizationIntegrationTest extends AbstractRbacIntegrationTe
     }
 
     @Test
-    void membershipStatusChangeIsImmediateWithTheSameJwt() throws Exception {
+    void branchScopedRoleNeverEscalatesToOrganizationWideModifiers() throws Exception {
         RbacFixture fx = fixture();
+        String branchA = createBranch(fx, "suc-a");
+        UUID groupId = modifierGroupEntity(fx, "milk").getId();
+        // The branch-scoped role literally contains organization-scope modifier
+        // permissions: they must NOT authorize the organization-wide endpoints.
+        UUID role = createRole(
+                fx,
+                "modifier-lead",
+                "Modifier Lead",
+                "branch.read",
+                "modifier.group.update",
+                "product.modifiers.manage");
+        UUID membershipA = createMembership(fx, UUID.fromString(branchA));
+        assignMembershipRole(fx, membershipA, role);
+        String token = login(fx); // NO organization-wide role
+
+        mockMvc.perform(get(branchUrl(fx, branchA)).header("Authorization", bearer(token)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(patch("/api/v1/organizations/" + fx.orgId() + "/modifier-groups/" + groupId)
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"name\":\"Hack\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mockMvc.perform(get("/api/v1/organizations/" + fx.orgId() + "/modifier-groups")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void membershipStatusChangeIsImmediateWithTheSameJwt() throws Exception {        RbacFixture fx = fixture();
         String branchA = createBranch(fx, "suc-a");
         UUID role = createRole(fx, "centro-manager", "Centro Manager", "branch.read");
         BranchMembership membership = membershipEntity(fx, branchA);
@@ -345,6 +381,12 @@ class BranchAccessAuthorizationIntegrationTest extends AbstractRbacIntegrationTe
         Organization organization = organizationRepository.findById(fx.orgId()).orElseThrow();
         return productRepository.saveAndFlush(
                 Product.create(organization, sku, "Product " + sku, new BigDecimal("5.0000")));
+    }
+
+    private ModifierGroup modifierGroupEntity(RbacFixture fx, String code) {
+        Organization organization = organizationRepository.findById(fx.orgId()).orElseThrow();
+        return modifierGroupRepository.saveAndFlush(
+                ModifierGroup.create(organization, code, "Group " + code, 0, 1));
     }
 
     private Branch branchEntity(RbacFixture fx, String code) {
