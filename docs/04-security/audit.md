@@ -48,10 +48,17 @@ Detalle de schema: `docs/02-database/audit-model.md`.
 ## Actor
 
 - **USER** → `actor_user_id` = `sub` del access JWT (UUID). **Nunca** email como
-  autoridad, ni roles/permisos en el evento.
-- **SYSTEM** → `actor_user_id = NULL` (invocaciones internas: futuro secure
-  bootstrap, mantenimiento, procesos controlados). No existen usuarios técnicos
-  falsos.
+  autoridad, ni roles/permisos en el evento. El `jti` del access JWT es
+  **requerido** para un actor USER (nuestro emisor siempre lo genera; si falta,
+  `AuditException` — un evento de usuario sin correlación de sesión no se
+  registra).
+- **SYSTEM** → `actor_user_id = NULL` (invocaciones internas: contexto de
+  seguridad vacío o token anónimo/no autenticado; futuro secure bootstrap,
+  mantenimiento, procesos controlados). No existen usuarios técnicos falsos.
+- **Fail-closed**: un **principal autenticado que NO sea un JWT** (p. ej. un
+  mecanismo de autenticación futuro o mal configurado) → `AuditException` y la
+  transacción de negocio hace rollback. NUNCA se degrada silenciosamente a
+  `SYSTEM` — eso destruiría la atribución y ocultaría la mala configuración.
 - La resolución del actor es **central** (adaptador `AuditRecorder`): los
   services de negocio jamás importan Spring Security para auditar — simplemente
   llaman `AuditPort.record(...)` con los hechos del evento.
@@ -95,11 +102,23 @@ refresh token, ni token hashes.
 
 - `metadata` JSONB, contexto pequeño (≤ **16 KiB** serializado; rechazado en
   aplicación y por CHECK en DB — se resuelve por transacción fallida, nunca se
-  trunca).
-- PROHIBIDO dentro de metadata (rechazado **case-insensitive** y para
-  compuestos evidentes): `password`, `passwordHash`, `token`, `accessToken`,
-  `refreshToken`, `tokenHash`, `Authorization`, `jwt`, `secret`, `privateKey`,
-  `credential`, …
+  trunca). El límite se aplica a la **representación final sanitizada** que se
+  persiste (el resultado de `asMap()` es exactamente lo que se serializa).
+- PROHIBIDO dentro de metadata (rechazado **case-insensitive**, ignorando
+  `_`, `-`, espacios y signos, y para compuestos evidentes): `password`,
+  `passwordHash`, `token`, `accessToken`, `refreshToken`, `tokenHash`,
+  `Authorization`, `jwt`, `secret`, `privateKey`, `credential`, …
+- **La validación es RECURSIVA**: ninguna key sensible puede existir en
+  NINGÚN nivel del árbol (nested Maps, Maps dentro de Lists, mezclas).
+- **El árbol está restringido**: solo `null`, `String`, `Boolean`, `Number`,
+  `Map<String, ?>` (keys String no null en todo nivel) y `Collection`;
+  arrays, enums, UUID/Instant y **POJOs arbitrarios son rechazados** con
+  `AuditException` (Jackson podría serializar sus propiedades hacia keys
+  sensibles sin pasar por el validator).
+- **Inmutabilidad profunda**: construir `AuditMetadata` copia profundamente el
+  árbol en estructuras no modificables; mutar los inputs originales o lo que
+  devuelve `asMap()` no cambia nada. `AuditEvent.getMetadata()` expone una
+  vista profunda inmutable (también la metadata hidratada por Hibernate).
 - Nunca es un volcado del request ni de DTOs completos. Ejemplos aceptables:
   `{"changedFields":["name","timezone"]}`, `{"fromStatus":"ACTIVE",
   "toStatus":"INACTIVE"}`, `{"permissionCount":4}`, `{"roleCount":2}`,

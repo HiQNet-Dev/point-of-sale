@@ -7,8 +7,14 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.hibernate.annotations.Immutable;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -19,9 +25,12 @@ import org.hibernate.type.SqlTypes;
  * no setters, no update methods and no way to drop, re-hash or replace its
  * metadata after creation (the JPA no-arg constructor is protected); the
  * {@code audit_events} table rejects every {@code UPDATE}/{@code DELETE} with a
- * BEFORE trigger.</p>
+ * BEFORE trigger — PostgreSQL is the final authority. {@code @Immutable} tells
+ * Hibernate the same thing (no dirty checking, no accidental writing of an
+ * {@code AuditEvent}); inserts are unaffected.</p>
  */
 @Entity
+@Immutable
 @Table(name = "audit_events")
 public class AuditEvent {
 
@@ -170,7 +179,33 @@ public class AuditEvent {
     }
 
     public Map<String, Object> getMetadata() {
-        return metadata;
+        // The Hibernate-hydrated map (and its nested maps/lists) is mutable:
+        // a deep immutable view prevents any component from mutating an audit
+        // event in memory through the getter. Values are scalars after
+        // hydration, so this only wraps nested Maps/Collections.
+        return metadata == null ? null : immutableView(metadata);
+    }
+
+    private static Map<String, Object> immutableView(Map<String, Object> source) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        source.forEach((key, value) -> view.put(key, immutableViewValue(value)));
+        return Collections.unmodifiableMap(view);
+    }
+
+    private static Object immutableViewValue(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> view = new LinkedHashMap<>();
+            map.forEach((key, item) -> view.put((String) key, immutableViewValue(item)));
+            return Collections.unmodifiableMap(view);
+        }
+        if (value instanceof Collection<?> collection) {
+            List<Object> view = new ArrayList<>(collection.size());
+            for (Object item : collection) {
+                view.add(immutableViewValue(item));
+            }
+            return Collections.unmodifiableList(view);
+        }
+        return value;
     }
 
     public Instant getOccurredAt() {

@@ -12,6 +12,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -25,19 +26,26 @@ import tools.jackson.databind.ObjectMapper;
  * shared.audit}; business modules never see this class).
  *
  * <ul>
- *   <li><b>Actor resolution is central:</b> the acting {@code USER} (JWT
- *       {@code sub} → UUID) and the access-token {@code jti} come from the
- *       {@link SecurityContextHolder}; internal invocations without an
- *       authenticated user become {@code SYSTEM}. Business services never
- *       import Spring Security for auditing.</li>
+ *   <li><b>Actor resolution is central and FAIL-CLOSED:</b> an authenticated
+ *       {@link Jwt} principal → {@code USER} (sub → UUID + token {@code jti},
+ *       required); an EMPTY security context or an anonymous/unauthenticated
+ *       token → {@code SYSTEM} (internal invocation, no technical user); ANY
+ *       OTHER authenticated principal (a future/misconfigured authentication
+ *       mechanism) → {@link AuditException} — never a silent downgrade to
+ *       {@code SYSTEM}, because that would destroy attribution and hide the
+ *       misconfiguration. Business services never import Spring Security for
+ *       auditing.</li>
  *   <li><b>Strong atomicity:</b> {@code record} REQUIRES an existing
  *       transaction ({@code Propagation.MANDATORY}) — the audit insert commits
  *       or rolls back together with the business mutation. Never asynchrony,
- *       never {@code REQUIRES_NEW}.</li>
- *   <li><b>Metadata safety and size:</b> sensitive keys are already rejected by
- *       {@link AuditMetadata} at construction; the serialized JSON length is
- *       bounded here (16 KiB) before the insert. Any failure throws
- *       {@link AuditException} → the business transaction rolls back.</li>
+ *       never {@code REQUIRES_NEW}. An attribution failure CANNOT be hidden:
+ *       the business transaction rolls back (fail closed).</li>
+ *   <li><b>Metadata safety and size:</b> sensitive keys are rejected recursively
+ *       by {@link AuditMetadata} at construction (deep-copy, deep immutable
+ *       tree — including nested Maps/collections); the serialized JSON length
+ *       is bounded here (16 KiB) before the insert and applies to the final
+ *       sanitized representation. Any failure throws {@link AuditException} →
+ *       the business transaction rolls back.</li>
  * </ul>
  */
 @Component
@@ -98,12 +106,30 @@ public class AuditRecorder implements AuditPort {
 
     private ActorContext resolveActor() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
-            return new ActorContext(AuditActorType.USER, parseSubject(jwt.getSubject()), jwt.getId());
+        if (authentication == null) {
+            // No identity in the context at all: a genuine internal invocation
+            // (bootstrap/maintenance/test without security).
+            return new ActorContext(AuditActorType.SYSTEM, null, null);
         }
-        // Internal invocation (bootstrap/maintenance/test without security):
-        // SYSTEM events never carry a user id (DB CHECK enforces the pair).
-        return new ActorContext(AuditActorType.SYSTEM, null, null);
+        if (authentication.getPrincipal() instanceof Jwt jwt) {
+            // The resource-server JWT is the ONLY supported user identity; the
+            // jti is required because our own issuer always sets it (UUID
+            // string, fits VARCHAR(64)) and a USER event without session
+            // correlation would be incomplete.
+            return new ActorContext(AuditActorType.USER, parseSubject(jwt.getSubject()), requireJti(jwt));
+        }
+        if (authentication instanceof AnonymousAuthenticationToken || !authentication.isAuthenticated()) {
+            // No real identity (internal/anonymous/pre-auth state): SYSTEM with
+            // no technical user (DB CHECK enforces the pair).
+            return new ActorContext(AuditActorType.SYSTEM, null, null);
+        }
+        // FAIL CLOSED: an authenticated principal that is not a JWT must never
+        // be silently recorded as SYSTEM — a future/misconfigured mechanism
+        // would lose attribution. Better to fail the (rollback-able) operation.
+        Object principal = authentication.getPrincipal();
+        throw new AuditException(
+                "cannot attribute audit actor: unsupported authenticated principal "
+                        + (principal == null ? null : principal.getClass().getName()));
     }
 
     private static UUID parseSubject(String subject) {
@@ -114,6 +140,14 @@ public class AuditRecorder implements AuditPort {
             // requires sub to be a UUID); treat it as an audit invariant break.
             throw new AuditException("authenticated JWT has a non-UUID subject: " + subject);
         }
+    }
+
+    private static String requireJti(Jwt jwt) {
+        String jti = jwt.getId();
+        if (jti == null || jti.isBlank()) {
+            throw new AuditException("authenticated JWT has no jti claim; cannot attribute the audit session");
+        }
+        return jti;
     }
 
     private record ActorContext(AuditActorType type, UUID userId, String jti) {}

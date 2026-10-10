@@ -20,6 +20,17 @@ seguridad/alimentación: `docs/04-security/audit.md`.
 | `metadata` | `JSONB` NULL | Contexto estructurado pequeño; ≤ 16 KiB serializados |
 | `occurred_at` | `TIMESTAMPTZ` NOT NULL | UTC, `Instant`, Clock inyectable |
 
+Garantías de nivel de aplicación (además de las constraints de la tabla):
+
+- **Validación de keys sensibles recursiva** a todo el árbol de `metadata`
+  (nested Maps, Lists y mezclas), case-insensitive y normalizada.
+- **Árbol JSON restringido** (`null`, `String`, `Boolean`, `Number`, `Map` con
+  keys String, `Collection`); arrays, enums, UUID/Instant y POJOs arbitrarios
+  → `AuditException`.
+- **Copia defensiva profunda** al construir `AuditMetadata` y **vista profunda
+  inmutable** en `AuditEvent.getMetadata()` (incluida la metadata hidratada
+  por Hibernate).
+
 ## Constraints de integridad
 
 | Invariante | Mecanismo |
