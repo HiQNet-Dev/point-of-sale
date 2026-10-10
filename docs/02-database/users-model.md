@@ -102,9 +102,10 @@ Branch Memberships       ✔ (módulo membership, ver docs/02-database/branch-me
 
 La **API administrativa** requiere autenticación y el permiso correspondiente
 (RBAC) para operar; `POST /organizations` y lo no definido permanecen
-**deny-by-default**. El **bootstrap del primer ADMIN** (provisión segura del
-administrador inicial) sigue pendiente de Foundation; no hay credenciales por
-defecto.
+**deny-by-default**. El **Secure Admin Bootstrap** (provisión segura del primer
+administrador, one-shot transaccional gated por `BOOTSTRAP_SECRET`) está
+implementado en el módulo `bootstrap` (V8); no hay credenciales por defecto ni
+`SUPER_ADMIN`. Detalle: `docs/04-security/secure-bootstrap.md`.
 
 ## Decisión transversal (resuelta en RBAC)
 

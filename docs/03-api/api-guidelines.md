@@ -273,6 +273,10 @@ Convención estable desde la administración de usuarios (`shared.api.PageRespon
 - Parámetros `?page` (default 0) y `?size` (default 20, **máximo 100**).
 - Orden determinista en servidor (no se aceptan campos de orden del cliente):
   en `users`, `email ASC, id ASC`.
+- **Excepción deliberada:** `GET /organizations/{id}/branches` (colección) NO
+  está paginado — las sucursales de una organización son pocas por naturaleza y
+  su listado completo es el contrato actual; se revisará (paginación o endpoint
+  filtrado "mis sucursales") si una organización supera un tamaño razonable.
 - Nunca se serializa `Page`/`Pageable` de Spring Data directamente.
 
 ## OpenAPI

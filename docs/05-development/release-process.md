@@ -1,43 +1,77 @@
 # Proceso de release
 
 **Estado: no existe ninguna release ni tag.** Versión en desarrollo:
-`0.1.0-SNAPSHOT` (archivo `VERSION` y `pom.xml`).
+`0.1.0-SNAPSHOT` — fuente canónica: archivo `VERSION` (raíz). El `pom.xml` del
+backend debe coincidir; el `package.json` del frontend se mantiene sincronizado
+(`0.1.0-SNAPSHOT`) pero, por ser un paquete privado, **no es autoridad de
+release** — solo `VERSION` lo es.
+
+Este documento convierte el antiguo "esquema futuro" en un proceso **ejecutable
+para v0.1.0**. Hasta que HiQNet lo autorice, nada de esto se ejecuta.
 
 ## Versionado: SemVer
 
-- **`v0.x.x`** — desarrollo. El 0.x comunica inestabilidad: el alcance puede
-  cambiar sin romper promesas.
+- **`0.x.y`** — desarrollo. El 0.x comunica inestabilidad: el alcance puede
+  cambiar sin romper promesas. `0.1.0-SNAPSHOT` y derivados `-SNAPSHOT` marcan
+  versiones en construcción; no se publican como release.
 - **`v1.0.0`** — primera release comercial estable. Hoy **no está alcanzada**.
-- **Precursoras:** `0.1.0-SNAPSHOT` y derivados `-SNAPSHOT` marcan versiones en
-  construcción; no se publican como release.
+- Regla SemVer en 1.x: `MAJOR` rompe compatibilidad, `MINOR` agrega
+  funcionalidad compatible, `PATCH` corrige (rollback/corrección).
 
-Regla SemVer una vez en 1.x: `MAJOR` rompe compatibilidad, `MINOR` agrega
-funcionalidad compatible, `PATCH` corrige.
+## Fuente canónica de versión
 
-## Hitos de versión
+1. `VERSION` (raíz) = **fuente de verdad de release**.
+2. `backend/pom.xml` = debe coincidir con `VERSION`.
+3. `frontend/package.json` = paquete privado; se sincroniza con `VERSION` como
+   `0.1.0-SNAPSHOT`/`0.1.0`; no define la versión de release.
 
-- El **tag `v0.1.0` se creará únicamente cuando el milestone Foundation
-  esté completo** (ver `docs/00-product/roadmap.md`). Hoy no se ha creado.
-- Ninguna otra versión se etiqueta hasta que su milestone correspondiente
-  esté completado y validado.
+En un release, el bump se hace en el ORDEN: `VERSION` → `pom.xml` →
+`package.json` (mismo valor), en un commit dedicado (`chore(release): v0.1.0`).
 
-## Pasos de release (futuros / esquema, no implementado)
+## Release gate v0.1.0 (checklist de autorización)
 
-Cuando exista al menos un milestone completo:
+Debe cumplirse ANTES de publicar:
 
-1. CI verde en `main` (backend `./mvnw clean verify`, frontend
-   `pnpm lint/typecheck/test/build`).
-2. Actualizar `VERSION` y changelog derivado de **Conventional Commits**.
-3. Tag `vX.Y.Z` firmado/evidente en Git.
-4. Generar artefactos (JAR backend, build estático frontend) — **futuro**;
-   hoy no existe pipeline de artefactos ni publicación.
-5. Notas de release revisadas por HiQNet.
+- [ ] CI verde en `main` (backend `./mvnw clean verify` — 346+ tests con
+      Testcontainers reales; frontend `pnpm lint/typecheck/test/build`; Compose).
+- [ ] `docs/05-development/foundation-readiness.md` sin **release blockers**
+      (solo DEFERRED con milestone explícito).
+- [ ] Code review de los módulos Foundation sin BLOCKER/HIGH sin resolver.
+- [ ] Migraciones `V1`–`V8` inmutables; clean install y upgrade `V7→V8`
+      validados por tests.
+- [ ] Smoke del perfil `prod` (`FoundationProdProfileTest`) verde.
+- [ ] **Decisión legal/licencia** de HiQNet: fundamental antes de publicar
+      cualquier artefacto (hoy "pendiente de definición" en `README.md`).
+
+## Pasos de release (cuando HiQNet lo autorice)
+
+1. **Decisión legal**: definir licencia/estado de publicación (pendiente hoy).
+2. **Bump**: `VERSION` → `0.1.0` (+ `pom.xml`, `package.json` sincronizados).
+3. **CI completo** sobre el commit de bump (backend+frontend+compose verdes).
+4. **Changelog / release notes**: derivar de Conventional Commits desde el
+   último punto de referencia; revisión humana de HiQNet.
+5. **Tag `v0.1.0`** en Git, apuntando al commit de bump validado.
+6. **GitHub Release** con las notas aprobadas.
+7. **Artefactos**: política mínima para esta fundación — fuente = tag +
+   `backend/target/hiqnet-pos-backend-0.1.0.jar` del build validado si el
+   workflow de release lo justifica. No existe pipeline de imágenes OCI, npm
+   package ni instaladores todavía (nada que inventar).
+8. **Post-release**: abrir el ciclo siguiente (`0.2.0-SNAPSHOT` en `VERSION`
+   y `pom.xml`).
+
+## Rollback / corrección
+
+- Bug en una release publicada: rama `fix/*` desde el **tag**, PR a `main` con
+  CI verde, `PATCH` bump (`v0.1.1`) siguiendo los mismos pasos. Si el artefacto
+  es inmutable (tag/JAR): publicar el parche como nueva release.
+- Nunca reescribir tags/`Release`s publicados; nunca editar migraciones
+  publicadas `V1`–`V8` (los fixes de schema son `V9+`).
 
 ## Hoy
 
 - **Cero releases publicadas.**
-- **Cero tags.**
-- Producto **no comercialmente estable**; sin garantías de compatibilidad entre
-  snapshots.
-- **Licencia pendiente de definición:** ninguna licencia se concede con estas
-  versiones.
+- **Cero tags** (verificado en cada política de proyecto).
+- Producto **no comercialmente estable**; sin garantías entre snapshots.
+- **Licencia pendiente de definición** (decisión legal bloquea la publicación
+  de artefactos, no el desarrollo).
+- Sin pipeline externo de publicación (imágenes, paquetes, instaladores).

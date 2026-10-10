@@ -5,9 +5,31 @@ principalmente a **pequeños negocios de alimentos** (cafeterías, juguerías, r
 pequeños) y **retail ligero**.
 
 > **Estado:** HiQNet POS está en desarrollo activo y todavía **no es una release
-> comercial estable**. Este repositorio contiene únicamente la fundación del producto:
-> structure técnica compilable, ejecutable y documentada. Las funcionalidades del POS
-> aún no existen.
+> comercial estable** (versión canónica `0.1.0-SNAPSHOT`, ver `VERSION`). Este
+> repositorio contiene la **fundación (Foundation v0.1.x)** del producto:
+> estructura técnica compilable, ejecutable, documentada y auditada. Las
+> funcionalidades comerciales del POS (ventas, catálogo, inventario, cajas) aún
+> no existen.
+
+## Foundation implementada (v0.1.x)
+
+La fundación actual ya es operativa como backend administrativo seguro:
+
+- **Organization / Branch / Users** — administración completa scoped por organización.
+- **Authentication** — login, refresh rotativo (30d, familia 30d), logout en
+  familia, `logout-all`, `/me`; JWT identity-only, PostgreSQL autoritativa.
+- **Roles / Permissions / RBAC** — catálogo de 19 permisos sembrado por Flyway,
+  roles por organización, assignments, `@PreAuthorize` database-authoritative.
+- **Branch Memberships** — usuarios por sucursal con roles branch-scoped y
+  `hasBranchPermission` (org-wide UNION membership ACTIVE de esa branch).
+- **Audit Foundation** — historial append-only (`audit_events`) con trigger DB,
+  actor USER/SYSTEM, metadata JSONB segura y lectura paginada (`audit.read`).
+- **Secure Admin Bootstrap** — provisión one-shot y transaccional de la primera
+  Organization + primer administrador, gated por `BOOTSTRAP_SECRET`.
+
+Detalle: `docs/01-architecture/modules.md`, `docs/04-security/security-model.md`
+y `docs/04-security/secure-bootstrap.md`. El roadmap completo en
+`docs/00-product/roadmap.md`.
 
 ## Filosofía del producto
 
@@ -44,8 +66,8 @@ No hay microservicios. No hay SaaS/multi-tenant todavía (ver `docs/01-architect
 | Backend | PostgreSQL | 17 |
 | Backend | Flyway | gestionado por Spring Boot |
 | Backend | Testcontainers | gestionado por Spring Boot |
-| Frontend | Node.js | 24 LTS |
-| Frontend | package manager | pnpm 11.24.0 (lockfile versionado) |
+| Frontend | Node.js | 24 LTS (referencia CI; mínimo soportado `>=22.12`, ver `engines`) |
+| Frontend | package manager | pnpm 11.28.5 (autoridad: `packageManager` en `package.json`; lockfile versionado) |
 | Frontend | React | 19 |
 | Frontend | TypeScript | 6 (estricto) |
 | Frontend | Vite | 8 |
@@ -117,7 +139,18 @@ Variables de entorno del backend (nombres seguros de ejemplo en `.env.example` y
 | `SERVER_PORT` | Puerto HTTP del backend | `8080` |
 | `CORS_ALLOWED_ORIGINS` | Orígenes CORS permitidos (lista, sin wildcard) | `http://localhost:5173` (dev) |
 | `AUTH_JWT_SECRET` | Secreto de firma JWT (clave **Base64**, ≥32 bytes decodificados) — **obligatorio, sin default** | *(generar: `openssl rand -base64 32`)* |
+| `BOOTSTRAP_SECRET` | Secreto one-shot del primer provisioning (`POST /api/v1/bootstrap`; Base64 ≥32 bytes). **Opcional**: ausente → la ruta queda cerrada. **Temporal**: retirar tras el primer bootstrap y reiniciar. Distinto de `AUTH_JWT_SECRET` | *(generar: `openssl rand -base64 32`; no dejar valor por defecto)* |
 | `SPRING_PROFILES_ACTIVE` | Perfil Spring (`dev`/`prod`) | `dev` |
+
+**Perfil `prod`** (`SPRING_PROFILES_ACTIVE=prod`): exige `DB_URL`, `DB_USER`,
+`DB_PASSWORD` y `AUTH_JWT_SECRET` (sin defaults; fail-fast), OpenAPI cerrado,
+CORS vacío salvo configuración explícita y `ddl-auto=validate` — Flyway es la
+única autoridad de schema. Verificado por `FoundationProdProfileTest`.
+
+**Primer arranque**: con `BOOTSTRAP_SECRET` configurado hacer
+`POST /api/v1/bootstrap` (header `X-Bootstrap-Token`), luego quitar el secret,
+reiniciar y entrar por `POST /api/v1/auth/login`. Detalle y operación:
+`docs/04-security/secure-bootstrap.md`.
 
 Frontend: `VITE_API_BASE_URL` (default `"/api/v1"`, same-origin).
 
