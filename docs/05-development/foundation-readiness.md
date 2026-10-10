@@ -55,7 +55,7 @@ Gates técnicos = **PASS**; gate legal/distribución del repositorio = **PASS**
 | Rate limiting (edge/gateway) | defensa futura por topología |
 | Password recovery / root recovery | procedimiento de soporte futuro (sin backdoor) |
 | Backup/restore automatizado | gate operativo del primer piloto (v0.8 Pilot) |
-| Listado filtrado "mis sucursales" | cuando el frontend/operación lo necesite |
+| Listado filtrado "mis sucursales" | RESUELTO en v0.2.0: `GET /api/v1/auth/me/branches` (self-scoped, paginado) |
 | EULA / términos de suscripción / servicio / SLA para clientes | precomercial; requerido antes del primer despliegue o piloto con cliente externo |
 
 ## Release blockers v0.1.0
