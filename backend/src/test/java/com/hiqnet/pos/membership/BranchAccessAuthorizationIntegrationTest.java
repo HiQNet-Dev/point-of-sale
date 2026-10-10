@@ -15,6 +15,8 @@ import com.hiqnet.pos.catalog.domain.Category;
 import com.hiqnet.pos.catalog.domain.CategoryRepository;
 import com.hiqnet.pos.catalog.domain.ModifierGroup;
 import com.hiqnet.pos.catalog.domain.ModifierGroupRepository;
+import com.hiqnet.pos.catalog.domain.ModifierOption;
+import com.hiqnet.pos.catalog.domain.ModifierOptionRepository;
 import com.hiqnet.pos.catalog.domain.Product;
 import com.hiqnet.pos.catalog.domain.ProductRepository;
 import com.hiqnet.pos.membership.domain.BranchMembership;
@@ -69,6 +71,9 @@ class BranchAccessAuthorizationIntegrationTest extends AbstractRbacIntegrationTe
 
     @Autowired
     private ModifierGroupRepository modifierGroupRepository;
+
+    @Autowired
+    private ModifierOptionRepository modifierOptionRepository;
 
     @Autowired
     private PlatformTransactionManager transactionManager;
@@ -207,6 +212,8 @@ class BranchAccessAuthorizationIntegrationTest extends AbstractRbacIntegrationTe
         RbacFixture fx = fixture();
         String branchA = createBranch(fx, "suc-a");
         UUID groupId = modifierGroupEntity(fx, "milk").getId();
+        UUID optionId = modifierOptionEntity(fx, groupId, "oat").getId();
+        UUID productId = productEntity(fx, "LATTE").getId();
         // The branch-scoped role literally contains organization-scope modifier
         // permissions: they must NOT authorize the organization-wide endpoints.
         UUID role = createRole(
@@ -215,18 +222,36 @@ class BranchAccessAuthorizationIntegrationTest extends AbstractRbacIntegrationTe
                 "Modifier Lead",
                 "branch.read",
                 "modifier.group.update",
+                "modifier.option.update",
                 "product.modifiers.manage");
         UUID membershipA = createMembership(fx, UUID.fromString(branchA));
         assignMembershipRole(fx, membershipA, role);
         String token = login(fx); // NO organization-wide role
 
+        // Branch scope works for the own branch, proving the identity is active
+        // and the test really measures scope, not a missing/expired token.
         mockMvc.perform(get(branchUrl(fx, branchA)).header("Authorization", bearer(token)))
                 .andExpect(status().isOk());
 
+        // ...but NONE of the organization-wide modifier endpoints are reachable.
         mockMvc.perform(patch("/api/v1/organizations/" + fx.orgId() + "/modifier-groups/" + groupId)
                         .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"expectedVersion\":0,\"name\":\"Hack\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mockMvc.perform(patch("/api/v1/organizations/" + fx.orgId() + "/modifier-groups/" + groupId
+                                + "/options/" + optionId)
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"name\":\"Hack\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        mockMvc.perform(put("/api/v1/organizations/" + fx.orgId() + "/products/" + productId
+                                + "/modifier-groups")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"modifierGroupIds\":[\"" + groupId + "\"]}"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"));
         mockMvc.perform(get("/api/v1/organizations/" + fx.orgId() + "/modifier-groups")
@@ -387,6 +412,13 @@ class BranchAccessAuthorizationIntegrationTest extends AbstractRbacIntegrationTe
         Organization organization = organizationRepository.findById(fx.orgId()).orElseThrow();
         return modifierGroupRepository.saveAndFlush(
                 ModifierGroup.create(organization, code, "Group " + code, 0, 1));
+    }
+
+    private ModifierOption modifierOptionEntity(RbacFixture fx, UUID groupId, String code) {
+        Organization organization = organizationRepository.findById(fx.orgId()).orElseThrow();
+        ModifierGroup group = modifierGroupRepository.findById(groupId).orElseThrow();
+        return modifierOptionRepository.saveAndFlush(
+                ModifierOption.create(organization, group, code, "Option " + code, new BigDecimal("0.0000"), 0));
     }
 
     private Branch branchEntity(RbacFixture fx, String code) {

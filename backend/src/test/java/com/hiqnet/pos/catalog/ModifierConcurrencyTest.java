@@ -78,6 +78,31 @@ class ModifierConcurrencyTest extends AbstractRbacIntegrationTest {
     }
 
     @Test
+    void parallelOptionCreatesYieldExactlyOne() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        String groupId = createGroup(fx.orgId().toString(), token, "milk");
+        String url = "/api/v1/organizations/" + fx.orgId() + "/modifier-groups/" + groupId + "/options";
+        String body = "{\"code\":\"oat\",\"name\":\"Oat\",\"priceDelta\":0,\"displayOrder\":0}";
+
+        List<Integer> statuses = runParallel(THREADS, () -> mockMvc.perform(post(url)
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andReturn()
+                .getResponse()
+                .getStatus());
+
+        assertThat(statuses.stream().filter(s -> s == 201).count()).isEqualTo(1);
+        assertThat(statuses.stream().filter(s -> s == 409).count()).isEqualTo(THREADS - 1);
+        Long stored = jdbcTemplate.queryForObject(
+                "select count(*) from modifier_options where modifier_group_id = ? and code = 'oat'",
+                Long.class,
+                java.util.UUID.fromString(groupId));
+        assertThat(stored).isEqualTo(1);
+    }
+
+    @Test
     void parallelReplacesOfSameVersionYieldExactlyOne() throws Exception {
         RbacFixture fx = fixture();
         String token = adminToken(fx);

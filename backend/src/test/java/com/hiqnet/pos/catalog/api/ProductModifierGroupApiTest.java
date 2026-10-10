@@ -294,6 +294,51 @@ class ProductModifierGroupApiTest extends AbstractRbacIntegrationTest {
     }
 
     @Test
+    void deactivatingGroupKeepsOptionsAndAssignmentWithoutBumpingProduct() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        String productId = createProduct(fx.orgId().toString(), token, "LATTE");
+        String milk = createGroup(fx.orgId().toString(), token, "milk");
+
+        String optionResponse = mockMvc.perform(post("/api/v1/organizations/" + fx.orgId()
+                                + "/modifier-groups/" + milk + "/options")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"oat\",\"name\":\"Oat\",\"priceDelta\":0,\"displayOrder\":0}"))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String optionId = objectMapper.readTree(optionResponse).get("id").asText();
+
+        mockMvc.perform(put(assignmentUrl(fx.orgId().toString(), productId))
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"modifierGroupIds\":[\"" + milk + "\"]}"))
+                .andExpect(status().isOk());
+
+        // Retiring the group must NOT cascade: the option stays ACTIVE, the
+        // product assignment stays, and the product itself is untouched.
+        mockMvc.perform(patch("/api/v1/organizations/" + fx.orgId() + "/modifier-groups/" + milk)
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"status\":\"INACTIVE\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/organizations/" + fx.orgId() + "/modifier-groups/" + milk
+                                + "/options/" + optionId)
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACTIVE"));
+        mockMvc.perform(get(assignmentUrl(fx.orgId().toString(), productId))
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].modifierGroupId").value(milk));
+        org.assertj.core.api.Assertions.assertThat(productVersion(fx.orgId().toString(), productId, token))
+                .isEqualTo(1);
+    }
+
+    @Test
     void replaceWithoutManagePermissionIsForbidden() throws Exception {
         RbacFixture fx = fixture();
         String productId = productEntity(fx, "LATTE").toString();

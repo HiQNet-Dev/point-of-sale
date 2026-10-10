@@ -89,6 +89,38 @@ class ModifierAuditIntegrationTest extends AbstractAuditIntegrationTest {
         assertThat(row.action()).isEqualTo("modifier.option.created");
         assertThat(row.entityType()).isEqualTo("modifier_option");
         assertThat(metadataOf(row)).containsEntry("code", "oat");
+        assertThat(metadataOf(row)).containsEntry("modifierGroupId", groupId);
+    }
+
+    @Test
+    void updateOptionRecordsChangedFields() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        String groupId = createGroup(fx.orgId().toString(), token, "milk");
+        String response = mockMvc.perform(
+                        post("/api/v1/organizations/" + fx.orgId() + "/modifier-groups/" + groupId + "/options")
+                                .header("Authorization", bearer(token))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"code\":\"oat\",\"name\":\"Oat\",\"priceDelta\":0,\"displayOrder\":0}"))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String optionId = objectMapper.readTree(response).get("id").asText();
+
+        mockMvc.perform(patch("/api/v1/organizations/" + fx.orgId() + "/modifier-groups/" + groupId
+                                + "/options/" + optionId)
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"priceDelta\":2.5,\"status\":\"INACTIVE\"}"))
+                .andExpect(status().isOk());
+
+        AuditRow row = latestAudit(fx.orgId());
+        assertThat(row.action()).isEqualTo("modifier.option.updated");
+        assertThat(row.entityType()).isEqualTo("modifier_option");
+        @SuppressWarnings("unchecked")
+        List<String> changedFields = (List<String>) metadataOf(row).get("changedFields");
+        assertThat(changedFields).containsExactlyInAnyOrder("priceDelta", "status");
     }
 
     @Test
