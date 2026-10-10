@@ -119,7 +119,7 @@ public class CashShiftController {
         @ApiResponse(responseCode = "409", description = "Already closed or concurrent modification (CASH_SHIFT_ALREADY_CLOSED, CONCURRENT_MODIFICATION)", content = @Content),
         @ApiResponse(responseCode = "403", description = "Forbidden (cash-shift.close)", content = @Content)
     })
-    @PreAuthorize("@authorizationService.hasBranchPermission(authentication, #organizationId, #branchId, 'cash-shift.close')")
+    @PreAuthorize("@authorizationService.hasBranchPermissionIgnoringBranchStatus(authentication, #organizationId, #branchId, 'cash-shift.close')")
     public CashShiftResponse close(
             @PathVariable UUID organizationId,
             @PathVariable UUID branchId,

@@ -84,6 +84,27 @@ public class AuthorizationService {
         return branchMembershipAccessPort.hasEffectiveBranchPermission(userId, organizationId, branchId, permissionCode);
     }
 
+    /**
+     * BRANCH scope, RECOVERY. Like {@link #hasBranchPermission} but the branch
+     * leg does NOT require the branch itself to be ACTIVE, so a resource that is
+     * already open (e.g. a cash shift being closed) stays reachable after the
+     * branch is deactivated. The organization override still applies. Opening
+     * uses {@link #hasBranchPermission}, which DOES require the branch ACTIVE.
+     */
+    @Transactional(readOnly = true)
+    public boolean hasBranchPermissionIgnoringBranchStatus(
+            Authentication authentication, UUID organizationId, UUID branchId, String permissionCode) {
+        UUID userId = identityId(authentication);
+        if (userId == null) {
+            return false;
+        }
+        if (userOrganizationRoleRepository.existsEffectivePermission(userId, organizationId, permissionCode)) {
+            return true;
+        }
+        return branchMembershipAccessPort.hasBranchPermissionIgnoringBranchStatus(
+                userId, organizationId, branchId, permissionCode);
+    }
+
     private static UUID identityId(Authentication authentication) {
         if (authentication == null || !(authentication.getPrincipal() instanceof Jwt jwt)) {
             return null;
