@@ -167,7 +167,7 @@ class AuditMetadataTest {
         root.put("extra", "x");
 
         assertThat(metadata.asMap())
-                .containsExactlyEntriesOf(Map.of(
+                .containsExactlyInAnyOrderEntriesOf(Map.of(
                         "changedFields", List.of("name"),
                         "before", Map.of("status", "ACTIVE")));
     }
