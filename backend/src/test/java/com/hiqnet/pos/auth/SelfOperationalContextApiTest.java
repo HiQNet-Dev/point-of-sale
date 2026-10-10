@@ -14,6 +14,9 @@ import com.hiqnet.pos.membership.domain.BranchMembershipRole;
 import com.hiqnet.pos.membership.domain.BranchMembershipRoleRepository;
 import com.hiqnet.pos.membership.domain.BranchMembershipStatus;
 import com.hiqnet.pos.organization.domain.Organization;
+import com.hiqnet.pos.rbac.domain.Role;
+import com.hiqnet.pos.rbac.domain.RoleRepository;
+import com.hiqnet.pos.rbac.domain.RoleStatus;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,6 +45,9 @@ class SelfOperationalContextApiTest extends AbstractRbacIntegrationTest {
 
     @Autowired
     private PlatformTransactionManager transactionManager;
+
+    @Autowired
+    private RoleRepository roleRepository;
 
     @Test
     void meIncludesOrganizationOperationalContext() throws Exception {
@@ -99,6 +105,24 @@ class SelfOperationalContextApiTest extends AbstractRbacIntegrationTest {
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.items[0].id").value(branchA.getId().toString()))
                 .andExpect(jsonPath("$.items[0].status").value("INACTIVE"));
+    }
+
+    @Test
+    void activeMembershipRemainsDiscoverableWhenItsRoleIsInactive() throws Exception {
+        RbacFixture fx = fixture();
+        Branch branchA = branchEntity(fx, "suc-a");
+        UUID membership = createMembership(fx, branchA.getId());
+        UUID roleId = createRole(fx, "branch-reader", "Branch Reader", "branch.read");
+        assignMembershipRole(fx, membership, roleId);
+        Role role = roleRepository.findById(roleId).orElseThrow();
+        role.updateStatus(RoleStatus.INACTIVE);
+        roleRepository.saveAndFlush(role);
+        String token = login(fx);
+
+        mockMvc.perform(get("/api/v1/auth/me/branches").header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.items[0].id").value(branchA.getId().toString()));
     }
 
     @Test

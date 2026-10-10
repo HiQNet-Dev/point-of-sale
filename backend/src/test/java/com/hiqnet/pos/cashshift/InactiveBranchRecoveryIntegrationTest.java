@@ -104,6 +104,27 @@ class InactiveBranchRecoveryIntegrationTest extends AbstractRbacIntegrationTest 
     }
 
     @Test
+    void membershipDiscoversInactiveBranchWithoutGrantingRegisterOrShiftRead() throws Exception {
+        RbacFixture fx = fixture();
+        Branch branchA = branchEntity(fx, "suc-a");
+        String registerId = createRegister(fx, branchA.getId(), "register-1");
+        membershipEntity(fx, branchA.getId());
+        String token = login(fx);
+        setBranchStatus(branchA.getId(), BranchStatus.INACTIVE);
+
+        mockMvc.perform(get("/api/v1/auth/me/branches").header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.items[0].id").value(branchA.getId().toString()))
+                .andExpect(jsonPath("$.items[0].status").value("INACTIVE"));
+
+        mockMvc.perform(get(registersUrl(fx, branchA.getId())).header("Authorization", bearer(token)))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get(listUrl(fx, branchA.getId(), registerId)).header("Authorization", bearer(token)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void openingOnDeactivatedBranchIsStillRefused() throws Exception {
         RbacFixture fx = fixture();
         Branch branchA = branchEntity(fx, "suc-a");
