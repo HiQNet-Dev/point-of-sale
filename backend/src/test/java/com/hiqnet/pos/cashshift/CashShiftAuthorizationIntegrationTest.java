@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.hiqnet.pos.AbstractRbacIntegrationTest;
 import com.hiqnet.pos.branch.domain.Branch;
 import com.hiqnet.pos.branch.domain.BranchRepository;
+import com.hiqnet.pos.branch.domain.BranchStatus;
 import com.hiqnet.pos.membership.domain.BranchMembership;
 import com.hiqnet.pos.membership.domain.BranchMembershipRepository;
 import com.hiqnet.pos.membership.domain.BranchMembershipRole;
@@ -157,6 +158,39 @@ class CashShiftAuthorizationIntegrationTest extends AbstractRbacIntegrationTest 
         mockMvc.perform(get("/api/v1/organizations/" + fx.orgId() + "/cash-registers")
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void branchScopedCloserCanCloseAfterBranchIsDeactivated() throws Exception {
+        RbacFixture fx = fixture();
+        Branch branchA = branchEntity(fx, "suc-a");
+        String registerId = createRegister(fx, branchA.getId(), "register-1");
+        UUID role = createRole(fx, "centro-ops", "Centro Ops", "cash-shift.open", "cash-shift.close");
+        assignMembershipRole(fx, membershipEntity(fx, branchA.getId()).getId(), role);
+        String token = login(fx);
+
+        String response = mockMvc.perform(post(openUrl(fx, branchA.getId(), registerId))
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"openingAmount\":10.0000}"))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String shiftId = objectMapper.readTree(response).get("id").asText();
+
+        // Administrative disable after the shift is already open.
+        Branch branch = branchRepository.findById(branchA.getId()).orElseThrow();
+        branch.updateStatus(BranchStatus.INACTIVE);
+        branchRepository.saveAndFlush(branch);
+
+        // A branch-scoped (non-org-wide) closer must still be able to close.
+        mockMvc.perform(post(closeUrl(fx, branchA.getId(), registerId, shiftId))
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"declaredCashAmount\":10.0000}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CLOSED"));
     }
 
     // --- fixtures ----------------------------------------------------------

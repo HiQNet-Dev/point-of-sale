@@ -1,5 +1,6 @@
 package com.hiqnet.pos.cashshift;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -13,10 +14,12 @@ import com.hiqnet.pos.branch.domain.BranchStatus;
 import com.hiqnet.pos.organization.domain.Organization;
 import com.hiqnet.pos.rbac.domain.UserOrganizationRole;
 import com.hiqnet.pos.users.domain.User;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * Cash shift lifecycle under the REAL security chain + RBAC: open, read, list,
@@ -27,6 +30,9 @@ class CashShiftApiTest extends AbstractRbacIntegrationTest {
 
     @Autowired
     private BranchRepository branchRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     private UUID createBranch(RbacFixture fx, String code) {
         Organization organization = organizationRepository.findById(fx.orgId()).orElseThrow();
@@ -281,6 +287,7 @@ class CashShiftApiTest extends AbstractRbacIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"expectedVersion\":0,\"declaredCashAmount\":500.0000}"))
                 .andExpect(status().isOk());
+        Map<String, Object> closed = shiftRow(shiftId);
 
         mockMvc.perform(post(closeUrl)
                         .header("Authorization", bearer(token))
@@ -288,6 +295,42 @@ class CashShiftApiTest extends AbstractRbacIntegrationTest {
                         .content("{\"expectedVersion\":1,\"declaredCashAmount\":500.0000}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CASH_SHIFT_ALREADY_CLOSED"));
+
+        // A re-close is a no-op on the row: every column is byte-for-byte identical.
+        assertThat(shiftRow(shiftId)).isEqualTo(closed);
+    }
+
+    @Test
+    void closeAlreadyClosedWithStaleVersionStillReportsAlreadyClosed() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        UUID branchId = createBranch(fx, "centro");
+        String registerId = createRegister(fx, branchId, token, "register-1");
+        String shiftId = objectMapper.readTree(openShift(fx, branchId, registerId, token, "{\"openingAmount\":500.0000}"))
+                .get("id")
+                .asText();
+        String closeUrl = shiftsUrl(fx, branchId, registerId) + "/" + shiftId + "/close";
+        mockMvc.perform(post(closeUrl)
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"declaredCashAmount\":500.0000}"))
+                .andExpect(status().isOk());
+
+        // Documented precedence: an already-CLOSED shift reports CASH_SHIFT_ALREADY_CLOSED
+        // even when expectedVersion is also stale (status is checked before the version).
+        mockMvc.perform(post(closeUrl)
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"declaredCashAmount\":500.0000}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CASH_SHIFT_ALREADY_CLOSED"));
+    }
+
+    private Map<String, Object> shiftRow(String shiftId) {
+        return jdbcTemplate.queryForMap(
+                "select status, version, opened_by_user_id, opened_at, closed_by_user_id, closed_at, "
+                        + "opening_amount, closing_declared_amount from cash_shifts where id = ?",
+                UUID.fromString(shiftId));
     }
 
     @Test

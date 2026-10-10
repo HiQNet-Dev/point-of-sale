@@ -14,7 +14,10 @@ import com.hiqnet.pos.shared.audit.AuditRecord;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -27,10 +30,16 @@ import org.springframework.jdbc.core.JdbcTemplate;
 /**
  * A required cash-shift audit record that cannot be persisted FAILS the whole
  * mutation ({@code Propagation.MANDATORY}): the shift row is rolled back too, so
- * "business commit + missing audit" is impossible for both open and close.
+ * "business commit + missing audit" is impossible for BOTH open and close.
+ * After such a failure the shift must be completely untouched (open: no row, so
+ * the one-open slot is free; close: the row is still fully OPEN), and a
+ * subsequent normal mutation of the same shift must succeed.
  */
 @Import(CashShiftAuditRollbackTest.FailingAuditConfig.class)
 class CashShiftAuditRollbackTest extends AbstractRbacIntegrationTest {
+
+    /** Toggled per test: when true the audit port throws, forcing the rollback. */
+    static final AtomicBoolean FAIL_AUDIT = new AtomicBoolean(true);
 
     @Autowired
     private BranchRepository branchRepository;
@@ -38,8 +47,13 @@ class CashShiftAuditRollbackTest extends AbstractRbacIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @BeforeEach
+    void armAuditFailure() {
+        FAIL_AUDIT.set(true);
+    }
+
     @Test
-    void auditFailureRollsBackCashShiftOpen() throws Exception {
+    void auditFailureRollsBackCashShiftOpenAndFreesTheRegister() throws Exception {
         RbacFixture fx = fixture();
         String token = adminToken(fx);
         Organization organization = organizationRepository.findById(fx.orgId()).orElseThrow();
@@ -54,13 +68,26 @@ class CashShiftAuditRollbackTest extends AbstractRbacIntegrationTest {
                         .content("{\"openingAmount\":100.0000}"))
                 .andExpect(status().isInternalServerError());
 
-        Long stored = jdbcTemplate.queryForObject(
-                "select count(*) from cash_shifts where organization_id = ?", Long.class, fx.orgId());
-        assertThat(stored).isZero();
+        // Nothing committed: no shift row AND no audit event.
+        assertThat(count("select count(*) from cash_shifts where organization_id = ?", fx.orgId()))
+                .isZero();
+        assertThat(auditCount(fx.orgId())).isZero();
+
+        // The one-open slot is free: a normal open on the same register now succeeds.
+        FAIL_AUDIT.set(false);
+        mockMvc.perform(post(shiftsUrl(fx, branchId, registerId))
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"openingAmount\":100.0000}"))
+                .andExpect(status().isCreated());
+        assertThat(count(
+                        "select count(*) from cash_shifts where cash_register_id = ? and status = 'OPEN'",
+                        UUID.fromString(registerId)))
+                .isEqualTo(1);
     }
 
     @Test
-    void auditFailureRollsBackCashShiftClose() throws Exception {
+    void auditFailureRollsBackCashShiftCloseLeavingTheRowFullyOpen() throws Exception {
         RbacFixture fx = fixture();
         String token = adminToken(fx);
         Organization organization = organizationRepository.findById(fx.orgId()).orElseThrow();
@@ -76,9 +103,37 @@ class CashShiftAuditRollbackTest extends AbstractRbacIntegrationTest {
                         .content("{\"expectedVersion\":0,\"declaredCashAmount\":100.0000}"))
                 .andExpect(status().isInternalServerError());
 
-        String status = jdbcTemplate.queryForObject(
-                "select status from cash_shifts where id = ?", String.class, UUID.fromString(shiftId));
-        assertThat(status).isEqualTo("OPEN");
+        // The business row rolled back completely: still OPEN, version, no closing data.
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+                "select status, version, closed_at, closed_by_user_id, closing_declared_amount "
+                        + "from cash_shifts where id = ?",
+                UUID.fromString(shiftId));
+        assertThat(row.get("status")).isEqualTo("OPEN");
+        assertThat(((Number) row.get("version")).longValue()).isZero();
+        assertThat(row.get("closed_at")).isNull();
+        assertThat(row.get("closed_by_user_id")).isNull();
+        assertThat(row.get("closing_declared_amount")).isNull();
+        assertThat(auditCount(fx.orgId())).isZero();
+
+        // A subsequent normal close of the same (still OPEN, version 0) row succeeds.
+        FAIL_AUDIT.set(false);
+        mockMvc.perform(post(shiftsUrl(fx, branchId, registerId) + "/" + shiftId + "/close")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"declaredCashAmount\":100.0000}"))
+                .andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject(
+                        "select status from cash_shifts where id = ?", String.class, UUID.fromString(shiftId)))
+                .isEqualTo("CLOSED");
+    }
+
+    private long count(String sql, Object... args) {
+        Long value = jdbcTemplate.queryForObject(sql, Long.class, args);
+        return value == null ? 0 : value;
+    }
+
+    private long auditCount(UUID organizationId) {
+        return count("select count(*) from audit_events where organization_id = ?", organizationId);
     }
 
     private String createRegister(RbacFixture fx, UUID branchId) {
@@ -135,7 +190,9 @@ class CashShiftAuditRollbackTest extends AbstractRbacIntegrationTest {
         @Primary
         AuditPort failingAuditPort() {
             return (AuditRecord record) -> {
-                throw new AuditException("audit unavailable (forced test failure)");
+                if (FAIL_AUDIT.get()) {
+                    throw new AuditException("audit unavailable (forced test failure)");
+                }
             };
         }
     }

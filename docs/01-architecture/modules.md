@@ -160,7 +160,7 @@ inmutable, `name` no-blank, `status ACTIVE/INACTIVE`, FK compuesta same-org
 derivados del servidor, montos declarados `NUMERIC(19,4)`, un solo turno `OPEN`
 por caja vía índice único parcial, FKs compuestas same-org/same-branch,
 autorización branch-scoped `cash-shift.*`, auditoría append-only en open/close;
-catálogo 35→38) y **544 tests verdes** (Testcontainers). Las clases de arranque siguen en
+catálogo 35→38) y **551 tests verdes** (Testcontainers). Las clases de arranque siguen en
 su lugar. La API administrativa (organizations GET/PATCH, branches,
 users, roles, permissions, memberships, categories, products, modifier-groups,
 modifier-options, product modifier-groups, cash-registers, cash-shifts, audit-events) está **autorizada por

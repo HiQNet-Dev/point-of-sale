@@ -84,6 +84,28 @@ class CashShiftDomainTest {
     }
 
     @Test
+    void openMoneyPrecisionCasesAreExactAndNeverRounded() {
+        // Accepted and padded exactly to 4 decimals.
+        assertThat(open("0").getOpeningAmount()).isEqualByComparingTo("0.0000");
+        assertThat(open("1.2").getOpeningAmount()).isEqualByComparingTo("1.2000");
+        assertThat(open("1.2345").getOpeningAmount()).isEqualByComparingTo("1.2345");
+        assertThat(open("999999999999999.9999").getOpeningAmount())
+                .isEqualByComparingTo("999999999999999.9999");
+
+        // Rejected: scale > 4, including a redundant trailing zero. No silent rounding.
+        assertThatThrownBy(() -> open("1.23450"))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getCode()).isEqualTo(ErrorCodes.VALIDATION_ERROR));
+        assertThatThrownBy(() -> open("1.23456"))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getCode()).isEqualTo(ErrorCodes.VALIDATION_ERROR));
+        // Rejected: beyond NUMERIC(19,4) integer range (would otherwise surface as a 500).
+        assertThatThrownBy(() -> open("1000000000000000"))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getCode()).isEqualTo(ErrorCodes.VALIDATION_ERROR));
+    }
+
+    @Test
     void openRejectsNullRequiredReferences() {
         assertThatThrownBy(() -> CashShift.open(null, BRANCH, REGISTER, ACTOR, BigDecimal.ONE, Instant.now()))
                 .isInstanceOf(BusinessException.class);

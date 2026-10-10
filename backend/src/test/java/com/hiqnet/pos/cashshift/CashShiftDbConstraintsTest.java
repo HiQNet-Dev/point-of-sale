@@ -157,6 +157,90 @@ class CashShiftDbConstraintsTest {
                         INSERT_SHIFT, openShiftRow(org.getId(), branchId, registerId, userId, "-0.0001")));
     }
 
+    @Test
+    void shiftCannotReferenceOpenedByUserOfAnotherOrganization() {
+        Organization orgA = organizationService.create("Org A", "cs-act-a", "UTC", "MXN", "es-MX");
+        Organization orgB = organizationService.create("Org B", "cs-act-b", "UTC", "MXN", "es-MX");
+        UUID branchA = branchService.create(orgA.getId(), "Centro", "centro", null).getId();
+        UUID registerA = insertRegister(orgA.getId(), branchA, "register-1");
+        UUID userB = insertUser(orgB.getId());
+
+        // Register FK passes (registerA is in org A); the actor FK (userB, org A) does not.
+        assertThrows(
+                DataIntegrityViolationException.class,
+                () -> jdbcTemplate.update(
+                        INSERT_SHIFT, openShiftRow(orgA.getId(), branchA, registerA, userB, "10.0000")));
+    }
+
+    @Test
+    void shiftCannotReferenceClosedByUserOfAnotherOrganization() {
+        Organization orgA = organizationService.create("Org A", "cs-cl-act-a", "UTC", "MXN", "es-MX");
+        Organization orgB = organizationService.create("Org B", "cs-cl-act-b", "UTC", "MXN", "es-MX");
+        UUID branchA = branchService.create(orgA.getId(), "Centro", "centro", null).getId();
+        UUID registerA = insertRegister(orgA.getId(), branchA, "register-1");
+        UUID userA = insertUser(orgA.getId());
+        UUID userB = insertUser(orgB.getId());
+
+        assertThrows(
+                DataIntegrityViolationException.class,
+                () -> jdbcTemplate.update(
+                        INSERT_SHIFT, shiftRow(orgA.getId(), branchA, registerA, userA, userB, "CLOSED", "10.0000", "10.0000", true)));
+    }
+
+    @Test
+    void openStateConsistencyRejectsEachClosingFieldIndividually() {
+        Organization org = organizationService.create("Org", "cs-open-fields", "UTC", "MXN", "es-MX");
+        UUID branchId = branchService.create(org.getId(), "Centro", "centro", null).getId();
+        UUID registerId = insertRegister(org.getId(), branchId, "register-1");
+        UUID userId = insertUser(org.getId());
+
+        // OPEN + closed_at present (only)
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update(
+                INSERT_SHIFT, shiftRow(org.getId(), branchId, registerId, userId, null, "OPEN", "10.0000", null, true)));
+        // OPEN + closed_by present (only)
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update(
+                INSERT_SHIFT, shiftRow(org.getId(), branchId, registerId, userId, userId, "OPEN", "10.0000", null, false)));
+        // OPEN + closing_declared_amount present (only)
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update(
+                INSERT_SHIFT, shiftRow(org.getId(), branchId, registerId, userId, null, "OPEN", "10.0000", "10.0000", false)));
+    }
+
+    @Test
+    void closedStateConsistencyRejectsEachMissingClosingFieldIndividually() {
+        Organization org = organizationService.create("Org", "cs-closed-fields", "UTC", "MXN", "es-MX");
+        UUID branchId = branchService.create(org.getId(), "Centro", "centro", null).getId();
+        UUID registerId = insertRegister(org.getId(), branchId, "register-1");
+        UUID userId = insertUser(org.getId());
+
+        // CLOSED + closed_at NULL (closed_by and amount present)
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update(
+                INSERT_SHIFT, shiftRow(org.getId(), branchId, registerId, userId, userId, "CLOSED", "10.0000", "10.0000", false)));
+        // CLOSED + closed_by NULL (closed_at and amount present)
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update(
+                INSERT_SHIFT, shiftRow(org.getId(), branchId, registerId, userId, null, "CLOSED", "10.0000", "10.0000", true)));
+        // CLOSED + closing_declared_amount NULL (closed_at and closed_by present)
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update(
+                INSERT_SHIFT, shiftRow(org.getId(), branchId, registerId, userId, userId, "CLOSED", "10.0000", null, true)));
+    }
+
+    private Object[] shiftRow(
+            UUID orgId,
+            UUID branchId,
+            UUID registerId,
+            UUID openedBy,
+            UUID closedBy,
+            String status,
+            String opening,
+            String closing,
+            boolean closedAtPresent) {
+        Timestamp now = Timestamp.from(Instant.now());
+        return new Object[] {
+            UUID.randomUUID(), orgId, branchId, registerId, openedBy, closedBy, status,
+            new BigDecimal(opening), closing == null ? null : new BigDecimal(closing),
+            now, closedAtPresent ? now : null, status.equals("CLOSED") ? 1 : 0, now, now
+        };
+    }
+
     private UUID insertUser(UUID organizationId) {
         UUID userId = UUID.randomUUID();
         Timestamp now = Timestamp.from(Instant.now());

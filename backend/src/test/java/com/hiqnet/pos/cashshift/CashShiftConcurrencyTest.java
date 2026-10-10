@@ -87,6 +87,8 @@ class CashShiftConcurrencyTest extends AbstractRbacIntegrationTest {
                 Long.class,
                 UUID.fromString(registerId));
         assertThat(stored).isEqualTo(1);
+        // Race losers roll back entirely: only the winner commits an open audit event.
+        assertThat(auditCount(fx.orgId(), "cash-shift.opened")).isEqualTo(1);
     }
 
     @Test
@@ -149,6 +151,20 @@ class CashShiftConcurrencyTest extends AbstractRbacIntegrationTest {
         String status = jdbcTemplate.queryForObject(
                 "select status from cash_shifts where id = ?", String.class, UUID.fromString(shiftId));
         assertThat(status).isEqualTo("CLOSED");
+        Long version = jdbcTemplate.queryForObject(
+                "select version from cash_shifts where id = ?", Long.class, UUID.fromString(shiftId));
+        assertThat(version).isEqualTo(1L);
+        // Exactly one close committed its audit event; the conflicting losers did not.
+        assertThat(auditCount(fx.orgId(), "cash-shift.closed")).isEqualTo(1);
+    }
+
+    private long auditCount(UUID organizationId, String action) {
+        Long count = jdbcTemplate.queryForObject(
+                "select count(*) from audit_events where organization_id = ? and action = ?",
+                Long.class,
+                organizationId,
+                action);
+        return count == null ? 0 : count;
     }
 
     private final java.util.concurrent.atomic.AtomicInteger index = new java.util.concurrent.atomic.AtomicInteger();
