@@ -61,6 +61,8 @@ PUT   /api/v1/organizations/{organizationId}/branches/{branchId}/memberships/{us
 
 GET   /api/v1/organizations/{organizationId}/audit-events  (audit.read; SOLO lectura)
 
+POST  /api/v1/bootstrap   (ONE-SHOT provisioning; X-Bootstrap-Token; NO Bearer)
+
 POST  /api/v1/auth/login        (público)
 POST  /api/v1/auth/refresh      (público)
 POST  /api/v1/auth/logout       (público; revoca la familia de la sesión presentada)
@@ -154,11 +156,31 @@ Desde RBAC, todo PATCH administrativo (Organization, Branch, User, Role,
   CONCURRENT_MODIFICATION`. `@Version` sigue protegiendo carreras reales.
 - Sin ETag / If-Match por ahora (contrato explícito `expectedVersion`).
 
+## Secure Admin Bootstrap (one-shot provisioning)
+
+`POST /api/v1/bootstrap` NO es una API administrativa regular: no lleva Bearer
+ni exige permiso; se autoriza con el secret de deployment
+(`X-Bootstrap-Token`, Base64 ≥ 32 bytes, validado en la cadena de seguridad ANTES
+de leer el body, comparación constant-time, `401 BOOTSTRAP_INVALID_TOKEN`
+genérico si falta/inválido). Sólo existe mientras `BOOTSTRAP_SECRET` está
+configurado; si no, la ruta cae en deny-by-default.
+
+- Crea Organization + User administrador + Role `administrator` (rol NORMAL con
+  TODOS los permissions del catálogo leídos de PostgreSQL) + asignación
+  organization-wide; UNA transacción, audit SYSTEM, estado singleton
+  (`installation_bootstrap`, `V8`).
+- `201` devuelve solo ids (nunca tokens/passwords). Login posterior:
+  `POST /api/v1/auth/login`.
+- `409 BOOTSTRAP_ALREADY_COMPLETED` (ya provisionado, con token válido) / `409
+  BOOTSTRAP_NOT_ALLOWED` (organizations ya existen).
+- Detalle: `docs/04-security/secure-bootstrap.md`, ADR-0006.
+
 ## POST /organizations permanece cerrado
 
 `POST /api/v1/organizations` NO tiene permiso (`organization.create` no existe)
 y permanece deny-by-default incluso con un JWT con todos los permisos actuales
-(403). Crear organizaciones será del secure bootstrap / futuro Control Plane.
+(403). La creación de la primera organización vive en
+`POST /api/v1/bootstrap` (provisioning), no en un permiso de negocio.
 
 ## Contrato de error
 
@@ -204,6 +226,9 @@ Códigos estables:
 | `BRANCH_MEMBERSHIP_ALREADY_EXISTS` | 409 | Membership duplicada (org+branch+user), incluida la carrera (constraint) |
 | `BRANCH_INACTIVE` | 409 | No se crean memberships en una branch inactiva |
 | `USER_INACTIVE` | 409 | No se crean memberships para un usuario inactivo |
+| `BOOTSTRAP_INVALID_TOKEN` | 401 | Bootstrap: token ausente/inválido/Base64 malformado, o bootstrap deshabilitado (siempre genérico) |
+| `BOOTSTRAP_ALREADY_COMPLETED` | 409 | Bootstrap: instalación ya provisionada |
+| `BOOTSTRAP_NOT_ALLOWED` | 409 | Bootstrap: instalación no pristina (organizations existentes) |
 | (`audit.read`) | 403 | Permiso organization-wide del catálogo (19 códigos desde `V7`) para leer el audit log |
 | `RESOURCE_NOT_FOUND` | 404 | Ruta sin mapping |
 | `ORGANIZATION_CODE_ALREADY_EXISTS` | 409 | Code de organización duplicado (global) |

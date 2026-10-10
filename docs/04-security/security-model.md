@@ -2,10 +2,11 @@
 
 **Estado actual:** autenticación implementada (`auth`), administración de
 usuarios implementada (`users`), **Roles/Permissions/RBAC implementado
-(`rbac`)**, **Branch Memberships implementado (`membership`)** y **Audit
-Foundation implementado (`audit`)** — las business
+(`rbac`)**, **Branch Memberships implementado (`membership`)**, **Audit
+Foundation implementado (`audit`)** y **Secure Admin Bootstrap implementado
+(`bootstrap`)** — las business
 APIs administrativas abren **solo** con el permiso
-adecuado. Secure Admin Bootstrap y Control Plane siguen siendo futuros.
+adecuado. El Control Plane HiQNet sigue siendo futuro.
 
 ## Principios
 
@@ -54,6 +55,21 @@ adecuado. Secure Admin Bootstrap y Control Plane siguen siendo futuros.
 - **`POST /api/v1/organizations` y cualquier ruta no definida permanecen
   denegados** (`anyRequest().denyAll()`).
 - Sesiones stateless, CSRF deshabilitado (API sin cookies de sesión hoy).
+
+Secure Admin Bootstrap (`bootstrap`, detalle `docs/04-security/secure-bootstrap.md`,
+ADR-0006):
+
+- **`POST /api/v1/bootstrap`** provisiona la primera Organization + primer
+  administrador + rol `administrator` (rol NORMAL con todos los permissions del
+  catálogo) en UNA transacción, con audit SYSTEM y estado singleton en DB
+  (`installation_bootstrap`, `V8`). Sin credenciales sembradas, sin
+  `SUPER_ADMIN`, sin tokens en la respuesta.
+- Gated por `BOOTSTRAP_SECRET` (Base64 ≥ 32 bytes, sin default): ausente → ruta
+  **cerrada**; configurado inválido → fail-fast al arrancar. Comparación
+  constant-time; secret verificado ANTES del body (filtro) y re-verificado en el
+  controller; nunca persistido/logueado.
+- El rol `administrator` NO es mágico: RBAC database-authoritative sigue
+  mandando; quitar un permiso o desactivar el rol corta el acceso al instante.
 
 Autenticación (detalle: `docs/04-security/authentication.md`):
 
@@ -110,8 +126,8 @@ branch-scoped de inmediato (la `EXISTS` exige `branch.status='ACTIVE'`).
 
 - **Auditoría de autenticación unificada** en `audit_events` (hoy son
   `security-event` logs) — solo si aparece el requerimiento.
-- **Secure Admin Bootstrap** (provisión segura del primer administrador;
-  pendiente para Foundation).
+- **Password recovery/root recovery** para el administrador destruido (backdoor
+  no; procedimiento futuro de soporte).
 - **Rate limiting** por IP (futuro, no implementado).
 - **Seguridad de WebSockets** cuando ese módulo llegue (futuro, no implementado).
 - **Re-autenticación e idempotencia** en operaciones monetarias (futuro).

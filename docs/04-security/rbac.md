@@ -111,6 +111,7 @@ avala en una sola `EXISTS` (`BranchMembershipRoleRepository`
 | GET /organizations/{id}/branches/{branchId}/memberships/{userId}/roles | `branch.membership.read` (org scope) |
 | PUT /organizations/{id}/branches/{branchId}/memberships/{userId}/roles | `branch.membership.roles.manage` (org scope) |
 | GET /organizations/{id}/audit-events | `audit.read` (org scope; SOLO lectura) |
+| POST /api/v1/bootstrap | provisioning one-shot — `X-Bootstrap-Token` (secret), SIN permiso; `organization.create` sigue sin existir |
 
 ## Inmediatez (mismo JWT)
 
@@ -145,8 +146,6 @@ volver `ACTIVE` vuelven a conceder (intencional; documentado).
 
 ## No implementado (fronteras)
 
-- **Secure Admin Bootstrap** (primer ADMIN) — pendiente de Foundation; sin
-  credenciales por defecto.
 - **SUPER_ADMIN / ROOT / HIQNET_ADMIN** dentro del POS: la administración
   HiQNet vive en un futuro Control Plane separado (`Business Administration !=
   HiQNet Administration`).
@@ -154,3 +153,4 @@ volver `ACTIVE` vuelven a conceder (intencional; documentado).
 - **Branch-scoped listing «mis sucursales»**: `GET /branches` (colección) sigue
   siendo organization-scope; un endpoint de listing filtrado para memberships
   se añadirá cuando el frontend/operación lo necesite (decisión consciente).
+- **Recovery/backdoor** para el administrador destruido: no (operativo/futuro).

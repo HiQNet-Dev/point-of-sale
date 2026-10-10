@@ -16,6 +16,7 @@ implementado** hasta que llegue su milestone (ver
 | `rbac` | Roles, permisos y autorización | permissions (catálogo), roles por organización, assignments, method security | **implementado** |
 | `membership` | Memberships por sucursal | branch_memberships, branch_membership_roles, scope branch-scoped, port de acceso | **implementado** |
 | `audit` | Auditoría persistente append-only | audit_events, actor USER/SYSTEM, trigger DB, port transversal | **implementado (Foundation)** |
+| `bootstrap` | Provisión one-shot del primer administrador | installation_bootstrap (singleton), X-Bootstrap-Token, provisioning transaccional auditado | **implementado (Foundation)** |
 | `catalog` | Catálogo comercial | products, variants, precios, ingredientes | **no implementado** |
 | `sales` | Venta y tickets | sales, tickets, líneas, totales | **no implementado** |
 | `payments` | Pagos de la venta | methods, splits, vuelto | **no implementado** |
@@ -24,7 +25,6 @@ implementado** hasta que llegue su milestone (ver
 | `purchasing` | Compras | suppliers, órdenes, recepción | **no implementado** |
 | `expenses` | Gastos del negocio | expenses, categorías | **no implementado** |
 | `reporting` | Reportes | ventas, inventario, caja | **no implementado** |
-| `audit` | Auditoría | quién/cuándo/qué, inmutabilidad en dinero | **no implementado** |
 | `shared` | Utilidades transversales | config, error (`ApiError`, `BusinessException`, `ErrorCodes`) | **parcial (fundación)** |
 
 ## Convención de paquetes
@@ -64,6 +64,16 @@ com.hiqnet.pos.<modulo>[.domain|.application|.infrastructure|.api]
   desde `SecurityContext` + `Clock`), `application` (`AuditQueryService` con
   Specifications) y `api` (lectura). `shared.audit` solo define el contrato
   (`AuditPort`, `AuditRecord`, `AuditMetadata`, `AuditException`).
+- `bootstrap` usa `domain` (`InstallationBootstrap` singleton + repositorio con
+  `PESSIMISTIC_WRITE`), `application` (`BootstrapService` orquestador que
+  REUTILIZA `OrganizationService`, `UserService`, `RoleService`,
+  `RolePermissionService` y `UserRoleService` — todos `REQUIRED`, se unen a la
+  transacción exterior) y `api` (`BootstrapController` + DTOs). La validación
+  del secret y el guard HTTP residen en `shared.config`
+  (`BootstrapProperties`, `BootstrapTokenGuard`, `BootstrapTokenFilter`) para
+  evitar `shared -> bootstrap`; la dirección es única:
+  `bootstrap -> shared, organization, users, rbac` — ningún módulo
+  fundacional depende de `bootstrap`.
 - Dependencia entre módulos (lectura): `branch` usa
   `OrganizationRepository` de `organization` para validar existencia y
   resolución de timezone; `auth` usa `User`/`UserRepository` de `users` y
@@ -109,12 +119,17 @@ CRUD de memberships, replace atómico de roles branch-scoped, port
 14→18) y el módulo `audit` (migración `V7`, `audit_events` append-only con
 trigger DB, actor USER/SYSTEM central, port `shared.audit.AuditPort` con
 `MANDATORY`, metadata JSONB segura/acotada, endpoint de lectura con
-`audit.read`, catálogo 18→19) y **299
+`audit.read`, catálogo 18→19), el módulo `bootstrap` (migración `V8`,
+`installation_bootstrap` singleton con lock pesimista, guard `X-Bootstrap-Token`
+constant-time en `shared.config`, provisioning one-shot transaccional y
+auditado con actor SYSTEM) y **346
   tests verdes** (Testcontainers). Las clases de arranque siguen en
 su lugar. La API administrativa (organizations GET/PATCH, branches,
 users, roles, permissions, memberships, audit-events) está **autorizada por
 permisos** con PostgreSQL como
 autoridad; `POST /organizations` y todo lo no definido permanecen
-**deny-by-default** (véase
+**deny-by-default** (el provisioning one-shot vive en `POST /api/v1/bootstrap`,
+gated por `BOOTSTRAP_SECRET`; véase
 `docs/04-security/security-model.md`, `docs/04-security/rbac.md`,
-`docs/04-security/audit.md` y `docs/02-database/branch-memberships-model.md`).
+`docs/04-security/audit.md`, `docs/04-security/secure-bootstrap.md` y
+`docs/02-database/branch-memberships-model.md`).
