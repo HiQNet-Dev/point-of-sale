@@ -21,6 +21,12 @@ Development for v0.2.x has started.
   `expectedVersion` of the product (`V10`).
 - Added the `modifier.group.*`, `modifier.option.*` and
   `product.modifiers.manage` permissions (permission catalog 25 → 32).
+- Added the Cash Registers foundation: branch-owned Cash Registers with an
+  immutable normalized slug `code` (unique per branch), a required `name` and an
+  `ACTIVE`/`INACTIVE` status, plus branch-scoped authorization and append-only
+  audit (`V11`).
+- Added the `cash-register.read`, `cash-register.create` and
+  `cash-register.update` permissions (permission catalog 32 → 35).
 
 ## [0.1.0] - 2026-10-10
 

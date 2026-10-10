@@ -3,7 +3,8 @@
 **Estado:** existen los primeros endpoints de negocio
 (Organization + Branch, `/api/v1`), la autenticación (`auth`, `/api/v1/auth`),
 la **administración de usuarios**, la **administración de roles/permisos**
-(`rbac`) y el **catálogo** (`catalog`: categorías, productos y **modifiers**),
+(`rbac`) y el **catálogo** (`catalog`: categorías, productos y **modifiers**) y
+las **cajas** (`cashregister`),
 todas scoped por organización. Desde RBAC la API administrativa está
 **autorizada por permisos** con PostgreSQL como autoridad (JWT = identidad;
 método security con `@PreAuthorize`); `POST /organizations` y todo lo no
@@ -82,6 +83,11 @@ GET   /api/v1/organizations/{organizationId}/branches/{branchId}/memberships/{us
 PATCH /api/v1/organizations/{organizationId}/branches/{branchId}/memberships/{userId}
 GET   /api/v1/organizations/{organizationId}/branches/{branchId}/memberships/{userId}/roles
 PUT   /api/v1/organizations/{organizationId}/branches/{branchId}/memberships/{userId}/roles
+
+POST  /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers
+GET   /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers          (paginado, ?page&size&status&q)
+GET   /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}
+PATCH /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}
 
 GET   /api/v1/organizations/{organizationId}/audit-events  (audit.read; SOLO lectura)
 
@@ -173,7 +179,8 @@ membership ACTIVE de ESA branch (Branch ACTIVE incluido en la query).
 ## Optimistic concurrency HTTP (expectedVersion)
 
 Desde RBAC, todo PATCH administrativo (Organization, Branch, User, Role,
-**Membership**, Category, Product, **ModifierGroup**, **ModifierOption**) y el
+**Membership**, Category, Product, **ModifierGroup**, **ModifierOption**,
+**CashRegister**) y el
 `PUT` de reemplazo producto↔modifier-group exige:
 
 ```json
@@ -269,6 +276,29 @@ implementan y caen en `denyAll()`. Detalle de modelo:
   es **no-op** (sin mutación, sin bump de versión, sin auditoría). Requiere
   `product.modifiers.manage`.
 
+## Cash Registers (cajas)
+
+Cajas **branch-owned**, anidadas bajo una branch. Autorización branch-scoped
+(`cash-register.read` / `cash-register.create` / `cash-register.update` con
+`hasBranchPermission`: org-wide **o** membership ACTIVE de esa branch), nunca
+promovida a org-scope. Sin DELETE: `PUT`/`DELETE` no se implementan y caen en
+`denyAll()`. Detalle de modelo: `docs/02-database/cash-register-model.md`.
+
+- **POST /branches/{branchId}/cash-registers**: crea (`code` slug único **por
+  branch**, inmutable; `name` trim no-blank, máx 120). Branch inexistente o de
+  otra org → 404 `BRANCH_NOT_FOUND`; `code` duplicado en la branch → 409
+  `CASH_REGISTER_CODE_ALREADY_EXISTS`; slug inválido → 400 `VALIDATION_ERROR`.
+  El `status` NO se fija en el create (siempre `ACTIVE`); el `organization_id`
+  se deriva de la branch.
+- **GET /branches/{branchId}/cash-registers**: `PageResponse` (`?page`(0)
+  `?size`(20, máx 100) `?status` `?q` — `q` busca en `name`/`code`); orden
+  `name ASC, id ASC`.
+- **GET/PATCH /branches/{branchId}/cash-registers/{cashRegisterId}**:
+  `expectedVersion` requerido; `code` inmutable; `name` y/o `status`. Caja de
+  otra branch/org → 404 `CASH_REGISTER_NOT_FOUND`; mismatch de versión → 409
+  `CONCURRENT_MODIFICATION`; `PATCH` sin cambios efectivos es **no-op** (sin
+  mutación, sin bump de versión, sin auditoría).
+
 ## POST /organizations permanece cerrado
 
 `POST /api/v1/organizations` NO tiene permiso (`organization.create` no existe)
@@ -323,7 +353,7 @@ Códigos estables:
 | `BOOTSTRAP_INVALID_TOKEN` | 401 | Bootstrap: token ausente/inválido/Base64 malformado, o bootstrap deshabilitado (siempre genérico) |
 | `BOOTSTRAP_ALREADY_COMPLETED` | 409 | Bootstrap: instalación ya provisionada |
 | `BOOTSTRAP_NOT_ALLOWED` | 409 | Bootstrap: instalación no pristina (organizations existentes) |
-| (`audit.read`) | 403 | Permiso organization-wide del catálogo (32 códigos desde `V10`) para leer el audit log |
+| (`audit.read`) | 403 | Permiso organization-wide del catálogo (35 códigos desde `V11`) para leer el audit log |
 | `RESOURCE_NOT_FOUND` | 404 | Ruta sin mapping |
 | `ORGANIZATION_CODE_ALREADY_EXISTS` | 409 | Code de organización duplicado (global) |
 | `BRANCH_CODE_ALREADY_EXISTS` | 409 | Code de branch duplicado en la organización |
@@ -337,6 +367,8 @@ Códigos estables:
 | `MODIFIER_GROUP_CODE_ALREADY_EXISTS` | 409 | `code` de grupo duplicado dentro de la organización |
 | `MODIFIER_OPTION_NOT_FOUND` | 404 | Opción inexistente (o de otro grupo/organización) |
 | `MODIFIER_OPTION_CODE_ALREADY_EXISTS` | 409 | `code` de opción duplicado dentro del grupo |
+| `CASH_REGISTER_NOT_FOUND` | 404 | Caja inexistente (o de otra branch/organización) |
+| `CASH_REGISTER_CODE_ALREADY_EXISTS` | 409 | `code` de caja duplicado dentro de la branch |
 | `CONCURRENT_MODIFICATION` | 409 | Falló optimistic locking |
 | `INTERNAL_ERROR` | 500 | Error inesperado |
 
@@ -358,10 +390,12 @@ Toda operación sobre un recurso scoped exige `organization_id`: un
 `GET /organizations/{A}/branches/{B1}`, `GET /organizations/{A}/users/{U1}`,
 `GET /organizations/{A}/roles/{R1}`, `GET /organizations/{A}/categories/{C1}`,
 `GET /organizations/{A}/products/{P1}` o
-`GET /organizations/{A}/modifier-groups/{G1}` donde el recurso pertenece a otra
+`GET /organizations/{A}/modifier-groups/{G1}` o
+`GET /organizations/{A}/branches/{B1}/cash-registers/{C1}` donde el recurso
+pertenece a otra
 organización responde **404** (`BRANCH_NOT_FOUND` / `USER_NOT_FOUND` /
 `ROLE_NOT_FOUND` / `CATEGORY_NOT_FOUND` / `PRODUCT_NOT_FOUND` /
-`MODIFIER_GROUP_NOT_FOUND`), nunca 200.
+`MODIFIER_GROUP_NOT_FOUND` / `CASH_REGISTER_NOT_FOUND`), nunca 200.
 Distinción de capas con RBAC:
 
 - **Frontera de autorización** (sin permiso, identidad/org no operativa, otra
@@ -399,7 +433,8 @@ Convención estable desde la administración de usuarios (`shared.api.PageRespon
 
 - **Optimistic concurrency HTTP**: resuelto como contrato `expectedVersion` en
   Organization + Branch + User + Role + Membership + Category + Product +
-  ModifierGroup + ModifierOption + el reemplazo de modifier-groups de un producto
+  ModifierGroup + ModifierOption + CashRegister + el reemplazo de modifier-groups
+  de un producto
   (sin ETag/If-Match por ahora;
   revisar antes de abrir las APIs administrativas en producción).
 - **SCOPES**: `hasOrganizationPermission` (organization-wide) vs
