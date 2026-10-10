@@ -41,6 +41,11 @@ public final class ErrorCodes {
 
     public static final String CASH_REGISTER_NOT_FOUND = "CASH_REGISTER_NOT_FOUND";
     public static final String CASH_REGISTER_CODE_ALREADY_EXISTS = "CASH_REGISTER_CODE_ALREADY_EXISTS";
+    public static final String CASH_REGISTER_INACTIVE = "CASH_REGISTER_INACTIVE";
+
+    public static final String CASH_SHIFT_NOT_FOUND = "CASH_SHIFT_NOT_FOUND";
+    public static final String CASH_REGISTER_ALREADY_HAS_OPEN_SHIFT = "CASH_REGISTER_ALREADY_HAS_OPEN_SHIFT";
+    public static final String CASH_SHIFT_ALREADY_CLOSED = "CASH_SHIFT_ALREADY_CLOSED";
 
     public static final String USER_NOT_FOUND = "USER_NOT_FOUND";
     public static final String USER_EMAIL_ALREADY_EXISTS = "USER_EMAIL_ALREADY_EXISTS";
