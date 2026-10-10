@@ -22,6 +22,7 @@ logs/
 .vscode/
 *.swp
 *.swo
+.serena/
 
 # --- OS files ---
 .DS_Store
