@@ -66,6 +66,15 @@ class ConstraintViolationTranslationTest {
     }
 
     @Test
+    void cashShiftOneOpenPerRegisterConstraintMapsToConflictWithStableCode() {
+        BusinessException translated =
+                ConstraintTranslator.translate(violation("cash_shifts_one_open_per_register"));
+
+        assertEquals(HttpStatus.CONFLICT, translated.getStatus());
+        assertEquals(ErrorCodes.CASH_REGISTER_ALREADY_HAS_OPEN_SHIFT, translated.getCode());
+    }
+
+    @Test
     void unknownConstraintIsNotGuessedAsDuplicate() {
         assertNull(ConstraintTranslator.translate(violation("branches_some_other_constraint")));
     }
