@@ -47,6 +47,15 @@ migraciones, ni su código. HiQNet POS parte de cero con su propia arquitectura.
 
 ## Licencia
 
-**Pendiente de definición.** Producto comercial HiQNet: no se concede ninguna
-licencia de uso por defecto. No se publica texto de licencia (ni MIT, ni Apache,
-ni GPL) mientras no se defina.
+**Software propietario de HiQNet.**
+
+- **Copyright:** © 2026 HiQNet. All rights reserved.
+- **Open-source license:** ninguna; no se concede ninguna licencia general de
+  reutilización del repositorio ni del código.
+- **Repositorio:** privado.
+- **Uso por clientes/terceros:** únicamente mediante acuerdos comerciales
+  escritos separados con HiQNet.
+- La release técnica privada `v0.1.0` documenta la Foundation del producto;
+  los derechos comerciales de clientes se pactan aparte.
+
+Detalle: `LICENSE` y `docs/05-development/legal-status.md`.

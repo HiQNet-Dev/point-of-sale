@@ -32,7 +32,7 @@ En un release, el bump se hace en el ORDEN: `VERSION` → `pom.xml` →
 
 Debe cumplirse ANTES de publicar:
 
-- [ ] CI verde en `main` (backend `./mvnw clean verify` — 346+ tests con
+- [ ] CI verde en `main` (backend `./mvnw clean verify` — 361 tests con
       Testcontainers reales; frontend `pnpm lint/typecheck/test/build`; Compose).
 - [ ] `docs/05-development/foundation-readiness.md` sin **release blockers**
       (solo DEFERRED con milestone explícito).
@@ -40,12 +40,24 @@ Debe cumplirse ANTES de publicar:
 - [ ] Migraciones `V1`–`V8` inmutables; clean install y upgrade `V7→V8`
       validados por tests.
 - [ ] Smoke del perfil `prod` (`FoundationProdProfileTest`) verde.
-- [ ] **Decisión legal/licencia** de HiQNet: fundamental antes de publicar
-      cualquier artefacto (hoy "pendiente de definición" en `README.md`).
+- [x] **Modelo de distribución propietario aprobado** (HiQNet = propietario /
+      All Rights Reserved; sin licencia open-source).
+- [x] **`LICENSE`** (aviso propietario) presente.
+- [x] **Repositorio privado**.
+
+**`v0.1.0` = release técnica privada de la Foundation** — un hito técnico, NO
+una release comercial, NO un producto "production-ready" para clientes. La
+primera **release comercial estable** sigue siendo `v1.0.0`. La publicación de
+artefactos externos para clientes continuará requiriendo los **contratos
+comerciales** correspondientes (EULA/acuerdos de servicio, futuros).
 
 ## Pasos de release (cuando HiQNet lo autorice)
 
-1. **Decisión legal**: definir licencia/estado de publicación (pendiente hoy).
+1. **Marco legal ya resuelto** para el repositorio: distribución propietaria /
+   All Rights Reserved, `LICENSE` presente, repo privado
+   (`docs/05-development/legal-status.md`). Los términos comerciales hacia el
+   cliente (EULA/servicio/suscripción) se definen aparte antes del primer
+   piloto/cliente externo.
 2. **Bump**: `VERSION` → `0.1.0` (+ `pom.xml`, `package.json` sincronizados).
 3. **CI completo** sobre el commit de bump (backend+frontend+compose verdes).
 4. **Changelog / release notes**: derivar de Conventional Commits desde el
@@ -72,6 +84,6 @@ Debe cumplirse ANTES de publicar:
 - **Cero releases publicadas.**
 - **Cero tags** (verificado en cada política de proyecto).
 - Producto **no comercialmente estable**; sin garantías entre snapshots.
-- **Licencia pendiente de definición** (decisión legal bloquea la publicación
-  de artefactos, no el desarrollo).
+- **Distribución legal del repositorio resuelta**: propietario / All Rights
+  Reserved, `LICENSE` presente, repo privado (no open-source).
 - Sin pipeline externo de publicación (imágenes, paquetes, instaladores).

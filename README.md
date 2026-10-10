@@ -209,8 +209,20 @@ Reporta vulnerabilidades según `SECURITY.md`. Principios de seguridad en
 `docs/04-security/security-model.md` (deny by default, least privilege, secretos
 por entorno, autorización server-side).
 
-## Licencia
+## Licencia y propiedad intelectual
 
-**Pendiente de definición.** Este es un producto comercial de HiQNet; no se concede
-ninguna licencia de uso por defecto sobre el contenido de este repositorio. No
-asumas que es open source ni reutilices su código fuera de HiQNet sin autorización.
+HiQNet POS es software propietario de HiQNet.
+
+Copyright © 2026 HiQNet. All rights reserved.
+
+Este repositorio y su código fuente no se publican bajo una licencia open-source.
+No se concede permiso general para usar, copiar, modificar, redistribuir,
+sublicenciar o crear trabajos derivados.
+
+Los derechos de uso para clientes, instalaciones o terceros se otorgarán
+únicamente mediante acuerdos comerciales separados con HiQNet.
+
+Consulta `LICENSE` y `docs/05-development/legal-status.md`.
+
+La release `v0.1.0` representa únicamente la Foundation técnica del producto;
+no significa que el POS comercial completo esté terminado.

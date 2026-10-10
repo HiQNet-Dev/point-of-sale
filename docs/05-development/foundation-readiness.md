@@ -36,6 +36,7 @@ Versión auditada: `0.1.0-SNAPSHOT` (Foundation, V1–V8).
 | Config — CORS dev | PASS | allowlist `http://localhost:5173`; wildcard imposible |
 | CI | PASS | permisos mínimos (`contents: read`); backend+frontend+compose verdes en main |
 | Docs | PASS | roadmap/módulos/seguridad/API alineados; README con Foundation y `BOOTSTRAP_SECRET` |
+| Legal/distribución | PASS | Propietario / All Rights Reserved; `LICENSE` presente; repo privado; acuerdos comerciales separados para clientes |
 | Versiones | PASS | `VERSION`=fuente canónica; backend `0.1.0-SNAPSHOT`; frontend sincronizado (`0.1.0-SNAPSHOT`) |
 | Tests | PASS | `./mvnw clean verify` (361 tests) + frontend `lint/typecheck/test/build` + Compose |
 | Rendimiento | PASS | sin N+1 (dominio sin asociaciones; checks `EXISTS` únicos), paginación acotada, índices críticos presentes |
@@ -53,12 +54,17 @@ Versión auditada: `0.1.0-SNAPSHOT` (Foundation, V1–V8).
 | Password recovery / root recovery | procedimiento de soporte futuro (sin backdoor) |
 | Backup/restore automatizado | gate operativo del primer piloto (v0.8 Pilot) |
 | Listado filtrado "mis sucursales" | cuando el frontend/operación lo necesite |
-| Decisión legal/licencia | bloquea publicar artefactos, no el desarrollo |
+| EULA / términos de suscripción / servicio / SLA para clientes | precomercial; requerido antes del primer despliegue o piloto con cliente externo |
 
 ## Release blockers v0.1.0
 
-No hay **release blockers** abiertos en esta auditoría (ningún gate FAIL; CI
-verde; sin BLOCKER/HIGH de seguridad; migraciones e upgrade validados; sin
-wildcard CORS; sin credenciales por defecto; sin fugas cross-org; bootstrap
-one-shot). La **decisión legal (licencia)** queda registrada como requisito de
-publicación, no como defecto técnico.
+No remaining technical or repository-licensing blockers.
+
+Sin blockers técnicos ni de licenciamiento del repositorio: CI verde; sin
+BLOCKER/HIGH de seguridad; migraciones e upgrade validados; sin wildcard CORS;
+sin credenciales por defecto; sin fugas cross-org; bootstrap one-shot; modelo
+propietario aprobado (`LICENSE` presente, repo privado).
+
+Requisito FUTURO antes del primer cliente externo (NO bloquea la release
+técnica privada `v0.1.0`): **términos comerciales hacia el cliente**
+(EULA/contrato de servicio/suscripción), a definir por HiQNet.
