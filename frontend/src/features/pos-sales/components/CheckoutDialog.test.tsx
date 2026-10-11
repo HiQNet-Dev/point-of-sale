@@ -55,26 +55,36 @@ function setup(options: {
   })
   const completed = vi.fn()
   const reconciled = vi.fn()
+  const onClose = vi.fn()
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  const view = render(
+  const renderDialog = (currentSale: SaleSummary) => (
     <QueryClientProvider client={queryClient}>
       <CheckoutDialog
         organizationId="org-1"
         branchId="branch-1"
         registerId="register-1"
         shiftId="shift-1"
-        sale={{ ...sale, totalAmount: options.total ?? sale.totalAmount }}
+        sale={currentSale}
         activeItemCount={options.activeItems ?? 1}
         operationalParentsActive={options.operationalParentsActive ?? true}
         locale="en-US"
         currency="USD"
-        onClose={vi.fn()}
+        onClose={onClose}
         onCompleted={completed}
         onReconcile={reconciled}
       />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   )
-  return { ...view, checkoutRequests, fetchMock, completed, reconciled }
+  const view = render(renderDialog({ ...sale, totalAmount: options.total ?? sale.totalAmount }))
+  return {
+    ...view,
+    checkoutRequests,
+    fetchMock,
+    completed,
+    reconciled,
+    onClose,
+    rerenderSale: (currentSale: SaleSummary) => view.rerender(renderDialog(currentSale)),
+  }
 }
 
 async function chooseMethod(row: number, method: 'Efectivo' | 'Tarjeta') {
@@ -166,6 +176,34 @@ describe('atomic checkout dialog', () => {
     fireEvent.click(screen.getAllByRole('button', { name: /Usar restante/ })[1])
     expect((screen.getAllByRole('textbox', { name: 'Monto aplicado' })[1] as HTMLInputElement).value).toBe('70')
     expect(screen.getByLabelText('Restante por cubrir').textContent).toContain('$0.00')
+  })
+
+  it('discards payment instructions and disables submit when Sale version changes while open', async () => {
+    const checkout = setup()
+    await chooseMethod(0, 'Tarjeta')
+    fireEvent.change(screen.getByRole('textbox', { name: 'Monto aplicado' }), { target: { value: '100' } })
+
+    checkout.rerenderSale({ ...sale, totalAmount: '120', version: 5 })
+    expect(checkout.reconciled).toHaveBeenCalledWith(
+      'sale-1',
+      'La venta cambió. Revisa el total antes de volver a cobrar.',
+      false,
+      false,
+    )
+    expect(screen.getByRole('button', { name: 'Completar venta' }).hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Completar venta' }))
+    expect(checkout.checkoutRequests).toHaveLength(0)
+  })
+
+  it('clears cash tender when a payment row changes to CARD', async () => {
+    setup()
+    await chooseMethod(0, 'Efectivo')
+    fireEvent.change(screen.getByRole('textbox', { name: 'Monto aplicado' }), { target: { value: '100' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Efectivo recibido' }), { target: { value: '100' } })
+    await chooseMethod(0, 'Tarjeta')
+    expect(screen.queryByRole('textbox', { name: 'Efectivo recibido' })).toBeNull()
+    await chooseMethod(0, 'Efectivo')
+    expect((screen.getByRole('textbox', { name: 'Efectivo recibido' }) as HTMLInputElement).value).toBe('')
   })
 
   it('requires exact coverage and rejects cash under-tender without submitting', async () => {

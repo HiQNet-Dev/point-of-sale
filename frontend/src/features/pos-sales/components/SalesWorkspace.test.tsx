@@ -279,6 +279,16 @@ describe('POS sales workspace', () => {
     expect(backend.requests.filter(({ url, method }) => url.pathname.endsWith('/sales') && method === 'GET').length).toBeGreaterThan(1)
   })
 
+  it('completes a zero-total Sale with no payment rows at workspace level', async () => {
+    const freeSale = { ...summary, totalAmount: '0.0000' }
+    setup({ initialSales: [freeSale], initialDetail: { sale: freeSale, items: [item({ lineTotal: '0' })] } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Cobrar' }))
+    await screen.findByText('Esta venta no requiere pagos. Puedes completarla con importe cero.')
+    expect(screen.queryByRole('combobox', { name: 'Método de pago' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Completar venta' }))
+    await screen.findByText('Venta completada.')
+  })
+
   it('does not create a Sale until Nueva venta is explicitly selected', async () => {
     const backend = setup()
     expect(await screen.findByText('No hay ventas abiertas.')).toBeTruthy()

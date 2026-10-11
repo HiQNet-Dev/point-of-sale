@@ -1,6 +1,6 @@
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormHelperText, InputLabel, MenuItem, Select, Stack, TextField, Typography } from '@mui/material'
 import { useMutation } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ApiNetworkError, ApiRequestError } from '../../../shared/api/client'
 import { checkoutSale } from '../api/posSalesApi'
 import type { PaymentMethod, SaleDetail, SaleSummary } from '../api/posSalesApi'
@@ -84,10 +84,18 @@ export function CheckoutDialog({
   onCompleted,
   onReconcile,
 }: Props) {
+  const [initialSaleVersion] = useState(sale.version)
+  const saleChanged = initialSaleVersion !== sale.version
   const zeroTotal = parseExactMoney(sale.totalAmount) === 0n
   const [payments, setPayments] = useState<PaymentDraft[]>(() => zeroTotal ? [] : [paymentRow(1)])
   const [nextId, setNextId] = useState(2)
   const [submitError, setSubmitError] = useState('')
+  useEffect(() => {
+    if (saleChanged) {
+      onReconcile(sale.id, 'La venta cambió. Revisa el total antes de volver a cobrar.', false, false)
+    }
+  }, [onReconcile, sale.id, saleChanged])
+
   const checkoutMutation = useMutation({
     mutationFn: (instructions: Array<{ method: PaymentMethod; amount: string; tenderedAmount?: string }>) => checkoutSale(
       organizationId,
@@ -165,7 +173,7 @@ export function CheckoutDialog({
     && tenderErrors.every((error) => !error)
     && remaining !== null
     && compareExactMoney(remaining, 0n) === 0
-  const canSubmit = operationalParentsActive && activeItemCount > 0 && paymentsValid && !checkoutMutation.isPending
+  const canSubmit = !saleChanged && operationalParentsActive && activeItemCount > 0 && paymentsValid && !checkoutMutation.isPending
 
   function updatePayment(id: number, update: Partial<PaymentDraft>) {
     setSubmitError('')
@@ -179,7 +187,7 @@ export function CheckoutDialog({
   }
 
   function submit() {
-    if (!canSubmit || total === null) return
+    if (saleChanged || !canSubmit || total === null) return
     const instructions = payments.map((payment) => ({
       method: payment.method as PaymentMethod,
       amount: exactMoneyToDecimal(parseExactMoney(payment.amount)!),
@@ -222,6 +230,7 @@ export function CheckoutDialog({
 
           {!zeroTotal && payments.map((payment, index) => {
             const amount = parsedAmounts[index]
+            const assignableAmount = remainingForPayment(index)
             const tendered = parseExactMoney(payment.tenderedAmount)
             const existingCashElsewhere = cashCount > (payment.method === 'CASH' ? 1 : 0)
             const canOfferCash = !existingCashElsewhere
@@ -238,7 +247,10 @@ export function CheckoutDialog({
                         labelId={`payment-method-${payment.id}`}
                         label="Método de pago"
                         value={payment.method}
-                        onChange={(event) => updatePayment(payment.id, { method: event.target.value as PaymentMethod | '' })}
+                        onChange={(event) => {
+                          const method = event.target.value as PaymentMethod | ''
+                          updatePayment(payment.id, { method, ...(method === 'CARD' ? { tenderedAmount: '' } : {}) })
+                        }}
                         disabled={checkoutMutation.isPending}
                       >
                         <MenuItem value="">Selecciona un método</MenuItem>
@@ -257,13 +269,13 @@ export function CheckoutDialog({
                       fullWidth
                     />
                   </Stack>
-                  {remainingForPayment(index) !== null && remainingForPayment(index)! > 0n && (
+                  {assignableAmount !== null && assignableAmount > 0n && (
                     <Button
                       size="small"
                       disabled={checkoutMutation.isPending}
-                      onClick={() => updatePayment(payment.id, { amount: exactMoneyToDecimal(remainingForPayment(index)!) })}
+                      onClick={() => updatePayment(payment.id, { amount: exactMoneyToDecimal(assignableAmount) })}
                     >
-                      Usar restante ({formatExactMoneyUnits(remainingForPayment(index)!, locale, currency)})
+                      Usar restante ({formatExactMoneyUnits(assignableAmount, locale, currency)})
                     </Button>
                   )}
                   {payment.method === 'CASH' && (
