@@ -329,6 +329,55 @@ class FlywayMigrationPathTest {
         assertThat(tableExists(schema, "payments")).isTrue();
     }
 
+    @Test
+    void upgradeFromV13AddsOnlyCheckoutPermissionsAndPaymentSchemaWithoutChangingExistingGrants() {
+        String schema = "upgrade_checkout";
+        Flyway upToV13 = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema)
+                .target(MigrationVersion.fromVersion("13"))
+                .load();
+        assertThat(upToV13.migrate().migrationsExecuted).isEqualTo(13);
+        assertThat(countRows(schema, "permissions")).isEqualTo(42);
+        UUID organizationId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        execute("insert into " + schema + ".organizations "
+                + "(id, name, code, timezone, currency, locale, created_at, updated_at) values "
+                + "('" + organizationId + "', 'Existing Org', 'existing-checkout', 'UTC', 'MXN', 'es-MX', now(), now())");
+        execute("insert into " + schema + ".roles "
+                + "(id, organization_id, code, name, created_at, updated_at) values "
+                + "('" + roleId + "', '" + organizationId + "', 'existing-role', 'Existing role', now(), now())");
+        execute("insert into " + schema + ".role_permissions (role_id, permission_code) "
+                + "select '" + roleId + "', code from " + schema + ".permissions");
+        assertThat(countRows(schema, "role_permissions")).isEqualTo(42);
+
+        Flyway toV14 = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema)
+                .load();
+        assertThat(toV14.migrate().migrationsExecuted).isEqualTo(1);
+        toV14.validate();
+        assertThat(countRows(schema, "permissions")).isEqualTo(44);
+        assertThat(countRows(schema, "role_permissions")).isEqualTo(42);
+        assertThat(tableExists(schema, "payments")).isTrue();
+        assertThat(columnExists(schema, "sales", "completed_at")).isTrue();
+    }
+
+    private static boolean columnExists(String schema, String table, String column) {
+        try (Connection connection = connect();
+                PreparedStatement statement = connection.prepareStatement(
+                        "select 1 from information_schema.columns where table_schema = ? and table_name = ? and column_name = ?")) {
+            statement.setString(1, schema);
+            statement.setString(2, table);
+            statement.setString(3, column);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next();
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     private static Flyway flyway(String schema) {
         return Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())

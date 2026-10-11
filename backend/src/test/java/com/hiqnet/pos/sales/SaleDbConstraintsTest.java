@@ -72,6 +72,17 @@ class SaleDbConstraintsTest extends AbstractRbacIntegrationTest {
     }
 
     @Test
+    void v14LifecycleCheckRejectsEveryInvalidCompletedFieldCombination() {
+        Scope scope = scope("sale-db-completed");
+        Instant now = Instant.now();
+        assertThrows(DataIntegrityViolationException.class, () -> insertSaleV14(scope, "OPEN", null, null, scope.userId(), now));
+        assertThrows(DataIntegrityViolationException.class, () -> insertSaleV14(scope, "CANCELLED", scope.userId(), now, scope.userId(), now));
+        assertThrows(DataIntegrityViolationException.class, () -> insertSaleV14(scope, "COMPLETED", null, null, null, now));
+        assertThrows(DataIntegrityViolationException.class, () -> insertSaleV14(scope, "COMPLETED", null, null, scope.userId(), null));
+        assertThrows(DataIntegrityViolationException.class, () -> insertSaleV14(scope, "COMPLETED", scope.userId(), now, scope.userId(), now));
+    }
+
+    @Test
     void saleItemCannotReferenceProductFromAnotherOrganization() {
         Scope scope = scope("sale-db-item-org-a");
         Organization otherOrganization = organizationService.create("Other organization", "sale-db-item-org-b", "UTC", "MXN", "es-MX");
@@ -145,6 +156,18 @@ class SaleDbConstraintsTest extends AbstractRbacIntegrationTest {
         Timestamp now = Timestamp.from(Instant.now());
         jdbcTemplate.update(INSERT_SALE, id, organizationId, branchId, registerId, shiftId, userId, cancelledBy, status,
                 total, 0L, now, now, cancelledAt == null ? null : Timestamp.from(cancelledAt));
+        return id;
+    }
+
+    private UUID insertSaleV14(Scope scope, String status, UUID cancelledBy, Instant cancelledAt, UUID completedBy, Instant completedAt) {
+        UUID id = UUID.randomUUID();
+        Timestamp now = Timestamp.from(Instant.now());
+        jdbcTemplate.update("INSERT INTO sales (id, organization_id, branch_id, cash_register_id, cash_shift_id, created_by_user_id, "
+                        + "cancelled_by_user_id, completed_by_user_id, status, total_amount, version, created_at, updated_at, cancelled_at, completed_at) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                id, scope.organization().getId(), scope.branch().getId(), scope.register().getId(), scope.shift().getId(), scope.userId(),
+                cancelledBy, completedBy, status, BigDecimal.ZERO, 0L, now, now,
+                cancelledAt == null ? null : Timestamp.from(cancelledAt), completedAt == null ? null : Timestamp.from(completedAt));
         return id;
     }
 

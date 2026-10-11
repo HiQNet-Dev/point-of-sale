@@ -21,4 +21,6 @@ Only `CASH` and `CARD` exist. `amount` is the amount applied to the Sale; it is 
 
 Checkout never reprices catalog data: SaleItem snapshots and `Sale.totalAmount` remain authoritative. Payments are readable in position order through the separate `payment.read` endpoint so Sale detail never implicitly grants payment visibility.
 
+There is no idempotency key yet because checkout has no external processor side effect. If a client loses the response after commit and retries, the retry returns `SALE_ALREADY_COMPLETED`; the committed Payment set and audit event are not duplicated.
+
 Future CashMovement reconciliation can use CASH payment amounts as a source, but no cash ledger, expected-cash calculation, inventory change, ticket or receipt is created by this slice.

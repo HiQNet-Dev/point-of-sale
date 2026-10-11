@@ -124,6 +124,113 @@ class SaleConcurrencyTest extends AbstractRbacIntegrationTest {
                 .isEqualByComparingTo("14.5000");
     }
 
+    @Test
+    void parallelCheckoutClaimsTheSaleBeforePersistingPaymentChildren() throws Exception {
+        CheckoutScope scope = checkoutScope("race-checkout");
+        List<Callable<Integer>> actions = new ArrayList<>();
+        for (int index = 0; index < THREADS; index++) {
+            actions.add(() -> responseStatus(post(scope.salesUrl() + "/" + scope.saleId() + "/checkout")
+                    .header("Authorization", bearer(scope.token())).contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"expectedSaleVersion\":1,\"payments\":[{\"method\":\"CARD\",\"amount\":\"100.0000\"}]}")));
+        }
+        List<Integer> statuses = runParallel(actions);
+        UUID saleId = UUID.fromString(scope.saleId());
+        assertThat(statuses.stream().filter(value -> value == 200).count()).isEqualTo(1);
+        assertThat(statuses.stream().filter(value -> value == 409).count()).isEqualTo(THREADS - 1);
+        assertThat(jdbcTemplate.queryForObject("select status from sales where id = ?", String.class, saleId)).isEqualTo("COMPLETED");
+        assertThat(jdbcTemplate.queryForObject("select version from sales where id = ?", Long.class, saleId)).isEqualTo(2L);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from payments where sale_id = ?", Long.class, saleId)).isEqualTo(1L);
+        assertThat(auditCount(scope.fixture().orgId(), "sale.completed")).isEqualTo(1L);
+    }
+
+    @Test
+    void checkoutAndCancelRaceLeaveExactlyOneTerminalOutcome() throws Exception {
+        CheckoutScope scope = checkoutScope("race-checkout-cancel");
+        List<Integer> statuses = runParallel(List.of(
+                () -> responseStatus(post(scope.salesUrl() + "/" + scope.saleId() + "/checkout")
+                        .header("Authorization", bearer(scope.token())).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedSaleVersion\":1,\"payments\":[{\"method\":\"CARD\",\"amount\":\"100.0000\"}]}")),
+                () -> responseStatus(post(scope.salesUrl() + "/" + scope.saleId() + "/cancel")
+                        .header("Authorization", bearer(scope.token())).contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":1}"))));
+        UUID saleId = UUID.fromString(scope.saleId());
+        assertThat(statuses.stream().filter(value -> value == 200).count()).isEqualTo(1);
+        assertThat(statuses.stream().filter(value -> value == 409).count()).isEqualTo(1);
+        String finalStatus = jdbcTemplate.queryForObject("select status from sales where id = ?", String.class, saleId);
+        assertThat(finalStatus).isIn("COMPLETED", "CANCELLED");
+        Long payments = jdbcTemplate.queryForObject("select count(*) from payments where sale_id = ?", Long.class, saleId);
+        assertThat(payments).isEqualTo(finalStatus.equals("COMPLETED") ? 1L : 0L);
+    }
+
+    @Test
+    void checkoutAndItemAdditionRaceCannotCompleteAgainstAStaleTotal() throws Exception {
+        CheckoutScope scope = checkoutScope("race-checkout-item");
+        List<Integer> statuses = runParallel(List.of(
+                () -> responseStatus(post(scope.salesUrl() + "/" + scope.saleId() + "/checkout")
+                        .header("Authorization", bearer(scope.token())).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedSaleVersion\":1,\"payments\":[{\"method\":\"CARD\",\"amount\":\"100.0000\"}]}")),
+                () -> responseStatus(post(scope.salesUrl() + "/" + scope.saleId() + "/items")
+                        .header("Authorization", bearer(scope.token())).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedSaleVersion\":1,\"productId\":\"" + scope.productId() + "\",\"quantity\":1,\"modifierOptionIds\":[]}"))));
+        UUID saleId = UUID.fromString(scope.saleId());
+        assertThat(statuses.stream().filter(value -> value == 200).count()).isEqualTo(1);
+        assertThat(statuses.stream().filter(value -> value == 409).count()).isEqualTo(1);
+        String finalStatus = jdbcTemplate.queryForObject("select status from sales where id = ?", String.class, saleId);
+        Long payments = jdbcTemplate.queryForObject("select count(*) from payments where sale_id = ?", Long.class, saleId);
+        if (finalStatus.equals("COMPLETED")) {
+            assertThat(payments).isEqualTo(1L);
+            assertThat(jdbcTemplate.queryForObject("select total_amount from sales where id = ?", java.math.BigDecimal.class, saleId))
+                    .isEqualByComparingTo("100.0000");
+        } else {
+            assertThat(finalStatus).isEqualTo("OPEN");
+            assertThat(payments).isZero();
+            assertThat(jdbcTemplate.queryForObject("select total_amount from sales where id = ?", java.math.BigDecimal.class, saleId))
+                    .isEqualByComparingTo("200.0000");
+        }
+    }
+
+    @Test
+    void checkoutAndShiftCloseRaceNeverCompletesOnAClosedShift() throws Exception {
+        CheckoutScope scope = checkoutScope("race-checkout-close");
+        String closeUrl = shiftsUrl(scope.fixture(), scope.branchId(), scope.registerId()) + "/" + scope.shiftId() + "/close";
+        List<Integer> statuses = runParallel(List.of(
+                () -> responseStatus(post(scope.salesUrl() + "/" + scope.saleId() + "/checkout")
+                        .header("Authorization", bearer(scope.token())).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedSaleVersion\":1,\"payments\":[{\"method\":\"CARD\",\"amount\":\"100.0000\"}]}")),
+                () -> responseStatus(post(closeUrl).header("Authorization", bearer(scope.token())).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"declaredCashAmount\":0}"))));
+        UUID saleId = UUID.fromString(scope.saleId());
+        assertThat(statuses).allMatch(value -> value == 200 || value == 409);
+        assertThat(statuses.stream().filter(value -> value == 200).count() >= 1).isTrue();
+        assertThat(jdbcTemplate.queryForObject("select status from sales where id = ?", String.class, saleId)).isEqualTo("COMPLETED");
+        Long invalidState = jdbcTemplate.queryForObject(
+                "select count(*) from sales s join cash_shifts cs on cs.id = s.cash_shift_id where s.id = ? and s.status = 'OPEN' and cs.status = 'CLOSED'",
+                Long.class, saleId);
+        assertThat(invalidState).isZero();
+    }
+
+    private CheckoutScope checkoutScope(String code) throws Exception {
+        RbacFixture fixture = fixture();
+        String token = adminToken(fixture);
+        UUID branchId = createBranch(fixture, code);
+        String registerId = createRegister(fixture, branchId, token);
+        String shiftId = openShift(fixture, branchId, registerId, token);
+        String productId = createProduct(fixture, token, "RACE-" + code, "Race", "100.0000");
+        String salesUrl = salesUrl(fixture, branchId, registerId, shiftId);
+        String saleId = id(post(salesUrl).header("Authorization", bearer(token)));
+        assertThat(responseStatus(post(salesUrl + "/" + saleId + "/items").header("Authorization", bearer(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"expectedSaleVersion\":0,\"productId\":\"" + productId + "\",\"quantity\":1,\"modifierOptionIds\":[]}"))).isEqualTo(200);
+        return new CheckoutScope(fixture, token, branchId, registerId, shiftId, salesUrl, saleId, productId);
+    }
+
+    private long auditCount(UUID organizationId, String action) {
+        return jdbcTemplate.queryForObject("select count(*) from audit_events where organization_id = ? and action = ?", Long.class,
+                organizationId, action);
+    }
+
+    private record CheckoutScope(RbacFixture fixture, String token, UUID branchId, String registerId, String shiftId,
+            String salesUrl, String saleId, String productId) {}
+
     private UUID createBranch(RbacFixture fixture, String code) {
         Organization organization = organizationRepository.findById(fixture.orgId()).orElseThrow();
         return branchRepository.saveAndFlush(Branch.create(organization, "Branch " + code, code, null)).getId();
