@@ -1,14 +1,29 @@
 import { Navigate, createBrowserRouter } from 'react-router-dom'
-import { HomePage } from '../pages/HomePage'
+import { LoginRoute } from '../../features/auth/components/LoginRoute'
+import { ProtectedRoute } from '../../features/auth/components/ProtectedRoute'
+import { LoginPage } from '../../features/auth/pages/LoginPage'
+import { SessionHomePage } from '../../features/auth/pages/SessionHomePage'
 
 /**
- * Route table. Modules under src/modules register their own routes later;
- * this foundation only mounts the product landing view.
+ * Public login and one protected session landing page. Business modules add
+ * their own protected routes as they are implemented.
  */
 export const router = createBrowserRouter([
   {
+    path: '/login',
+    element: (
+      <LoginRoute>
+        <LoginPage />
+      </LoginRoute>
+    ),
+  },
+  {
     path: '/',
-    element: <HomePage />,
+    element: (
+      <ProtectedRoute>
+        <SessionHomePage />
+      </ProtectedRoute>
+    ),
   },
   {
     path: '*',

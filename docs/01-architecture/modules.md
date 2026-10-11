@@ -9,7 +9,7 @@ implementado** hasta que llegue su milestone (ver
 
 | Módulo | Responsabilidad | Conceptos clave | Estado |
 | --- | --- | --- | --- |
-| `auth` | Autenticación y sesiones | login, refresh rotativo, logout, /me | **implementado** |
+| `auth` | Autenticación y sesiones | login, refresh rotativo, logout, /me | **backend implementado; infraestructura frontend en este PR** |
 | `organization` | Empresas/organizaciones | organization, scoping de catálogo | **implementado** |
 | `branch` | Sucursales | branch, scoping de existencias | **implementado** |
 | `users` | Usuarios y permisos | users (identidad + administración por organización), roles, RBAC | **parcial (identidad + administración)** |
@@ -28,6 +28,34 @@ implementado** hasta que llegue su milestone (ver
 | `expenses` | Gastos del negocio | expenses, categorías | **no implementado** |
 | `reporting` | Reportes | ventas, inventario, caja | **no implementado** |
 | `shared` | Utilidades transversales | config, error (`ApiError`, `BusinessException`, `ErrorCodes`) | **parcial (fundación)** |
+
+## Frontend authentication/session
+
+El frontend mantiene la sesión bajo `src/features/auth`: `api/authApi.ts` adapta
+los contratos HTTP reales, `model/authTokenStore.ts` conserva exclusivamente
+los tokens en memoria, `model/AuthSessionProvider.tsx` coordina sesión y
+`/auth/me`, y `components`/`pages` contienen los guards y pantallas mínimas.
+El cliente común `src/shared/api/client.ts` agrega `Authorization: Bearer`
+centralmente y es el único responsable del refresh automático.
+
+El backend entrega `accessToken` y `refreshToken` en JSON, no cookies. Por ello
+ambos permanecen solo en memoria: no se escriben en localStorage,
+sessionStorage, IndexedDB ni TanStack Query. Un 401 comparte una sola promesa de
+refresh entre requests concurrentes, el refresh opaco rota, y cada request
+original se reintenta como máximo una vez. Un refresh inválido o un segundo 401
+limpia la sesión y el QueryClient. Login solo se considera completo después de
+que `/auth/me` confirma la identidad y el contexto Organization. Logout toma una
+copia efímera del refresh token, invalida y limpia el estado/cache local, y luego
+intenta revocarlo una sola vez en backend; un fallo remoto no restaura la sesión.
+Si la llamada de revocación no llega al servidor, la sesión de refresh remota
+puede seguir válida hasta su expiración; el cliente no conserva el token para
+reintentar después.
+
+Al recargar la página se pierde el refresh token en memoria y no se intenta
+reconstruir la sesión; el usuario vuelve a `/login`. Persistirlo requeriría un
+cambio backend coordinado a cookie HttpOnly/Secure/SameSite y su política CORS,
+no una degradación de almacenamiento desde el frontend. El frontend no decodifica
+JWT para permisos ni mantiene roles, branches o un snapshot de autorización.
 
 ## Convención de paquetes
 
@@ -160,7 +188,7 @@ inmutable, `name` no-blank, `status ACTIVE/INACTIVE`, FK compuesta same-org
 derivados del servidor, montos declarados `NUMERIC(19,4)`, un solo turno `OPEN`
 por caja vía índice único parcial, FKs compuestas same-org/same-branch,
 autorización branch-scoped `cash-shift.*`, auditoría append-only en open/close;
-catálogo 35→38) y **551 tests verdes** (Testcontainers). Las clases de arranque siguen en
+catálogo 35→38) y **566 tests verdes** (Testcontainers). Las clases de arranque siguen en
 su lugar. La API administrativa (organizations GET/PATCH, branches,
 users, roles, permissions, memberships, categories, products, modifier-groups,
 modifier-options, product modifier-groups, cash-registers, cash-shifts, audit-events) está **autorizada por

@@ -8,6 +8,10 @@ All notable changes to HiQNet POS are documented in this file.
 
 Development for v0.2.x has started.
 
+- Added candidate frontend authentication/session infrastructure: a memory-only
+  authenticated API client, single-flight rotating refresh, `/auth/me` bootstrap,
+  protected routing, and login/logout. This does not include POS session UI or
+  operational selectors.
 - Added the Catalog Foundation: organization-owned Categories and Products
   with an immutable normalized `code`/`sku`, an optional per-organization
   unique `barcode`, a base `unitPrice` (currency inherited from the

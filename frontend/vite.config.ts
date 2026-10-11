@@ -5,7 +5,7 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   plugins: [react()],
   test: {
-    // Pure unit tests only at this stage (no DOM components yet).
+    // Tests default to Node; browser-bound auth tests opt into jsdom locally.
     environment: 'node',
   },
 })
