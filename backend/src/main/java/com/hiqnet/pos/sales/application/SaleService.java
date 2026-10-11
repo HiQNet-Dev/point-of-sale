@@ -18,6 +18,9 @@ import com.hiqnet.pos.catalog.domain.ProductModifierGroupRepository;
 import com.hiqnet.pos.catalog.domain.ProductRepository;
 import com.hiqnet.pos.organization.domain.Organization;
 import com.hiqnet.pos.organization.domain.OrganizationRepository;
+import com.hiqnet.pos.payment.domain.Payment;
+import com.hiqnet.pos.payment.domain.PaymentMethod;
+import com.hiqnet.pos.payment.domain.PaymentRepository;
 import com.hiqnet.pos.sales.domain.Sale;
 import com.hiqnet.pos.sales.domain.SaleItem;
 import com.hiqnet.pos.sales.domain.SaleItemModifier;
@@ -73,6 +76,7 @@ public class SaleService {
     private final BranchRepository branchRepository;
     private final CashRegisterRepository cashRegisterRepository;
     private final CashShiftRepository cashShiftRepository;
+    private final PaymentRepository paymentRepository;
     private final AuditPort auditPort;
     private final Clock clock;
 
@@ -88,6 +92,7 @@ public class SaleService {
             BranchRepository branchRepository,
             CashRegisterRepository cashRegisterRepository,
             CashShiftRepository cashShiftRepository,
+            PaymentRepository paymentRepository,
             AuditPort auditPort,
             Clock clock) {
         this.saleRepository = saleRepository;
@@ -101,6 +106,7 @@ public class SaleService {
         this.branchRepository = branchRepository;
         this.cashRegisterRepository = cashRegisterRepository;
         this.cashShiftRepository = cashShiftRepository;
+        this.paymentRepository = paymentRepository;
         this.auditPort = auditPort;
         this.clock = clock;
     }
@@ -204,6 +210,80 @@ public class SaleService {
         item.remove(actorUserId, clock.instant());
         auditPort.record(AuditRecord.ofBranch(organizationId, branchId, "sale.item.removed", "sale", saleId,
                 AuditMetadata.of("saleItemId", saleItemId.toString())));
+        return detail(saved);
+    }
+
+    /** Payment records are historical and intentionally read independently of sale.read. */
+    @Transactional(readOnly = true)
+    public List<Payment> payments(UUID organizationId, UUID branchId, UUID cashRegisterId, UUID cashShiftId, UUID saleId) {
+        requireSale(organizationId, branchId, cashRegisterId, cashShiftId, saleId);
+        return paymentRepository.findBySaleIdOrderByPositionAsc(saleId);
+    }
+
+    /**
+     * Atomically completes an OPEN sale. Lock ordering is CashShift first, then
+     * the optimistic Sale aggregate claim. This is deliberately shared with
+     * CashShift.close: close can never commit while this checkout still leaves
+     * an OPEN sale on the shift.
+     */
+    @Transactional
+    public SaleDetail checkout(UUID organizationId, UUID branchId, UUID cashRegisterId, UUID cashShiftId, UUID saleId,
+            long expectedVersion, List<com.hiqnet.pos.sales.api.CheckoutRequest.PaymentInstruction> instructions, UUID actorUserId) {
+        requireActiveOperationalParents(organizationId, branchId, cashRegisterId);
+        CashShift shift = requireShiftForUpdate(organizationId, branchId, cashRegisterId, cashShiftId);
+        if (shift.getStatus() != CashShiftStatus.OPEN) {
+            throw new BusinessException(HttpStatus.CONFLICT, ErrorCodes.CASH_SHIFT_NOT_OPEN, "The cash shift is not open");
+        }
+        Sale sale = requireSale(organizationId, branchId, cashRegisterId, cashShiftId, saleId);
+        if (sale.getStatus() == SaleStatus.COMPLETED) {
+            throw new BusinessException(HttpStatus.CONFLICT, ErrorCodes.SALE_ALREADY_COMPLETED, "The sale is already completed");
+        }
+        sale.requireOpen();
+        requireExpectedVersion(sale, expectedVersion);
+        List<SaleItem> activeItems = saleItemRepository.findBySaleIdAndStatusOrderByPositionAsc(saleId, SaleItemStatus.ACTIVE);
+        if (activeItems.isEmpty()) {
+            throw new BusinessException(HttpStatus.CONFLICT, ErrorCodes.SALE_HAS_NO_ACTIVE_ITEMS, "The sale has no active items");
+        }
+        List<com.hiqnet.pos.sales.api.CheckoutRequest.PaymentInstruction> requested = instructions == null ? List.of() : List.copyOf(instructions);
+        if (requested.size() > 10) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, ErrorCodes.TOO_MANY_PAYMENTS, "A checkout supports at most 10 payments");
+        }
+        if (sale.getTotalAmount().signum() == 0 && !requested.isEmpty()) {
+            throw new BusinessException(HttpStatus.CONFLICT, ErrorCodes.PAYMENT_TOTAL_MISMATCH, "A zero-total sale must not include payments");
+        }
+        if (sale.getTotalAmount().signum() > 0 && requested.isEmpty()) {
+            throw new BusinessException(HttpStatus.CONFLICT, ErrorCodes.PAYMENT_TOTAL_MISMATCH, "Payment total must cover the sale total");
+        }
+        long cashCount = requested.stream().filter(payment -> payment.method() == PaymentMethod.CASH).count();
+        if (cashCount > 1) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, ErrorCodes.MULTIPLE_CASH_PAYMENTS_NOT_ALLOWED, "Only one cash payment is allowed");
+        }
+        List<Payment> payments = new ArrayList<>();
+        BigDecimal applied = BigDecimal.ZERO;
+        for (int index = 0; index < requested.size(); index++) {
+            var instruction = requested.get(index);
+            Payment payment = Payment.create(organizationId, branchId, cashRegisterId, cashShiftId, saleId, index + 1,
+                    instruction.method(), instruction.amount(), instruction.tenderedAmount(), actorUserId);
+            payments.add(payment);
+            applied = applied.add(payment.getAmount());
+        }
+        validateMoney("paymentTotal", applied);
+        if (applied.compareTo(sale.getTotalAmount()) != 0) {
+            throw new BusinessException(HttpStatus.CONFLICT, ErrorCodes.PAYMENT_TOTAL_MISMATCH, "Payment total must exactly match the sale total");
+        }
+        // Claim the aggregate before payment child inserts so concurrent commands
+        // lose through the documented optimistic Sale conflict, not a child FK/unique race.
+        sale.complete(actorUserId, clock.instant());
+        Sale saved = saleRepository.saveAndFlush(sale);
+        paymentRepository.saveAll(payments);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("cashShiftId", cashShiftId.toString());
+        metadata.put("saleTotal", saved.getTotalAmount().toPlainString());
+        metadata.put("paymentCount", payments.size());
+        metadata.put("paymentMethods", payments.stream().map(payment -> payment.getMethod().name()).toList());
+        payments.stream().filter(payment -> payment.getMethod() == PaymentMethod.CASH).findFirst()
+                .ifPresent(payment -> metadata.put("cashChange", payment.getChangeAmount().toPlainString()));
+        auditPort.record(AuditRecord.ofBranch(organizationId, branchId, "sale.completed", "sale", saleId, AuditMetadata.of(metadata)));
         return detail(saved);
     }
 

@@ -133,6 +133,8 @@ public class SecurityConfig {
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/cash-registers/*/cash-shifts/*/sales").authenticated();
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/cash-registers/*/cash-shifts/*/sales").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/cash-registers/*/cash-shifts/*/sales/*").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/cash-registers/*/cash-shifts/*/sales/*/checkout").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/cash-registers/*/cash-shifts/*/sales/*/payments").authenticated();
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/cash-registers/*/cash-shifts/*/sales/*/items").authenticated();
                     auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*/branches/*/cash-registers/*/cash-shifts/*/sales/*/items/*").authenticated();
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/cash-registers/*/cash-shifts/*/sales/*/items/*/remove").authenticated();

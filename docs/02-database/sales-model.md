@@ -10,7 +10,7 @@ A Sale stores the exact organization, branch, register and shift scope and is cr
 
 ## Lifecycle and aggregate
 
-This slice supports only `OPEN → CANCELLED`. `OPEN` is a transaction under construction; `CANCELLED` is immutable historical recovery data. There is deliberately no `COMPLETED`, payment state, receipt number, tax, discount, inventory deduction or cash movement. Those facts require their own Payment/Checkout and Inventory boundaries.
+`V14` extends the lifecycle to `OPEN → CANCELLED` or `OPEN → COMPLETED`. `CANCELLED` and `COMPLETED` are immutable historical states. Completion is only possible through the atomic checkout boundary, which persists immutable Payment facts with exact coverage; see `docs/02-database/payment-model.md`. There is still no receipt number, tax, discount, inventory deduction or cash movement.
 
 `Sale.version` is the optimistic concurrency boundary for add/update/remove/cancel. Mutations require the `expectedSaleVersion` or `expectedVersion` read by the client. A semantic update that keeps the same quantity and selected modifier options is a no-op: it neither bumps the version nor emits audit.
 
@@ -35,7 +35,7 @@ Product `ACTIVE` is the sellability authority. Category status does not implicit
 
 ## Cash-shift coordination
 
-Sale creation locks the exact `cash_shifts` row with `PESSIMISTIC_WRITE`. `CashShift.close` acquires the same lock and checks a narrow `OpenSalesForCashShiftPort`. This serializes create-versus-close so a CLOSED shift can never contain an OPEN Sale. Ordinary Sale edits stay optimistic; they do not acquire the coordination lock. An OPEN sale blocks shift close; cancellation is allowed even if branch/register were deactivated so recovery can finish.
+Sale creation and checkout lock the exact `cash_shifts` row with `PESSIMISTIC_WRITE`. `CashShift.close` acquires the same lock and checks a narrow `OpenSalesForCashShiftPort`. This serializes create/checkout-versus-close so a CLOSED shift can never contain an OPEN Sale. Ordinary Sale edits stay optimistic; they do not acquire the coordination lock. An OPEN sale blocks shift close; cancellation is allowed even if branch/register were deactivated so recovery can finish.
 
 ## Authorization and audit
 

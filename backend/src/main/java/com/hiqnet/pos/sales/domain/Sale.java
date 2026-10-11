@@ -48,6 +48,9 @@ public class Sale {
     @Column(name = "cancelled_by_user_id")
     private UUID cancelledByUserId;
 
+    @Column(name = "completed_by_user_id")
+    private UUID completedByUserId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private SaleStatus status;
@@ -67,6 +70,9 @@ public class Sale {
 
     @Column(name = "cancelled_at")
     private Instant cancelledAt;
+
+    @Column(name = "completed_at")
+    private Instant completedAt;
 
     protected Sale() {
     }
@@ -100,12 +106,25 @@ public class Sale {
         if (status == SaleStatus.CANCELLED) {
             throw new BusinessException(HttpStatus.CONFLICT, ErrorCodes.SALE_ALREADY_CANCELLED, "The sale is already cancelled");
         }
+        if (status == SaleStatus.COMPLETED) {
+            throw new BusinessException(HttpStatus.CONFLICT, ErrorCodes.SALE_ALREADY_COMPLETED, "The sale is already completed");
+        }
         if (actorUserId == null) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_ERROR, "cancelledByUserId is required");
         }
         this.status = SaleStatus.CANCELLED;
         this.cancelledByUserId = actorUserId;
         this.cancelledAt = when;
+    }
+
+    public void complete(UUID actorUserId, Instant when) {
+        requireOpen();
+        if (actorUserId == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_ERROR, "completedByUserId is required");
+        }
+        this.status = SaleStatus.COMPLETED;
+        this.completedByUserId = actorUserId;
+        this.completedAt = when;
     }
 
     public void requireOpen() {
@@ -128,12 +147,14 @@ public class Sale {
     public UUID getCashShiftId() { return cashShiftId; }
     public UUID getCreatedByUserId() { return createdByUserId; }
     public UUID getCancelledByUserId() { return cancelledByUserId; }
+    public UUID getCompletedByUserId() { return completedByUserId; }
     public SaleStatus getStatus() { return status; }
     public BigDecimal getTotalAmount() { return totalAmount; }
     public long getVersion() { return version; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getCancelledAt() { return cancelledAt; }
+    public Instant getCompletedAt() { return completedAt; }
 
     @PrePersist
     void onCreate() {
