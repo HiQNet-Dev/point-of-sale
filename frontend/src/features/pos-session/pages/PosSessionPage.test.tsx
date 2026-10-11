@@ -77,7 +77,9 @@ interface BackendOptions {
   closeStatus?: number
   openStatus?: number
   openConflictCode?: 'BRANCH_INACTIVE' | 'CASH_REGISTER_INACTIVE'
-  closeConflictCode?: 'CONCURRENT_MODIFICATION' | 'CASH_SHIFT_ALREADY_CLOSED'
+  closeConflictCode?: 'CONCURRENT_MODIFICATION' | 'CASH_SHIFT_ALREADY_CLOSED' | 'CASH_SHIFT_HAS_OPEN_SALES'
+  openSales?: Array<Record<string, unknown>>
+  saleDetail?: Record<string, unknown>
   registerGate?: { branchId: string; promise: Promise<void> }
 }
 
@@ -99,6 +101,15 @@ function createBackend(options: BackendOptions = {}) {
       branchRequests.push(url)
       const pageNumber = Number(url.searchParams.get('page') ?? 0)
       return json(page(branches.slice(pageNumber * 20, (pageNumber + 1) * 20), branches.length, pageNumber))
+    }
+    if (url.pathname.endsWith('/sales') && method === 'GET') {
+      return json(page(options.openSales ?? [], (options.openSales ?? []).length))
+    }
+    if (url.pathname.match(/\/sales\/[^/]+$/) && method === 'GET' && options.saleDetail) {
+      return json(options.saleDetail)
+    }
+    if (url.pathname.endsWith('/pos/catalog/categories') || url.pathname.endsWith('/pos/catalog/products')) {
+      return json(page([], 0))
     }
     if (url.pathname.endsWith('/cash-registers')) {
       registerRequests.push(url)
@@ -479,6 +490,76 @@ describe('POS session operational vertical', () => {
     if (expectActive) expect(await screen.findByText('TURNO ACTIVO')).toBeTruthy()
     else expect(await screen.findByText('Sin turno activo')).toBeTruthy()
     expect(backend.shiftRequests.filter((request) => request.method === 'GET')).toHaveLength(2)
+  })
+
+  it('cold-recovers an OPEN Sale through login, Branch, Register, Shift, list and persisted detail', async () => {
+    const openShift: CashShift = {
+      id: SHIFT_ID,
+      organizationId: ORGANIZATION_ID,
+      branchId: BRANCH_A_ID,
+      cashRegisterId: REGISTER_A_ID,
+      status: 'OPEN',
+      openingAmount: 100,
+      openedAt: '2026-10-10T16:30:00Z',
+      version: 3,
+    }
+    const sale = {
+      id: 'sale-cold',
+      organizationId: ORGANIZATION_ID,
+      branchId: BRANCH_A_ID,
+      cashRegisterId: REGISTER_A_ID,
+      cashShiftId: SHIFT_ID,
+      status: 'OPEN',
+      totalAmount: 42,
+      version: 7,
+      createdAt: '2026-10-10T16:31:00Z',
+      completedAt: null,
+      cancelledAt: null,
+    }
+    const backend = createBackend({
+      openShift,
+      openSales: [sale],
+      saleDetail: {
+        sale,
+        items: [{
+          id: 'item-cold', productId: 'product-cold', productSkuSnapshot: 'OLD-1',
+          productNameSnapshot: 'Latte histórico', baseUnitPrice: 42, modifierUnitDelta: 0,
+          effectiveUnitPrice: 42, quantity: 1, lineTotal: 42, status: 'ACTIVE', position: 1, modifiers: [],
+        }],
+      },
+    })
+    renderPosApp(backend)
+    await loginToPos()
+
+    expect(await screen.findByText(/Latte histórico/)).toBeTruthy()
+    expect(screen.getByText('Reanudando venta abierta')).toBeTruthy()
+    expect(backend.fetchMock.mock.calls.some(([input]) => String(input).includes('/sales/sale-cold'))).toBe(true)
+    expect(backend.fetchMock.mock.calls.some(([input, init]) => String(input).endsWith('/sales') && init?.method === 'POST')).toBe(false)
+  })
+
+  it('keeps the shift and OPEN sales context when the backend blocks close for open sales', async () => {
+    const openShift: CashShift = {
+      id: SHIFT_ID,
+      organizationId: ORGANIZATION_ID,
+      branchId: BRANCH_A_ID,
+      cashRegisterId: REGISTER_A_ID,
+      status: 'OPEN',
+      openingAmount: 100,
+      openedAt: '2026-10-10T16:30:00Z',
+      version: 3,
+    }
+    const backend = createBackend({ openShift, closeConflictCode: 'CASH_SHIFT_HAS_OPEN_SALES' })
+    renderPosApp(backend)
+    await loginToPos()
+    expect(await screen.findByText('TURNO ACTIVO')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar turno' }))
+    fireEvent.change(screen.getByLabelText('Efectivo declarado'), { target: { value: '100' } })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cerrar turno' }))
+
+    expect(await screen.findByText('No se puede cerrar el turno mientras tenga ventas abiertas. Reanuda o cancela cada venta primero.')).toBeTruthy()
+    expect(screen.getByText('TURNO ACTIVO')).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Ventas abiertas' })).toBeTruthy()
+    expect(backend.shiftRequests.filter((request) => request.method === 'POST')).toHaveLength(1)
   })
 
   it('keeps an OPEN shift visible when close is forbidden', async () => {

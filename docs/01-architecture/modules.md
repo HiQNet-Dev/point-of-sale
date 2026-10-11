@@ -67,8 +67,23 @@ selecciones ni montos en almacenamiento del navegador. Branch discovery no
 concede permisos: los errores de lectura/apertura/cierre del backend se
 presentan en la etapa del recurso correspondiente. Una Branch o Register
 inactiva puede conservar un turno OPEN y permitir su cierre, pero nunca habilita
-la apertura de uno nuevo. Este UI es candidato mientras su PR esté abierto y no
-incluye catálogo POS, ventas ni pagos.
+la apertura de uno nuevo. El workspace de ventas consume este contexto sin
+crear ventas automáticamente. El componente de ventas es candidato mientras su
+PR esté abierto; reanuda/crea OPEN Sales y renderiza el Sale detail como carrito
+persistido. Las mutaciones siempre usan la versión devuelta por el servidor; el
+frontend no persiste líneas/totales ni calcula precios.
+
+## Frontend POS sales (candidate / PR abierto)
+
+`src/features/pos-sales` consume los endpoints branch-context de Sales y
+Operational Catalog con query keys que incluyen Organization, Branch, Register y
+Shift. Solo la acción explícita “Nueva venta” crea una Sale; una OPEN Sale única se
+reanuda automáticamente y múltiples OPEN Sales se pueden seleccionar. El Sale
+detail y sus snapshots/totales son la única fuente del carrito. Catálogo y cambios
+de líneas se deshabilitan con Branch/Register inactivos, pero la venta recuperada
+se puede leer y cancelar. No se almacenan carrito, selección de venta ni permisos
+en browser storage; catálogo y permisos siempre se vuelven a consultar al backend.
+Checkout UI y captura de pagos no forman parte de este slice.
 
 ## Convención de paquetes
 
