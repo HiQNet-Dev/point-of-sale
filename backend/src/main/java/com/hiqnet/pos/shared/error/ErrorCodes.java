@@ -46,6 +46,18 @@ public final class ErrorCodes {
     public static final String CASH_SHIFT_NOT_FOUND = "CASH_SHIFT_NOT_FOUND";
     public static final String CASH_REGISTER_ALREADY_HAS_OPEN_SHIFT = "CASH_REGISTER_ALREADY_HAS_OPEN_SHIFT";
     public static final String CASH_SHIFT_ALREADY_CLOSED = "CASH_SHIFT_ALREADY_CLOSED";
+    public static final String CASH_SHIFT_HAS_OPEN_SALES = "CASH_SHIFT_HAS_OPEN_SALES";
+    public static final String CASH_SHIFT_NOT_OPEN = "CASH_SHIFT_NOT_OPEN";
+
+    public static final String SALE_NOT_FOUND = "SALE_NOT_FOUND";
+    public static final String SALE_NOT_OPEN = "SALE_NOT_OPEN";
+    public static final String SALE_ALREADY_CANCELLED = "SALE_ALREADY_CANCELLED";
+    public static final String SALE_ITEM_NOT_FOUND = "SALE_ITEM_NOT_FOUND";
+    public static final String SALE_ITEM_ALREADY_REMOVED = "SALE_ITEM_ALREADY_REMOVED";
+    public static final String PRODUCT_INACTIVE = "PRODUCT_INACTIVE";
+    public static final String PRODUCT_MODIFIER_CONFIGURATION_UNAVAILABLE = "PRODUCT_MODIFIER_CONFIGURATION_UNAVAILABLE";
+    public static final String INVALID_MODIFIER_SELECTION = "INVALID_MODIFIER_SELECTION";
+    public static final String NEGATIVE_EFFECTIVE_PRICE = "NEGATIVE_EFFECTIVE_PRICE";
 
     public static final String USER_NOT_FOUND = "USER_NOT_FOUND";
     public static final String USER_EMAIL_ALREADY_EXISTS = "USER_EMAIL_ALREADY_EXISTS";
