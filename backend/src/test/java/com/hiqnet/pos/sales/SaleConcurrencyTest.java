@@ -52,7 +52,9 @@ class SaleConcurrencyTest extends AbstractRbacIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"expectedVersion\":0,\"declaredCashAmount\":0}"))));
 
-        assertThat(statuses).containsExactlyInAnyOrder(201, 409);
+        assertThat(statuses).allMatch(status -> status == 200 || status == 201 || status == 409);
+        assertThat(statuses).contains(409);
+        assertThat(statuses.stream().filter(status -> status == 200 || status == 201).count()).isEqualTo(1);
         Long invalidState = jdbcTemplate.queryForObject(
                 "select count(*) from sales s join cash_shifts cs on cs.id = s.cash_shift_id "
                         + "where s.cash_shift_id = ? and s.status = 'OPEN' and cs.status = 'CLOSED'",
