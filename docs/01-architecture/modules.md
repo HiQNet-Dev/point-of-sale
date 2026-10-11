@@ -9,7 +9,7 @@ implementado** hasta que llegue su milestone (ver
 
 | Módulo | Responsabilidad | Conceptos clave | Estado |
 | --- | --- | --- | --- |
-| `auth` | Autenticación y sesiones | login, refresh rotativo, logout, /me | **backend implementado; infraestructura frontend en este PR** |
+| `auth` | Autenticación y sesiones | login, refresh rotativo, logout, /me | **implementado** |
 | `organization` | Empresas/organizaciones | organization, scoping de catálogo | **implementado** |
 | `branch` | Sucursales | branch, scoping de existencias | **implementado** |
 | `users` | Usuarios y permisos | users (identidad + administración por organización), roles, RBAC | **parcial (identidad + administración)** |
@@ -56,6 +56,19 @@ reconstruir la sesión; el usuario vuelve a `/login`. Persistirlo requeriría un
 cambio backend coordinado a cookie HttpOnly/Secure/SameSite y su política CORS,
 no una degradación de almacenamiento desde el frontend. El frontend no decodifica
 JWT para permisos ni mantiene roles, branches o un snapshot de autorización.
+
+## Frontend POS session
+
+`src/features/pos-session` compone las APIs existentes para reconstruir el
+contexto operativo en `/pos`: consulta `/auth/me/branches` sin filtrar Branches
+inactivas, luego obtiene Registers y turnos OPEN dentro del scope seleccionado.
+Los IDs usados en cada paso provienen de respuestas anteriores; no se guardan
+selecciones ni montos en almacenamiento del navegador. Branch discovery no
+concede permisos: los errores de lectura/apertura/cierre del backend se
+presentan en la etapa del recurso correspondiente. Una Branch o Register
+inactiva puede conservar un turno OPEN y permitir su cierre, pero nunca habilita
+la apertura de uno nuevo. Este UI es candidato mientras su PR esté abierto y no
+incluye catálogo POS, ventas ni pagos.
 
 ## Convención de paquetes
 
