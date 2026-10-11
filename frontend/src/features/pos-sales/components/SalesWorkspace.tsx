@@ -1,7 +1,7 @@
 import { Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel, FormLabel, Paper, Radio, RadioGroup, Skeleton, Stack, TextField, Typography } from '@mui/material'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { UseQueryResult } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Branch, CashRegister, CashShift, PageResponse } from '../../pos-session/api/posSessionApi'
 import { posSessionKeys } from '../../pos-session/model/posSessionKeys'
 import { ApiRequestError } from '../../../shared/api/client'
@@ -20,6 +20,8 @@ import {
 } from '../api/posSalesApi'
 import type { Category, ModifierGroup, Product, ProductConfiguration, SaleDetail, SaleItem } from '../api/posSalesApi'
 import { posSalesKeys } from '../model/posSalesKeys'
+import { formatExactMoney } from '../model/checkoutMoney'
+import { CheckoutDialog } from './CheckoutDialog'
 
 type Props = {
   organizationId: string
@@ -53,7 +55,8 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
-function formatMoney(amount: number, locale: string, currency: string): string {
+function formatMoney(amount: number | string, locale: string, currency: string): string {
+  if (typeof amount === 'string') return formatExactMoney(amount, locale, currency)
   try {
     return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(amount)
   } catch {
@@ -99,6 +102,7 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
   const [itemToRemove, setItemToRemove] = useState<SaleItem | null>(null)
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [operationMessage, setOperationMessage] = useState<string | null>(null)
+  const [checkoutSaleId, setCheckoutSaleId] = useState('')
 
   const branchId = branch.id
   const registerId = register.id
@@ -121,6 +125,8 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
     ? salesQuery.data.items[0].id
     : ''
   const activeSaleId = selectedSaleId || autoSelectedSaleId
+  const activeSaleIdRef = useRef(activeSaleId)
+  useEffect(() => { activeSaleIdRef.current = activeSaleId }, [activeSaleId])
   const selectedSaleKey = activeSaleId
     ? posSalesKeys.sale(organizationId, branchId, registerId, shiftId, activeSaleId)
     : ['sale', organizationId, branchId, registerId, shiftId, ''] as const
@@ -420,6 +426,36 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
     }
   }
 
+  function onCheckoutCompleted(completed: SaleDetail) {
+    const completedId = completed.sale.id
+    setCheckoutSaleId((current) => current === completedId ? '' : current)
+    setDismissedSaleId(completedId)
+    void invalidateSale(completedId)
+    if (completed.sale.status !== 'COMPLETED') {
+      onCheckoutReconcile(completedId, 'El servidor no confirmó que la venta se completara. Se actualizará la venta.', false, false)
+      return
+    }
+    if (activeSaleIdRef.current === completedId) {
+      activeSaleIdRef.current = ''
+      setSelectedSaleId('')
+      setOperationMessage('Venta completada.')
+    }
+  }
+
+  function onCheckoutReconcile(saleId: string, message: string, refreshParents: boolean, terminal: boolean) {
+    setCheckoutSaleId((current) => current === saleId ? '' : current)
+    if (terminal) setDismissedSaleId(saleId)
+    if (activeSaleIdRef.current === saleId) {
+      setOperationMessage(message)
+      if (terminal) {
+        activeSaleIdRef.current = ''
+        setSelectedSaleId('')
+      }
+    }
+    void invalidateSale(saleId)
+    if (refreshParents) void refreshOperationalContext()
+  }
+
   return (
     <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mt: 3 }}>
       <Stack spacing={2.5}>
@@ -447,7 +483,12 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
               <Button
                 key={sale.id}
                 variant={sale.id === activeSaleId ? 'contained' : 'outlined'}
-                onClick={() => { setSelectedSaleId(sale.id); setOperationMessage(null) }}
+                onClick={() => {
+                  setCheckoutSaleId('')
+                  activeSaleIdRef.current = sale.id
+                  setSelectedSaleId(sale.id)
+                  setOperationMessage(null)
+                }}
                 aria-label={`Reanudar venta ${shortSaleId(sale.id)}`}
               >
                 Reanudar {shortSaleId(sale.id)} · {formatMoney(sale.totalAmount, locale, currency)}
@@ -491,9 +532,17 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
             onRemove={setItemToRemove}
             onCancel={() => setCancelDialogOpen(true)}
             onExitSale={() => {
+              setCheckoutSaleId('')
               setDismissedSaleId(activeSaleId)
+              activeSaleIdRef.current = ''
               setSelectedSaleId('')
               void invalidateSale(activeSaleId)
+            }}
+            onCheckout={() => {
+              if (activeSaleId && saleDetail?.sale.status === 'OPEN') {
+                activeSaleIdRef.current = activeSaleId
+                setCheckoutSaleId(activeSaleId)
+              }
             }}
             onRefresh={() => void invalidateSale()}
             pending={addMutation.isPending || updateMutation.isPending || removeMutation.isPending || cancelMutation.isPending}
@@ -594,6 +643,24 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
           </Button>
         </DialogActions>
       </Dialog>
+
+      {checkoutSaleId && checkoutSaleId === activeSaleId && saleDetail?.sale.status === 'OPEN' && (
+        <CheckoutDialog
+          key={checkoutSaleId}
+          organizationId={organizationId}
+          branchId={branchId}
+          registerId={registerId}
+          shiftId={shiftId}
+          sale={saleDetail.sale}
+          activeItemCount={saleDetail.items.filter((item) => item.status === 'ACTIVE').length}
+          operationalParentsActive={operationalParentsActive}
+          locale={locale}
+          currency={currency}
+          onClose={() => setCheckoutSaleId('')}
+          onCompleted={onCheckoutCompleted}
+          onReconcile={onCheckoutReconcile}
+        />
+      )}
     </Paper>
   )
 }
@@ -623,6 +690,7 @@ type CartWorkspaceProps = {
   onOpenEdit: (item: SaleItem) => void
   onRemove: (item: SaleItem) => void
   onCancel: () => void
+  onCheckout: () => void
   onExitSale: () => void
   onRefresh: () => void
   pending: boolean
@@ -633,7 +701,7 @@ function SaleCartWorkspace(props: CartWorkspaceProps) {
     locale, currency, saleDetail, saleLoading, saleError, catalogEnabled,
     categories, categoriesQuery, categoryPage, setCategoryPage, categoryId, setCategoryId,
     products, productsQuery, productPage, setProductPage, searchInput, setSearchInput,
-    operationMessage, onOpenAdd, onOpenEdit, onRemove, onCancel, onExitSale, onRefresh, pending,
+    operationMessage, onOpenAdd, onOpenEdit, onRemove, onCancel, onCheckout, onExitSale, onRefresh, pending,
   } = props
   const activeItems = saleDetail?.items.filter((item) => item.status === 'ACTIVE') ?? []
   const removedItems = saleDetail?.items.filter((item) => item.status === 'REMOVED') ?? []
@@ -791,6 +859,14 @@ function SaleCartWorkspace(props: CartWorkspaceProps) {
                   <Typography variant="h6">Total</Typography>
                   <Typography variant="h5" aria-label="Total de la venta">{formatMoney(saleDetail.sale.totalAmount, locale, currency)}</Typography>
                 </Stack>
+                {saleDetail.sale.status === 'OPEN' && activeItems.length === 0 && (
+                  <Alert severity="info">Agrega al menos un producto antes de cobrar.</Alert>
+                )}
+                {saleDetail.sale.status === 'OPEN' && (
+                  <Button variant="contained" onClick={onCheckout} disabled={!showCatalog || activeItems.length === 0 || pending}>
+                    Cobrar
+                  </Button>
+                )}
                 {saleDetail.sale.status === 'OPEN' && (
                   <Button
                     color="error"

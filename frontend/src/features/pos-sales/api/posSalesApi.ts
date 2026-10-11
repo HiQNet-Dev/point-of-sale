@@ -4,6 +4,18 @@ import type { PageResponse } from '../../pos-session/api/posSessionApi'
 export type SaleStatus = 'OPEN' | 'CANCELLED' | 'COMPLETED'
 export type ItemStatus = 'ACTIVE' | 'REMOVED'
 export type CatalogStatus = 'ACTIVE' | 'INACTIVE'
+export type PaymentMethod = 'CASH' | 'CARD'
+export type ExactAmount = string
+
+const SALE_SUMMARY_DECIMAL_FIELDS = ['totalAmount'] as const
+const SALE_DETAIL_DECIMAL_FIELDS = [
+  ...SALE_SUMMARY_DECIMAL_FIELDS,
+  'baseUnitPrice',
+  'modifierUnitDelta',
+  'effectiveUnitPrice',
+  'lineTotal',
+  'priceDeltaSnapshot',
+] as const
 
 export interface SaleSummary {
   id: string
@@ -12,7 +24,7 @@ export interface SaleSummary {
   cashRegisterId: string
   cashShiftId: string
   status: SaleStatus
-  totalAmount: number
+  totalAmount: ExactAmount
   version: number
   createdAt: string
   completedAt: string | null
@@ -25,7 +37,7 @@ export interface SaleItemModifier {
   modifierOptionId: string
   groupNameSnapshot: string
   optionNameSnapshot: string
-  priceDeltaSnapshot: number
+  priceDeltaSnapshot: ExactAmount
   displayOrder: number
 }
 
@@ -34,11 +46,11 @@ export interface SaleItem {
   productId: string
   productSkuSnapshot: string
   productNameSnapshot: string
-  baseUnitPrice: number
-  modifierUnitDelta: number
-  effectiveUnitPrice: number
+  baseUnitPrice: ExactAmount
+  modifierUnitDelta: ExactAmount
+  effectiveUnitPrice: ExactAmount
   quantity: number
-  lineTotal: number
+  lineTotal: ExactAmount
   status: ItemStatus
   position: number
   modifiers: SaleItemModifier[]
@@ -121,7 +133,9 @@ export function listOpenSales(
   page = 0,
 ): Promise<PageResponse<SaleSummary>> {
   const params = new URLSearchParams({ page: String(page), size: String(PAGE_SIZE), status: 'OPEN' })
-  return requestJson(`${salesPath(organizationId, branchId, cashRegisterId, cashShiftId)}?${params}`)
+  return requestJson(`${salesPath(organizationId, branchId, cashRegisterId, cashShiftId)}?${params}`, {}, {
+    exactDecimalFields: SALE_SUMMARY_DECIMAL_FIELDS,
+  })
 }
 
 export function createSale(
@@ -130,7 +144,9 @@ export function createSale(
   cashRegisterId: string,
   cashShiftId: string,
 ): Promise<SaleSummary> {
-  return requestJson(salesPath(organizationId, branchId, cashRegisterId, cashShiftId), { method: 'POST' })
+  return requestJson(salesPath(organizationId, branchId, cashRegisterId, cashShiftId), { method: 'POST' }, {
+    exactDecimalFields: SALE_SUMMARY_DECIMAL_FIELDS,
+  })
 }
 
 export function getSale(
@@ -140,7 +156,27 @@ export function getSale(
   cashShiftId: string,
   saleId: string,
 ): Promise<SaleDetail> {
-  return requestJson(`${salesPath(organizationId, branchId, cashRegisterId, cashShiftId)}/${segment(saleId)}`)
+  return requestJson(`${salesPath(organizationId, branchId, cashRegisterId, cashShiftId)}/${segment(saleId)}`, {}, {
+    exactDecimalFields: SALE_DETAIL_DECIMAL_FIELDS,
+  })
+}
+
+export function checkoutSale(
+  organizationId: string,
+  branchId: string,
+  cashRegisterId: string,
+  cashShiftId: string,
+  saleId: string,
+  input: {
+    expectedSaleVersion: number
+    payments: Array<{ method: PaymentMethod; amount: ExactAmount; tenderedAmount?: ExactAmount }>
+  },
+): Promise<SaleDetail> {
+  return requestJson(
+    `${salesPath(organizationId, branchId, cashRegisterId, cashShiftId)}/${segment(saleId)}/checkout`,
+    { method: 'POST', body: JSON.stringify(input) },
+    { exactDecimalFields: SALE_DETAIL_DECIMAL_FIELDS },
+  )
 }
 
 export function addSaleItem(
@@ -154,7 +190,7 @@ export function addSaleItem(
   return requestJson(`${salesPath(organizationId, branchId, cashRegisterId, cashShiftId)}/${segment(saleId)}/items`, {
     method: 'POST',
     body: JSON.stringify(input),
-  })
+  }, { exactDecimalFields: SALE_DETAIL_DECIMAL_FIELDS })
 }
 
 export function updateSaleItem(
@@ -169,6 +205,7 @@ export function updateSaleItem(
   return requestJson(
     `${salesPath(organizationId, branchId, cashRegisterId, cashShiftId)}/${segment(saleId)}/items/${segment(saleItemId)}`,
     { method: 'PATCH', body: JSON.stringify(input) },
+    { exactDecimalFields: SALE_DETAIL_DECIMAL_FIELDS },
   )
 }
 
@@ -184,6 +221,7 @@ export function removeSaleItem(
   return requestJson(
     `${salesPath(organizationId, branchId, cashRegisterId, cashShiftId)}/${segment(saleId)}/items/${segment(saleItemId)}/remove`,
     { method: 'POST', body: JSON.stringify({ expectedVersion }) },
+    { exactDecimalFields: SALE_DETAIL_DECIMAL_FIELDS },
   )
 }
 
@@ -198,6 +236,7 @@ export function cancelSale(
   return requestJson(
     `${salesPath(organizationId, branchId, cashRegisterId, cashShiftId)}/${segment(saleId)}/cancel`,
     { method: 'POST', body: JSON.stringify({ expectedVersion }) },
+    { exactDecimalFields: SALE_DETAIL_DECIMAL_FIELDS },
   )
 }
 
