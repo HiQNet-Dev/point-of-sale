@@ -10,5 +10,9 @@ public interface ProductModifierGroupRepository extends JpaRepository<ProductMod
     List<ProductModifierGroup> findByProductIdAndOrganizationIdOrderByDisplayOrderAsc(
             UUID productId, UUID organizationId);
 
+    /** Stable operational configuration order: assignment position, then group id. */
+    List<ProductModifierGroup> findByProductIdAndOrganizationIdOrderByDisplayOrderAscModifierGroupIdAsc(
+            UUID productId, UUID organizationId);
+
     void deleteByProductIdAndOrganizationId(UUID productId, UUID organizationId);
 }

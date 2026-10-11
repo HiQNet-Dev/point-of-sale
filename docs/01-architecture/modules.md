@@ -17,11 +17,11 @@ implementado** hasta que llegue su milestone (ver
 | `membership` | Memberships por sucursal | branch_memberships, branch_membership_roles, scope branch-scoped, port de acceso | **implementado** |
 | `audit` | Auditoría persistente append-only | audit_events, actor USER/SYSTEM, trigger DB, port transversal | **implementado (Foundation)** |
 | `bootstrap` | Provisión one-shot del primer administrador | installation_bootstrap (singleton), X-Bootstrap-Token, provisioning transaccional auditado | **implementado (Foundation)** |
-| `catalog` | Catálogo comercial | categories, products, modifier groups/options, precios base (organización) | **implementado (Foundation)** |
+| `catalog` | Catálogo comercial | categorías, productos y modifiers Organization-owned; lecturas administrativas y Operational POS Catalog con Branch como contexto | **implementado (Foundation); Operational POS Catalog candidate / PR abierto** |
 | `cashregister` | Cajas físicas (branch-owned) | cash_registers, slug único por branch, scope branch-scoped | **implementado (Foundation)** |
 | `cashshift` | Turnos de caja (register-owned) | cash_shifts, ciclo OPEN→CLOSED, un turno OPEN por caja (índice único parcial), scope branch-scoped | **implementado (Foundation)** |
 | `sales` | Venta operacional | sales, sale_items, modifier snapshots, pricing server-authoritative, OPEN→CANCELLED/COMPLETED | **implementado** |
-| `payment` | Pagos inmutables de checkout | CASH/CARD, split tender, tendered/change, historical reads | **candidate / PR abierto** |
+| `payment` | Pagos inmutables de checkout | CASH/CARD, split tender, tendered/change, historical reads | **implementado** |
 | `cash` | Turnos de caja y arqueos | shifts, arqueos (cash registers viven en `cashregister`) | **no implementado** |
 | `inventory` | Existencias e insumos | stock por branch, ingredients, recipes, mermas | **no implementado** |
 | `purchasing` | Compras | suppliers, órdenes, recepción | **no implementado** |
@@ -123,9 +123,12 @@ com.hiqnet.pos.<modulo>[.domain|.application|.infrastructure|.api]
   `application` (`CategoryService`, `ProductService`, `ModifierGroupService`,
   `ModifierOptionService`, `ProductModifierService`, commands) y `api`
   (`CategoryController`, `ProductController`, `ModifierGroupController`,
-  `ModifierOptionController`, `ProductModifierGroupController` y DTOs). Sin
-  `infrastructure`. Dependencia de lectura única:
-  `catalog -> organization` (valida existencia) y `shared`; no conoce `branch`.
+  `ModifierOptionController`, `ProductModifierGroupController`,
+  `OperationalCatalogController` y DTOs). `OperationalCatalogService` usa
+  Branch exclusivamente como contexto de autorización (`pos.catalog.read`, Branch
+  ACTIVE); Category/Product/Modifier siguen Organization-owned. Dependencias de
+  lectura: `catalog -> organization, branch` (solo la superficie operacional) y
+  `shared`; no existe pertenencia ni precio por Branch.
 - `cashregister` usa `domain` (`CashRegister`, `CashRegisterStatus` +
   `CashRegisterRepository` con `JpaSpecificationExecutor`), `application`
   (`CashRegisterService`, `UpdateCashRegisterCommand`) y `api`

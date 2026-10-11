@@ -254,6 +254,36 @@ Catálogo organization-scoped (`category.*` / `product.*`; `hasPermission`, no
 - **PATCH /products/{productId}**: campos opcionales + `expectedVersion`;
   `categoryId` tri-estado (omitir/null/valor); `sku` inmutable.
 
+## POS Operational Catalog (lecturas operacionales)
+
+El catálogo sigue siendo **Organization-owned**. Las rutas operacionales usan una
+Branch únicamente como contexto de autorización; no crean catálogo branch-owned,
+precios por Branch ni disponibilidad de inventario. Requieren `pos.catalog.read`
+mediante `hasBranchPermission` y Branch ACTIVE. Este permiso es independiente de
+los permisos administrativos `category.read`, `product.read` y `modifier.*`.
+Las rutas administrativas existentes y sus permisos no cambian.
+
+- **GET /organizations/{organizationId}/branches/{branchId}/pos/catalog/categories**:
+  `PageResponse` (page default 0, size default 20, máximo 100; filtro opcional
+  `status`); orden `name ASC, id ASC`. Devuelve `id`, `code`, `name`, `status`.
+  Incluye categorías INACTIVE por defecto: el estado de Category no determina la
+  vendibilidad del Product.
+- **GET .../pos/catalog/products**: `PageResponse` (page/size, `q`, `categoryId`);
+  orden `name ASC, id ASC`. Fuerza Product ACTIVE server-side y `q` busca
+  case-insensitive en name/SKU y por coincidencia en barcode. El filtro de
+  categoría acepta también una categoría INACTIVE; Product ACTIVE sigue siendo
+  candidato vendible.
+- **GET .../pos/catalog/products/{productId}/configuration**: devuelve el
+  Product ACTIVE y, en una sola lectura compuesta, sus asignaciones ordenadas,
+  min/max, estados de grupos y opciones, `priceDelta` y orden de opciones. Un
+  grupo requerido INACTIVE y opciones INACTIVE se representan explícitamente;
+  el cliente no debe ofrecer configuración inactiva. El backend Sales vuelve a
+  validar asignación, estado y límites y calcula los snapshots al añadir la línea.
+- El precio de Product y `priceDelta` son exclusivamente display data; SaleItem
+  acepta IDs/cantidad/modifier option IDs/version esperada, nunca precios del
+  cliente. La configuración se lee al abrir el producto; no es una cotización
+  ni concede autoridad al cliente.
+
 ## Product Modifiers (grupos, opciones y asignación)
 
 Modifiers organization-scoped (`modifier.group.*` / `modifier.option.*`; la
@@ -277,8 +307,8 @@ implementan y caen en `denyAll()`. Detalle de modelo:
   `NUMERIC(19,4)` **con signo**; `displayOrder` ≥0). Grupo inexistente o de otra
   org → 404 `MODIFIER_GROUP_NOT_FOUND`; duplicado en el grupo → 409
   `MODIFIER_OPTION_CODE_ALREADY_EXISTS`.
-- **GET /modifier-groups/{groupId}/options**: `PageResponse` (`?status`); orden
-  `displayOrder ASC, id ASC`.
+- **GET /modifier-groups/{groupId}/options**: `PageResponse` (`?page`/`?size`;
+  el controller actual no acepta filtro `status`); orden `displayOrder ASC, id ASC`.
 - **GET/PATCH /modifier-groups/{groupId}/options/{optionId}**: `expectedVersion`
   requerido; `code` inmutable.
 - **GET /products/{productId}/modifier-groups**: lista ordenada (`displayOrder`)

@@ -30,4 +30,11 @@ public interface ModifierOptionRepository extends JpaRepository<ModifierOption, 
 
     /** Bulk same-organization lookup used to construct server-authoritative sale snapshots. */
     List<ModifierOption> findByOrganizationIdAndIdIn(UUID organizationId, Collection<UUID> ids);
+
+    /** Load all options for a product configuration without one query per group. */
+    @Query("select o from ModifierOption o join fetch o.modifierGroup "
+            + "where o.organization.id = :organizationId and o.modifierGroup.id in :groupIds "
+            + "order by o.displayOrder asc, o.id asc")
+    List<ModifierOption> findAllForGroups(
+            @Param("organizationId") UUID organizationId, @Param("groupIds") Collection<UUID> groupIds);
 }
