@@ -130,6 +130,13 @@ public class SecurityConfig {
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/cash-registers/*/cash-shifts").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/cash-registers/*/cash-shifts/*").authenticated();
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/cash-registers/*/cash-shifts/*/close").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/cash-registers/*/cash-shifts/*/sales").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/cash-registers/*/cash-shifts/*/sales").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/cash-registers/*/cash-shifts/*/sales/*").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/cash-registers/*/cash-shifts/*/sales/*/items").authenticated();
+                    auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*/branches/*/cash-registers/*/cash-shifts/*/sales/*/items/*").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/cash-registers/*/cash-shifts/*/sales/*/items/*/remove").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/cash-registers/*/cash-shifts/*/sales/*/cancel").authenticated();
                     auth.anyRequest().denyAll();
                 })
                 // Bootstrap token guard runs before authorization/body parsing:

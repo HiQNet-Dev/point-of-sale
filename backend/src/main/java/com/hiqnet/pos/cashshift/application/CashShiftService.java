@@ -46,6 +46,7 @@ public class CashShiftService {
     private final BranchRepository branchRepository;
     private final OrganizationRepository organizationRepository;
     private final AuditPort auditPort;
+    private final OpenSalesForCashShiftPort openSalesForCashShiftPort;
     private final Clock clock;
 
     public CashShiftService(
@@ -54,12 +55,14 @@ public class CashShiftService {
             BranchRepository branchRepository,
             OrganizationRepository organizationRepository,
             AuditPort auditPort,
+            OpenSalesForCashShiftPort openSalesForCashShiftPort,
             Clock clock) {
         this.cashShiftRepository = cashShiftRepository;
         this.cashRegisterRepository = cashRegisterRepository;
         this.branchRepository = branchRepository;
         this.organizationRepository = organizationRepository;
         this.auditPort = auditPort;
+        this.openSalesForCashShiftPort = openSalesForCashShiftPort;
         this.clock = clock;
     }
 
@@ -119,8 +122,11 @@ public class CashShiftService {
         // remain closable even if the register (or branch) was deactivated after
         // it opened. The ACTIVE requirement applies to opening only.
         requireCashRegister(organizationId, branchId, cashRegisterId);
+        // This lock is deliberately shared with SaleService.create: after it is
+        // acquired, the OPEN-sales guard and the close state transition are one
+        // serialized decision for this operational shift.
         CashShift shift = cashShiftRepository
-                .findByIdAndOrganizationIdAndBranchIdAndCashRegisterId(cashShiftId, organizationId, branchId, cashRegisterId)
+                .findByIdAndOrganizationIdAndBranchIdAndCashRegisterIdForUpdate(cashShiftId, organizationId, branchId, cashRegisterId)
                 .orElseThrow(() -> new BusinessException(
                         HttpStatus.NOT_FOUND, ErrorCodes.CASH_SHIFT_NOT_FOUND, "Cash shift not found"));
         if (shift.getStatus() == CashShiftStatus.CLOSED) {
@@ -135,6 +141,12 @@ public class CashShiftService {
                     HttpStatus.CONFLICT,
                     ErrorCodes.CONCURRENT_MODIFICATION,
                     "The resource was modified concurrently; retry with fresh data");
+        }
+        if (openSalesForCashShiftPort.hasOpenSales(cashShiftId)) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.CASH_SHIFT_HAS_OPEN_SALES,
+                    "The cash shift has open sales and cannot be closed");
         }
         shift.close(declaredCashAmount, actorUserId, clock.instant());
         CashShift saved = cashShiftRepository.saveAndFlush(shift);

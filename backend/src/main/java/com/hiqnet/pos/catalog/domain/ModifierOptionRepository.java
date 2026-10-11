@@ -1,6 +1,8 @@
 package com.hiqnet.pos.catalog.domain;
 
 import jakarta.persistence.LockModeType;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -25,4 +27,7 @@ public interface ModifierOptionRepository extends JpaRepository<ModifierOption, 
             UUID organizationId, UUID modifierGroupId, Pageable pageable);
 
     boolean existsByModifierGroupIdAndCode(UUID modifierGroupId, String code);
+
+    /** Bulk same-organization lookup used to construct server-authoritative sale snapshots. */
+    List<ModifierOption> findByOrganizationIdAndIdIn(UUID organizationId, Collection<UUID> ids);
 }
