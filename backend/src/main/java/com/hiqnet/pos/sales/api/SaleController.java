@@ -1,5 +1,6 @@
 package com.hiqnet.pos.sales.api;
 
+import com.hiqnet.pos.payment.api.PaymentResponse;
 import com.hiqnet.pos.sales.application.SaleService;
 import com.hiqnet.pos.sales.domain.Sale;
 import com.hiqnet.pos.sales.domain.SaleStatus;
@@ -60,6 +61,23 @@ public class SaleController {
     public SaleDetailResponse get(@PathVariable UUID organizationId, @PathVariable UUID branchId,
             @PathVariable UUID cashRegisterId, @PathVariable UUID cashShiftId, @PathVariable UUID saleId) {
         return SaleDetailResponse.from(saleService.get(organizationId, branchId, cashRegisterId, cashShiftId, saleId));
+    }
+
+    @PostMapping("/{saleId}/checkout")
+    @PreAuthorize("@authorizationService.hasBranchPermission(authentication, #organizationId, #branchId, 'sale.checkout')")
+    public SaleDetailResponse checkout(@PathVariable UUID organizationId, @PathVariable UUID branchId,
+            @PathVariable UUID cashRegisterId, @PathVariable UUID cashShiftId, @PathVariable UUID saleId,
+            @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody CheckoutRequest request) {
+        return SaleDetailResponse.from(saleService.checkout(organizationId, branchId, cashRegisterId, cashShiftId, saleId,
+                request.expectedSaleVersion(), request.payments(), actorId(jwt)));
+    }
+
+    @GetMapping("/{saleId}/payments")
+    @PreAuthorize("@authorizationService.hasBranchPermissionIgnoringBranchStatus(authentication, #organizationId, #branchId, 'payment.read')")
+    public java.util.List<PaymentResponse> payments(@PathVariable UUID organizationId, @PathVariable UUID branchId,
+            @PathVariable UUID cashRegisterId, @PathVariable UUID cashShiftId, @PathVariable UUID saleId) {
+        return saleService.payments(organizationId, branchId, cashRegisterId, cashShiftId, saleId).stream()
+                .map(PaymentResponse::from).toList();
     }
 
     @PostMapping("/{saleId}/items")

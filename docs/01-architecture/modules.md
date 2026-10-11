@@ -20,8 +20,8 @@ implementado** hasta que llegue su milestone (ver
 | `catalog` | Catálogo comercial | categories, products, modifier groups/options, precios base (organización) | **implementado (Foundation)** |
 | `cashregister` | Cajas físicas (branch-owned) | cash_registers, slug único por branch, scope branch-scoped | **implementado (Foundation)** |
 | `cashshift` | Turnos de caja (register-owned) | cash_shifts, ciclo OPEN→CLOSED, un turno OPEN por caja (índice único parcial), scope branch-scoped | **implementado (Foundation)** |
-| `sales` | Venta operacional en construcción | sales, sale_items, modifier snapshots, pricing server-authoritative, OPEN→CANCELLED | **candidate / PR abierto** |
-| `payments` | Pagos de la venta | methods, splits, vuelto | **no implementado** |
+| `sales` | Venta operacional | sales, sale_items, modifier snapshots, pricing server-authoritative, OPEN→CANCELLED/COMPLETED | **implementado** |
+| `payment` | Pagos inmutables de checkout | CASH/CARD, split tender, tendered/change, historical reads | **candidate / PR abierto** |
 | `cash` | Turnos de caja y arqueos | shifts, arqueos (cash registers viven en `cashregister`) | **no implementado** |
 | `inventory` | Existencias e insumos | stock por branch, ingredients, recipes, mermas | **no implementado** |
 | `purchasing` | Compras | suppliers, órdenes, recepción | **no implementado** |
@@ -133,7 +133,7 @@ com.hiqnet.pos.<modulo>[.domain|.application|.infrastructure|.api]
   `cashregister -> branch, organization` (valida existencia y deriva el
   `organization_id` de la branch) y `shared`; el recurso es **branch-owned**.
 - `cashshift` usa `domain` (`CashShift`, `CashShiftStatus` + `CashShiftRepository`), `application` (`CashShiftService`, `OpenSalesForCashShiftPort`) y `api` (`CashShiftController` + DTOs). `sales` implementa el port de guard para evitar que cashshift dependa de un repositorio concreto de Sales.
-- `sales` usa `domain` (`Sale`, `SaleItem`, `SaleItemModifier`, estados y repositorios), `application` (`SaleService`, adaptador del guard de turno) y `api` (`SaleController` y DTOs). Depende de catálogo para cotizar snapshots y de los recursos operacionales para scope; solo create/close comparte un lock pesimista de `CashShift` (ADR-0007), el resto de mutaciones conserva `Sale.version` optimistic.
+- `sales` usa `domain` (`Sale`, `SaleItem`, `SaleItemModifier`, estados y repositorios), `application` (`SaleService`, adaptador del guard de turno) y `api` (`SaleController` y DTOs). Depende de catálogo para cotizar snapshots y de los recursos operacionales para scope; create, checkout and close share the scoped CashShift coordination lock (ADR-0007/0008), while regular mutations retain `Sale.version` optimistic. `payment` contains only immutable Payment facts/repository and response DTO; it has no independent write API.
 - Dependencia entre módulos (lectura): `branch` usa
   `OrganizationRepository` de `organization` para validar existencia y
   resolución de timezone; `auth` usa `User`/`UserRepository` de `users` y

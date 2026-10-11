@@ -58,6 +58,13 @@ public final class ErrorCodes {
     public static final String PRODUCT_MODIFIER_CONFIGURATION_UNAVAILABLE = "PRODUCT_MODIFIER_CONFIGURATION_UNAVAILABLE";
     public static final String INVALID_MODIFIER_SELECTION = "INVALID_MODIFIER_SELECTION";
     public static final String NEGATIVE_EFFECTIVE_PRICE = "NEGATIVE_EFFECTIVE_PRICE";
+    public static final String SALE_ALREADY_COMPLETED = "SALE_ALREADY_COMPLETED";
+    public static final String SALE_HAS_NO_ACTIVE_ITEMS = "SALE_HAS_NO_ACTIVE_ITEMS";
+    public static final String PAYMENT_TOTAL_MISMATCH = "PAYMENT_TOTAL_MISMATCH";
+    public static final String INVALID_PAYMENT = "INVALID_PAYMENT";
+    public static final String INVALID_CASH_TENDERED_AMOUNT = "INVALID_CASH_TENDERED_AMOUNT";
+    public static final String TOO_MANY_PAYMENTS = "TOO_MANY_PAYMENTS";
+    public static final String MULTIPLE_CASH_PAYMENTS_NOT_ALLOWED = "MULTIPLE_CASH_PAYMENTS_NOT_ALLOWED";
 
     public static final String USER_NOT_FOUND = "USER_NOT_FOUND";
     public static final String USER_EMAIL_ALREADY_EXISTS = "USER_EMAIL_ALREADY_EXISTS";

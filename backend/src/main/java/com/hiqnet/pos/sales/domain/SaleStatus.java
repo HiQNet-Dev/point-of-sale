@@ -1,7 +1,8 @@
 package com.hiqnet.pos.sales.domain;
 
-/** A sale is either under construction or historically cancelled in this slice. */
+/** A sale is under construction or terminal historical data. */
 public enum SaleStatus {
     OPEN,
-    CANCELLED
+    CANCELLED,
+    COMPLETED
 }
