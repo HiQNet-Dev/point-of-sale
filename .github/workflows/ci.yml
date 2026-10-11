@@ -128,9 +128,9 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Generate disposable test-only secrets
+      - name: Generate and mask disposable test-only secrets
         run: |
-          node -e 'const c=require("node:crypto"); console.log(`BOOTSTRAP_SECRET=${c.randomBytes(32).toString("base64")}`); console.log(`AUTH_JWT_SECRET=${c.randomBytes(32).toString("base64")}`); console.log(`E2E_ADMIN_PASSWORD=${c.randomBytes(24).toString("base64url")}`); console.log(`E2E_CASHIER_PASSWORD=${c.randomBytes(24).toString("base64url")}`)' >> "$GITHUB_ENV"
+          node -e 'const c=require("node:crypto"); const fs=require("node:fs"); const values={BOOTSTRAP_SECRET:c.randomBytes(32).toString("base64"),AUTH_JWT_SECRET:c.randomBytes(32).toString("base64"),E2E_ADMIN_PASSWORD:c.randomBytes(24).toString("base64url"),E2E_CASHIER_PASSWORD:c.randomBytes(24).toString("base64url")}; for (const [key,value] of Object.entries(values)) { console.log(`::add-mask::${value}`); fs.appendFileSync(process.env.GITHUB_ENV, `${key}=${value}` + String.fromCharCode(10)); }'
 
       - name: Validate E2E database safety guard
         run: node scripts/e2e/safety-check.mjs
@@ -158,7 +158,7 @@ jobs:
           exit 1
 
       - name: Start Vite frontend
-        run: pnpm dev -- --host 127.0.0.1 --port 5173 > /tmp/hiqnet-pos-frontend.log 2>&1 &
+        run: pnpm dev --host 127.0.0.1 --port 5173 > /tmp/hiqnet-pos-frontend.log 2>&1 &
         working-directory: frontend
 
       - name: Wait for frontend HTTP

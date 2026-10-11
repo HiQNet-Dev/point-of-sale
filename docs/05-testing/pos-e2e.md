@@ -70,7 +70,7 @@ node frontend/scripts/e2e/safety-check.mjs
 cd backend && ./mvnw spring-boot:run
 cd frontend && pnpm install --frozen-lockfile
 cd frontend && pnpm exec playwright install chromium
-cd frontend && VITE_API_BASE_URL=http://127.0.0.1:8080/api/v1 pnpm dev -- --host 127.0.0.1 --port 5173
+cd frontend && VITE_API_BASE_URL=http://127.0.0.1:8080/api/v1 pnpm dev --host 127.0.0.1 --port 5173
 cd frontend && pnpm e2e
 ```
 
@@ -92,9 +92,8 @@ bootstrap. This supplies three clean-state repetitions without retries or
 historical fixture reuse. Each run migrates through Spring Boot startup, waits by
 polling health/HTTP endpoints (bounded timeout),
 starts Vite with an explicit backend API URL, runs Playwright, then runs the
-read-only SQL assertions. CI-generated bootstrap/JWT/user passwords are random
-and are appended to the GitHub Actions environment without printing their
-values.
+read-only SQL assertions. CI-generated bootstrap/JWT/user passwords are random, masked with GitHub Actions
+`add-mask`, and appended to the Actions environment without printing their values.
 
 A setup/API failure is a harness/contract setup failure until the response and
 backend log establish otherwise. A browser assertion failure against a successful
