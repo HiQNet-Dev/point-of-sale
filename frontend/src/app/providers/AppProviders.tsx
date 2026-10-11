@@ -3,6 +3,8 @@ import { ThemeProvider, createTheme } from '@mui/material/styles'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import type { ReactNode } from 'react'
+import { AuthSessionProvider } from '../../features/auth/model/AuthSessionProvider'
+import { ApiRequestError } from '../../shared/api/client'
 
 const theme = createTheme()
 
@@ -17,7 +19,10 @@ export function AppProviders({ children }: { children: ReactNode }) {
         defaultOptions: {
           queries: {
             staleTime: 30_000,
-            retry: 1,
+            retry: (failureCount, error) => {
+              if (error instanceof ApiRequestError && error.status < 500) return false
+              return failureCount < 1
+            },
           },
         },
       }),
@@ -25,10 +30,12 @@ export function AppProviders({ children }: { children: ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        {children}
-      </ThemeProvider>
+      <AuthSessionProvider>
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          {children}
+        </ThemeProvider>
+      </AuthSessionProvider>
     </QueryClientProvider>
   )
 }
