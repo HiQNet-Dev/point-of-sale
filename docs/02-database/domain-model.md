@@ -2,8 +2,7 @@
 
 **Documento vivo.** `Organization`, `Branch`, `User` (identidad +
 administración), `RefreshSession`, RBAC, memberships, auditoría, bootstrap y el
-catálogo (`Category`/`Product` + modifiers + cash registers + cash shifts) ya están
-implementados (migraciones `V1`–`V12`); el resto de las entidades descritas aquí
+catálogo (`Category`/`Product` + modifiers + cash registers + cash shifts) y Sales Foundation ya están implementados (migraciones `V1`–`V13`); el resto de las entidades descritas aquí
 son futuras.
 
 Versión actual: `0.2.0-SNAPSHOT`.
@@ -23,7 +22,8 @@ Organization (organización / empresa)  ✔ implementado
       ├── BranchMembership (user ↔ branch, con roles branch-scoped)  ✔ implementado (V6)
       ├── CashRegister (caja)  ✔ implementado (V11)
       │    └── CashShift (turno de caja)  ✔ implementado (V12)
-      ├── Sale (venta) → Payment (pago)  (futuro)
+      │         └── Sale → SaleItem → SaleItemModifier  ✔ Sales Foundation (V13; OPEN→CANCELLED)
+      ├── Payment (pago)  (futuro)
       ├── Stock (existencias)  ← descuenta por venta, compra y mermas
       └── Inventory (ámbito de inventario de la sucursal)
 ```
@@ -50,6 +50,7 @@ Organization (organización / empresa)  ✔ implementado
 | ProductModifierGroup | organización | **implementada (`V10`)** — relación N—M producto↔grupo con `display_order`; PK `(product_id, modifier_group_id)`; FKs compuestas same-org; reemplazo atómico ordenado (`product.modifiers.manage`) |
 | CashRegister | sucursal | **implementada (`V11`)** — caja física **branch-owned**; `code` slug único por branch e inmutable; `name` no único; `status ACTIVE/INACTIVE`; FK compuesta same-org `(branch_id, organization_id)`; sin DELETE; ver `docs/02-database/cash-register-model.md` |
 | CashShift | sucursal/caja | **implementada (`V12`)** — turno **register-owned**; ciclo `OPEN → CLOSED`, actores/timestamps del servidor, montos declarados `NUMERIC(19,4)` no negativos, un solo `OPEN` por caja (índice único parcial), FKs compuestas same-org/same-branch; sin DELETE; ver `docs/02-database/cash-shift-model.md` |
+| Sale / SaleItem / SaleItemModifier | turno/caja/sucursal | **implementada (`V13`)** — Sale scoped a Organization/Branch/Register/Shift, lifecycle `OPEN → CANCELLED`, total exacto de líneas ACTIVE, snapshots de catálogo/modifiers y sin hard delete; Payments/COMPLETED/Inventory siguen fuera de alcance; ver `docs/02-database/sales-model.md` |
 | ProductVariant | organización | tamaños, sabores (futuro) |
 | Ingredient | **organización** | Insumos del catálogo |
 | Recipe | **organización** | Producto → ingredientes + cantidades |

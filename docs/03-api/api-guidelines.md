@@ -94,6 +94,14 @@ GET   /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/
 GET   /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}/cash-shifts/{cashShiftId}
 POST  /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}/cash-shifts/{cashShiftId}/close
 
+POST  /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}/cash-shifts/{cashShiftId}/sales
+GET   /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}/cash-shifts/{cashShiftId}/sales       (?page&size&status)
+GET   /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}/cash-shifts/{cashShiftId}/sales/{saleId}
+POST  /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}/cash-shifts/{cashShiftId}/sales/{saleId}/items
+PATCH /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}/cash-shifts/{cashShiftId}/sales/{saleId}/items/{saleItemId}
+POST  /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}/cash-shifts/{cashShiftId}/sales/{saleId}/items/{saleItemId}/remove
+POST  /api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}/cash-shifts/{cashShiftId}/sales/{saleId}/cancel
+
 GET   /api/v1/organizations/{organizationId}/audit-events  (audit.read; SOLO lectura)
 
 POST  /api/v1/bootstrap   (ONE-SHOT provisioning; X-Bootstrap-Token; NO Bearer)

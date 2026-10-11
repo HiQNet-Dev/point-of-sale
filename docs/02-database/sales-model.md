@@ -1,0 +1,42 @@
+# Sales Foundation
+
+`V13__create_sales_foundation.sql` introduces the operational transaction model:
+
+```text
+Organization → Branch → CashRegister → CashShift → Sale → SaleItem → SaleItemModifier
+```
+
+A Sale stores the exact organization, branch, register and shift scope and is created by a same-organization user. Composite foreign keys are the database barrier against cross-tenant, cross-branch and cross-register links.
+
+## Lifecycle and aggregate
+
+This slice supports only `OPEN → CANCELLED`. `OPEN` is a transaction under construction; `CANCELLED` is immutable historical recovery data. There is deliberately no `COMPLETED`, payment state, receipt number, tax, discount, inventory deduction or cash movement. Those facts require their own Payment/Checkout and Inventory boundaries.
+
+`Sale.version` is the optimistic concurrency boundary for add/update/remove/cancel. Mutations require the `expectedSaleVersion` or `expectedVersion` read by the client. A semantic update that keeps the same quantity and selected modifier options is a no-op: it neither bumps the version nor emits audit.
+
+Lines are never physically deleted. `SaleItem` has `ACTIVE`/`REMOVED`; only active line totals are summed into `Sale.totalAmount`. Removed and cancelled lines retain their product and modifier snapshots.
+
+## Pricing and snapshots
+
+The client submits only `productId`, positive integer `quantity` (maximum 1,000,000), and selected `modifierOptionIds`. It cannot submit prices, totals, names, status or actors. The server reloads current catalog configuration and snapshots SKU, product name, base unit price, modifier group/option IDs, codes, names and signed deltas.
+
+All monetary values use `BigDecimal` and `NUMERIC(19,4)`. Values are never calculated with binary floating point or silently rounded. The server computes:
+
+```text
+modifierUnitDelta = sum(selected option priceDelta)
+effectiveUnitPrice = product unitPrice + modifierUnitDelta
+lineTotal = effectiveUnitPrice × quantity
+totalAmount = sum(ACTIVE lineTotal)
+```
+
+A negative effective unit price or a result outside `NUMERIC(19,4)` is rejected.
+
+Product `ACTIVE` is the sellability authority. Category status does not implicitly make a product unavailable. Selected options must be active, belong to active groups assigned to the product, have no duplicates, and satisfy every assigned active group's min/max bounds. An inactive required group makes the product configuration unavailable; an inactive optional group can be omitted but not selected.
+
+## Cash-shift coordination
+
+Sale creation locks the exact `cash_shifts` row with `PESSIMISTIC_WRITE`. `CashShift.close` acquires the same lock and checks a narrow `OpenSalesForCashShiftPort`. This serializes create-versus-close so a CLOSED shift can never contain an OPEN Sale. Ordinary Sale edits stay optimistic; they do not acquire the coordination lock. An OPEN sale blocks shift close; cancellation is allowed even if branch/register were deactivated so recovery can finish.
+
+## Authorization and audit
+
+All Sale permissions are branch-scoped: `sale.read`, `sale.create`, `sale.update`, `sale.cancel`. Reads and cancellation use the branch-status-agnostic recovery authorization path; create and item mutations require operational parents ACTIVE. Every successful mutation records exactly one transactional audit event: `sale.created`, `sale.item.added`, `sale.item.updated`, `sale.item.removed`, or `sale.cancelled`.
