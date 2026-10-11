@@ -17,7 +17,7 @@ implementado** hasta que llegue su milestone (ver
 | `membership` | Memberships por sucursal | branch_memberships, branch_membership_roles, scope branch-scoped, port de acceso | **implementado** |
 | `audit` | Auditoría persistente append-only | audit_events, actor USER/SYSTEM, trigger DB, port transversal | **implementado (Foundation)** |
 | `bootstrap` | Provisión one-shot del primer administrador | installation_bootstrap (singleton), X-Bootstrap-Token, provisioning transaccional auditado | **implementado (Foundation)** |
-| `catalog` | Catálogo comercial | categorías, productos y modifiers Organization-owned; lecturas administrativas y Operational POS Catalog con Branch como contexto | **implementado (Foundation); Operational POS Catalog candidate / PR abierto** |
+| `catalog` | Catálogo comercial | categorías, productos y modifiers Organization-owned; lecturas administrativas y Operational POS Catalog con Branch como contexto | **implementado** |
 | `cashregister` | Cajas físicas (branch-owned) | cash_registers, slug único por branch, scope branch-scoped | **implementado (Foundation)** |
 | `cashshift` | Turnos de caja (register-owned) | cash_shifts, ciclo OPEN→CLOSED, un turno OPEN por caja (índice único parcial), scope branch-scoped | **implementado (Foundation)** |
 | `sales` | Venta operacional | sales, sale_items, modifier snapshots, pricing server-authoritative, OPEN→CANCELLED/COMPLETED | **implementado** |
@@ -70,10 +70,9 @@ inactiva puede conservar un turno OPEN y permitir su cierre, pero nunca habilita
 la apertura de uno nuevo. El workspace de ventas consume este contexto sin
 crear ventas automáticamente. Reanuda OPEN Sales y crea una venta solo mediante
 acción explícita. El Sale detail es el carrito persistido y la autoridad de precios;
-las mutaciones usan la versión actual devuelta por el servidor. El checkout se
-presenta como candidato mientras su PR esté abierto: sus instrucciones CASH/CARD
-son efímeras y se envían en una sola operación atómica. La UI no consulta historial
-de pagos para confirmar éxito ni implementa procesamiento de tarjetas.
+las mutaciones usan la versión actual devuelta por el servidor. Checkout registra
+instrucciones CASH/CARD efímeras en una sola operación atómica. La UI no consulta
+historial de pagos para confirmar éxito ni implementa procesamiento de tarjetas.
 
 ## Frontend POS sales
 
@@ -85,11 +84,12 @@ detail y sus snapshots/totales son la única fuente del carrito. Catálogo y cam
 de líneas se deshabilitan con Branch/Register inactivos, pero la venta recuperada
 se puede leer y cancelar. No se almacenan carrito, selección de venta ni permisos
 en browser storage; catálogo y permisos siempre se vuelven a consultar al backend.
-El checkout UI está en un slice candidato con PR abierto. Sus borradores CASH/CARD
-no se persisten en browser storage ni crean Payments antes del POST atómico. El
-cálculo exacto de importes/restante/cambio es solo previsualización UX; backend
-valida cobertura, cambio y estado final. No se consulta `payment.read` al confirmar,
-ni se captura información sensible de tarjeta o se procesa una tarjeta.
+Checkout UI está implementado. Sus borradores CASH/CARD no se persisten en browser
+storage ni crean Payments antes del POST atómico. El cálculo exacto de
+importes/restante/cambio es solo previsualización UX; backend valida cobertura,
+cambio y estado final. No se consulta `payment.read` al confirmar, ni se captura
+información sensible de tarjeta o se procesa una tarjeta. La verificación E2E
+integrada (navegador + backend + PostgreSQL) está en progreso.
 
 ## Convención de paquetes
 
