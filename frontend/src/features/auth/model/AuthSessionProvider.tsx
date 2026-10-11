@@ -23,6 +23,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     authTokenStore.getAccessToken() ? 'BOOTSTRAPPING' : 'UNAUTHENTICATED',
   )
   const [logoutNotice, setLogoutNotice] = useState<string | null>(null)
+  const [loginBootstrap, setLoginBootstrap] = useState(false)
 
   const onRefreshFailure = useCallback(() => {
     queryClient.clear()
@@ -84,7 +85,9 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
   const meQuery = useQuery<AuthMe, Error>({
     queryKey: authKeys.me,
     queryFn: fetchMeForCurrentSession,
-    enabled: status === 'BOOTSTRAPPING' && Boolean(authTokenStore.getAccessToken()),
+    enabled: status === 'BOOTSTRAPPING'
+      && !loginBootstrap
+      && Boolean(authTokenStore.getAccessToken()),
     staleTime: Infinity,
     retry: false,
   })
@@ -98,15 +101,13 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       const tokens = await loginRequest(request)
       authTokenStore.set(tokens)
       const loginSessionId = authTokenStore.getSessionId()
+      setLoginBootstrap(true)
       setStatus('BOOTSTRAPPING')
 
       try {
-        const me = await queryClient.fetchQuery({
-          queryKey: authKeys.me,
-          queryFn: fetchMeForCurrentSession,
-          staleTime: 0,
-          retry: false,
-        })
+        const me = await getMe()
+        if (authTokenStore.getSessionId() !== loginSessionId) throw new AuthSessionReplacedError()
+        queryClient.setQueryData(authKeys.me, me)
         setStatus('AUTHENTICATED')
         return me
       } catch (error) {
@@ -116,9 +117,11 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
           setStatus('UNAUTHENTICATED')
         }
         throw error
+      } finally {
+        setLoginBootstrap(false)
       }
     },
-    [fetchMeForCurrentSession, queryClient],
+    [queryClient],
   )
 
   const logout = useCallback(async () => {

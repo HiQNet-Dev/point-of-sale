@@ -11,6 +11,7 @@ import { LoginRoute } from '../components/LoginRoute'
 import { ProtectedRoute } from '../components/ProtectedRoute'
 import { AuthSessionProvider } from './AuthSessionProvider'
 import { authTokenStore } from './authTokenStore'
+import { postLoginDestination } from './redirectDestination'
 
 function tokenResponse(index = 1): TokenResponse {
   return {
@@ -96,7 +97,10 @@ describe('frontend authentication session', () => {
   it('bootstraps neutrally, logs in, loads /me, preserves destination, and redirects authenticated /login', async () => {
     let currentEmail = ''
     let logins = 0
+    let logoutCalls = 0
+    let finishLogout: ((response: Response) => void) | undefined
     let logoutBody: { refreshToken: string } | null = null
+    const pendingLogout = new Promise<Response>((resolve) => { finishLogout = resolve })
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/auth/login')) {
@@ -109,8 +113,9 @@ describe('frontend authentication session', () => {
         return json(meResponse(currentEmail))
       }
       if (url.endsWith('/auth/logout')) {
+        logoutCalls += 1
         logoutBody = JSON.parse(String(init?.body))
-        return new Response(null, { status: 204 })
+        return pendingLogout
       }
       return new Response(null, { status: 204 })
     })
@@ -136,7 +141,10 @@ describe('frontend authentication session', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy()
     expect(authTokenStore.getAccessToken()).toBeNull()
+    expect(authTokenStore.getRefreshToken()).toBeNull()
+    expect(logoutCalls).toBe(1)
     expect(logoutBody).toEqual({ refreshToken: 'refresh-1' })
+    finishLogout?.(new Response(null, { status: 204 }))
   })
 
   it('keeps protected content hidden until /auth/me finishes bootstrapping', async () => {
@@ -198,6 +206,13 @@ describe('frontend authentication session', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('rejects external intended destinations while preserving internal path, search, and hash', () => {
+    expect(postLoginDestination({ from: { pathname: '/app', search: '?x=1', hash: '#section' } }))
+      .toBe('/app?x=1#section')
+    expect(postLoginDestination({ from: { pathname: 'https://evil.example' } })).toBe('/')
+    expect(postLoginDestination({ from: { pathname: '//evil.example' } })).toBe('/')
+  })
+
   it('shows a safe network error without exposing fetch details', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new TypeError('private network diagnostic'))
     vi.stubGlobal('fetch', fetchMock)
@@ -209,6 +224,31 @@ describe('frontend authentication session', () => {
     expect(await screen.findByRole('alert')).toBeTruthy()
     expect(screen.getByText('Unable to connect to the server. Check your connection and try again.')).toBeTruthy()
     expect(screen.queryByText(/private network diagnostic/)).toBeNull()
+  })
+
+  it('clears login tokens when /auth/me rejects the newly issued access token', async () => {
+    let refreshCalls = 0
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/auth/login')) return json(tokenResponse())
+      if (url.endsWith('/auth/me')) return json({ code: 'TOKEN_INVALID', message: 'Invalid token' }, 401)
+      if (url.endsWith('/auth/refresh')) {
+        refreshCalls += 1
+        return json({ code: 'INVALID_REFRESH_TOKEN', message: 'Invalid refresh token' }, 401)
+      }
+      return new Response(null, { status: 204 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderAuthApp('/login')
+    await screen.findByRole('heading', { name: 'Sign in' })
+    await enterCredentials()
+
+    await waitFor(() => expect(authTokenStore.getAccessToken()).toBeNull())
+    expect(screen.queryByRole('heading', { name: 'Session active' })).toBeNull()
+    expect(authTokenStore.getAccessToken()).toBeNull()
+    expect(authTokenStore.getRefreshToken()).toBeNull()
+    expect(refreshCalls).toBe(1)
   })
 
   it('rotates refresh once for concurrent requests and retries each original request once', async () => {
@@ -244,6 +284,43 @@ describe('frontend authentication session', () => {
     await waitFor(() => expect([...attempts.values()]).toEqual([2, 2, 2]))
     expect(refreshCalls).toBe(1)
     expect(authTokenStore.getAccessToken()).toBe('access-2')
+  })
+
+  it('ignores a successful refresh response from a session replaced by logout and another login', async () => {
+    let currentEmail = ''
+    let loginCount = 0
+    let finishRefresh: ((response: Response) => void) | undefined
+    const refreshResponse = new Promise<Response>((resolve) => { finishRefresh = resolve })
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/auth/login')) {
+        loginCount += 1
+        currentEmail = JSON.parse(String(init?.body)).email
+        return json(tokenResponse(loginCount))
+      }
+      if (url.endsWith('/auth/me')) return json(meResponse(currentEmail))
+      if (url.endsWith('/auth/refresh')) return refreshResponse
+      if (url.endsWith('/auth/logout')) return new Response(null, { status: 204 })
+      return json({ code: 'TOKEN_EXPIRED', message: 'Expired' }, 401)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderAuthApp('/login')
+    await screen.findByRole('heading', { name: 'Sign in' })
+    await enterCredentials('cafe', 'first@example.com')
+    await screen.findByRole('heading', { name: 'Session active' })
+    fireEvent.click(screen.getByRole('button', { name: 'Test protected requests' }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/auth/refresh'))).toBe(true))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+    await screen.findByRole('heading', { name: 'Sign in' })
+    await enterCredentials('cafe', 'second@example.com')
+    await screen.findByRole('heading', { name: 'Session active' })
+
+    finishRefresh?.(json(tokenResponse(99)))
+    await waitFor(() => expect(authTokenStore.getAccessToken()).toBe('access-2'))
+    expect(authTokenStore.getRefreshToken()).toBe('refresh-2')
+    expect(screen.getByText('second@example.com')).toBeTruthy()
   })
 
   it('clears credentials and authenticated query data when refresh fails', async () => {
@@ -284,6 +361,7 @@ describe('frontend authentication session', () => {
   it('clears query cache on logout even when remote revocation fails, then isolates the next user', async () => {
     let currentEmail = ''
     let loginCount = 0
+    let logoutCalls = 0
     let logoutBody: { refreshToken: string } | null = null
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -294,6 +372,7 @@ describe('frontend authentication session', () => {
       }
       if (url.endsWith('/auth/me')) return json(meResponse(currentEmail))
       if (url.endsWith('/auth/logout')) {
+        logoutCalls += 1
         logoutBody = JSON.parse(String(init?.body))
         return json({ code: 'INTERNAL_ERROR', message: 'Unavailable' }, 503)
       }
@@ -311,6 +390,7 @@ describe('frontend authentication session', () => {
     await screen.findByRole('heading', { name: 'Sign in' })
     expect(queryClient.getQueryData(['private', 'records'])).toBeUndefined()
     expect(await screen.findByText('You are signed out locally, but server revocation could not be confirmed.')).toBeTruthy()
+    expect(logoutCalls).toBe(1)
     expect(logoutBody).toEqual({ refreshToken: 'refresh-1' })
 
     await enterCredentials('cafe', 'second@example.com')
@@ -318,6 +398,35 @@ describe('frontend authentication session', () => {
     expect(screen.getByText('second@example.com')).toBeTruthy()
     expect(queryClient.getQueryData(['private', 'records'])).toBeUndefined()
     expect(authTokenStore.getRefreshToken()).toBe('refresh-2')
+  })
+
+  it('does not refresh a 401 from logout', async () => {
+    let refreshCalls = 0
+    let logoutCalls = 0
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/auth/login')) return json(tokenResponse())
+      if (url.endsWith('/auth/me')) return json(meResponse('operator@example.com'))
+      if (url.endsWith('/auth/logout')) {
+        logoutCalls += 1
+        return json({ code: 'INVALID_REFRESH_TOKEN', message: 'Expired' }, 401)
+      }
+      if (url.endsWith('/auth/refresh')) refreshCalls += 1
+      return json({ code: 'INVALID_REFRESH_TOKEN', message: 'Expired' }, 401)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderAuthApp('/login')
+    await screen.findByRole('heading', { name: 'Sign in' })
+    await enterCredentials()
+    await screen.findByRole('heading', { name: 'Session active' })
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+    await screen.findByRole('heading', { name: 'Sign in' })
+
+    expect(logoutCalls).toBe(1)
+    expect(refreshCalls).toBe(0)
+    expect(authTokenStore.getAccessToken()).toBeNull()
+    expect(authTokenStore.getRefreshToken()).toBeNull()
   })
 
   it('does not interpret or expose the access token in the rendered session UI', async () => {

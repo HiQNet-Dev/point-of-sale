@@ -44,7 +44,12 @@ sessionStorage, IndexedDB ni TanStack Query. Un 401 comparte una sola promesa de
 refresh entre requests concurrentes, el refresh opaco rota, y cada request
 original se reintenta como máximo una vez. Un refresh inválido o un segundo 401
 limpia la sesión y el QueryClient. Login solo se considera completo después de
-que `/auth/me` confirma la identidad y el contexto Organization.
+que `/auth/me` confirma la identidad y el contexto Organization. Logout toma una
+copia efímera del refresh token, invalida y limpia el estado/cache local, y luego
+intenta revocarlo una sola vez en backend; un fallo remoto no restaura la sesión.
+Si la llamada de revocación no llega al servidor, la sesión de refresh remota
+puede seguir válida hasta su expiración; el cliente no conserva el token para
+reintentar después.
 
 Al recargar la página se pierde el refresh token en memoria y no se intenta
 reconstruir la sesión; el usuario vuelve a `/login`. Persistirlo requeriría un
