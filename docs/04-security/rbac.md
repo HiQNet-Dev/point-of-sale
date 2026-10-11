@@ -11,7 +11,7 @@ User
   ↓ user_organization_roles (organization_id, user_id, role_id)     [ORGANIZATION scope]
 Role  (per Organization; code slug único e inmutable; status ACTIVE|INACTIVE)
   ↓ role_permissions (role_id, permission_code)
-Permission (catálogo, sembrado por V5/V6/V7/V9/V10/V11/V12/V13/V14; sin CRUD de cliente)
+Permission (catálogo, sembrado por V5/V6/V7/V9/V10/V11/V12/V13/V14/V15; sin CRUD de cliente)
 
 User
   ↓ branch_memberships (organization_id, branch_id, user_id, status)  [BRANCH scope]
@@ -20,7 +20,7 @@ Role   (mismas definiciones de roles; sin modelo BranchRole separado)
 ```
 
 - **Permissions**: catálogo del SISTEMA (`permissions.code` PK natural).
-  Se crean únicamente vía Flyway (`V5`/`V6`/`V7`/`V9`/`V10`/`V11`/`V12`/`V13`/`V14`). Orden `code ASC`.
+  Se crean únicamente vía Flyway (`V5`/`V6`/`V7`/`V9`/`V10`/`V11`/`V12`/`V13`/`V14`/`V15`). Orden `code ASC`.
 - **Role**: pertenece a una organización; `code` normalizado (trim+lowercase,
   slug) único por organización e inmutable; `name` editable; sin DELETE
   (baja = `status INACTIVE`).
@@ -111,7 +111,10 @@ avala en una sola `EXISTS` (`BranchMembershipRoleRepository`
 | GET /organizations/{id}/branches/{branchId}/memberships/{userId}/roles | `branch.membership.read` (org scope) |
 | PUT /organizations/{id}/branches/{branchId}/memberships/{userId}/roles | `branch.membership.roles.manage` (org scope) |
 | GET /organizations/{id}/audit-events | `audit.read` (org scope; SOLO lectura) |
-| GET /organizations/{id}/categories | `category.read` (org scope) |
+| GET /organizations/{id}/branches/{branchId}/pos/catalog/categories | `pos.catalog.read` (branch context; Branch ACTIVE) |
+| GET /organizations/{id}/branches/{branchId}/pos/catalog/products | `pos.catalog.read` (branch context; Product ACTIVE-only) |
+| GET /organizations/{id}/branches/{branchId}/pos/catalog/products/{productId}/configuration | `pos.catalog.read` (branch context; configuration and options batched) |
+| GET /organizations/{id}/categories | `category.read` (org scope; administrative catalog) |
 | POST /organizations/{id}/categories | `category.create` (org scope) |
 | GET /organizations/{id}/categories/{categoryId} | `category.read` (org scope) |
 | PATCH /organizations/{id}/categories/{categoryId} | `category.update` (org scope) |
@@ -124,7 +127,7 @@ avala en una sola `EXISTS` (`BranchMembershipRoleRepository`
 | GET /organizations/{id}/modifier-groups/{groupId} | `modifier.group.read` (org scope) |
 | PATCH /organizations/{id}/modifier-groups/{groupId} | `modifier.group.update` (org scope) |
 | POST /organizations/{id}/modifier-groups/{groupId}/options | `modifier.option.create` (org scope) |
-| GET /organizations/{id}/modifier-groups/{groupId}/options | `modifier.option.read` (org scope; filtro `?status`) |
+| GET /organizations/{id}/modifier-groups/{groupId}/options | `modifier.option.read` (org scope; page/size; sin filtro status en controller) |
 | GET /organizations/{id}/modifier-groups/{groupId}/options/{optionId} | `modifier.option.read` (org scope) |
 | PATCH /organizations/{id}/modifier-groups/{groupId}/options/{optionId} | `modifier.option.update` (org scope) |
 | GET /organizations/{id}/products/{productId}/modifier-groups | `product.read` (org scope) |
@@ -178,6 +181,16 @@ If-Match todavía.
 
 Un rol `INACTIVE` **no concede** permissions; los assignments permanecen y al
 volver `ACTIVE` vuelven a conceder (intencional; documentado).
+
+## POS operational catalog
+
+`pos.catalog.read` es una capability separada de `product.read`, `category.read`
+y `modifier.*`. Se evalúa con `hasBranchPermission`: un grant organization-wide
+actúa como override para Branches de esa organización; una membresía con el grant
+solo autoriza la Branch exacta y ACTIVE. No se infiere desde `sale.create` ni
+`sale.update`, y el grant branch-scoped nunca autoriza endpoints administrativos.
+Catalog entities siguen organization-owned. La migración V15 agrega el permiso
+sin auto-grant a roles existentes; bootstrap nuevo recibe el catálogo completo.
 
 ## No implementado (fronteras)
 
