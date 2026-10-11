@@ -8,7 +8,8 @@ All notable changes to HiQNet POS are documented in this file.
 
 Development for v0.2.x has started.
 
-- Added candidate Product Browser + Persisted Cart frontend: `/pos` lists and resumes OPEN Sales, creates a Sale only from an explicit action, browses the branch-context Operational Catalog, and performs SaleItem add/edit/remove/cancel mutations. The Sale detail is the persisted cart and pricing authority; no browser cart persistence, checkout UI or payment UI is included. Backend contracts and V1–V15 are unchanged.
+- Product Browser + Persisted Cart frontend is implemented: `/pos` lists and resumes OPEN Sales, creates a Sale only from an explicit action, browses the branch-context Operational Catalog, and performs SaleItem add/edit/remove/cancel mutations. The Sale detail is the persisted cart and pricing authority.
+- Added candidate POS Checkout UI: CASH, CARD and split-tender instructions are held only in ephemeral form state and submitted atomically to the existing checkout endpoint. Exact scale-4 BigInt arithmetic previews applied/remaining/cash change; the backend remains authoritative. No `payment.read` dependency, actual card processing, payment-draft persistence or automatic next Sale.
 - Added candidate Operational POS Catalog (`V15`): branch-context `pos.catalog.read`
   exposes organization-owned categories, ACTIVE products and one-read assigned
   modifier configuration without granting administrative catalog permissions.

@@ -48,7 +48,7 @@ const summary: SaleSummary = {
   cashRegisterId: registerId,
   cashShiftId: shiftId,
   status: 'OPEN',
-  totalAmount: 18.5,
+  totalAmount: '18.5',
   version: 3,
   createdAt: '2026-10-11T12:00:00Z',
   completedAt: null,
@@ -98,11 +98,11 @@ function item(overrides: Partial<SaleDetail['items'][number]> = {}): SaleDetail[
     productId,
     productSkuSnapshot: 'OLD-COF-1',
     productNameSnapshot: 'Café histórico',
-    baseUnitPrice: 15,
-    modifierUnitDelta: 3.5,
-    effectiveUnitPrice: 18.5,
+    baseUnitPrice: '15',
+    modifierUnitDelta: '3.5',
+    effectiveUnitPrice: '18.5',
     quantity: 1,
-    lineTotal: 18.5,
+    lineTotal: '18.5',
     status: 'ACTIVE',
     position: 1,
     modifiers: [{
@@ -111,7 +111,7 @@ function item(overrides: Partial<SaleDetail['items'][number]> = {}): SaleDetail[
       modifierOptionId: optionId,
       groupNameSnapshot: 'Leche histórica',
       optionNameSnapshot: 'Entera histórica',
-      priceDeltaSnapshot: 3.5,
+      priceDeltaSnapshot: '3.5',
       displayOrder: 1,
     }],
     ...overrides,
@@ -156,10 +156,15 @@ function setup(options: HarnessOptions = {}) {
       return json(page(matchingSales.slice(pageNumber * 20, pageNumber * 20 + 20), matchingSales.length, pageNumber))
     }
     if (url.pathname.endsWith('/sales') && method === 'POST') {
-      const created = { ...summary, id: `sale-${sales.length + 1}`, totalAmount: 0, version: 0 }
+      const created = { ...summary, id: `sale-${sales.length + 1}`, totalAmount: '0', version: 0 }
       sales = [created, ...sales]
       detail = { sale: created, items: [] }
       return json(created, 201)
+    }
+    if (url.pathname.endsWith(`/sales/${detail.sale.id}/checkout`) && method === 'POST') {
+      detail = { ...detail, sale: { ...detail.sale, status: 'COMPLETED', version: detail.sale.version + 1 } }
+      sales = sales.filter((sale) => sale.id !== detail.sale.id)
+      return json(detail)
     }
     const detailSaleId = url.pathname.match(/\/sales\/([^/]+)$/)?.[1]
     if (detailSaleId && method === 'GET') {
@@ -183,24 +188,24 @@ function setup(options: HarnessOptions = {}) {
         return json({ code: options.addError.code, message: 'Rejected' }, options.addError.status)
       }
       detail = {
-        sale: { ...detail.sale, totalAmount: 37, version: detail.sale.version + 1 },
-        items: [item({ quantity: Number(body?.quantity), lineTotal: 37 })],
+        sale: { ...detail.sale, totalAmount: '37', version: detail.sale.version + 1 },
+        items: [item({ quantity: Number(body?.quantity), lineTotal: '37' })],
       }
       sales = sales.map((sale) => sale.id === detail.sale.id ? detail.sale : sale)
       return json(detail)
     }
     if (url.pathname.endsWith(`/items/item-1`) && method === 'PATCH') {
       detail = {
-        sale: { ...detail.sale, totalAmount: 37, version: detail.sale.version + 1 },
-        items: [item({ quantity: Number(body?.quantity), lineTotal: 37 })],
+        sale: { ...detail.sale, totalAmount: '37', version: detail.sale.version + 1 },
+        items: [item({ quantity: Number(body?.quantity), lineTotal: '37' })],
       }
       sales = sales.map((sale) => sale.id === detail.sale.id ? detail.sale : sale)
       return json(detail)
     }
     if (url.pathname.endsWith(`/items/item-1/remove`) && method === 'POST') {
       detail = {
-        sale: { ...detail.sale, totalAmount: 0, version: detail.sale.version + 1 },
-        items: [item({ status: 'REMOVED', lineTotal: 0 })],
+        sale: { ...detail.sale, totalAmount: '0', version: detail.sale.version + 1 },
+        items: [item({ status: 'REMOVED', lineTotal: '0' })],
       }
       return json(detail)
     }
@@ -253,6 +258,27 @@ afterEach(() => {
 })
 
 describe('POS sales workspace', () => {
+  it('completes the selected Sale once, clears it, refreshes OPEN Sales, and does not create a replacement', async () => {
+    const backend = setup({ initialSales: [summary], initialDetail: { sale: summary, items: [item()] } })
+    await screen.findByRole('button', { name: 'Cobrar' })
+    fireEvent.click(screen.getByRole('button', { name: 'Cobrar' }))
+    await screen.findByRole('dialog', { name: 'Cobrar venta' })
+    const method = screen.getByRole('combobox', { name: 'Método de pago' })
+    fireEvent.mouseDown(method)
+    const listbox = await screen.findByRole('listbox')
+    fireEvent.click(within(listbox).getByRole('option', { name: 'Tarjeta' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Monto aplicado' }), { target: { value: '18.5' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Completar venta' }))
+
+    await screen.findByText('Venta completada.')
+    await waitFor(() => expect(backend.requests.filter(({ url, method }) => url.pathname.endsWith('/sales') && method === 'POST')).toHaveLength(0))
+    const checkout = backend.requests.find(({ url, method }) => url.pathname.endsWith('/sales/sale-1/checkout') && method === 'POST')
+    expect(checkout?.body).toEqual({ expectedSaleVersion: 3, payments: [{ method: 'CARD', amount: '18.5' }] })
+    expect(screen.queryByRole('dialog', { name: 'Cobrar venta' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Nueva venta' })).toBeTruthy()
+    expect(backend.requests.filter(({ url, method }) => url.pathname.endsWith('/sales') && method === 'GET').length).toBeGreaterThan(1)
+  })
+
   it('does not create a Sale until Nueva venta is explicitly selected', async () => {
     const backend = setup()
     expect(await screen.findByText('No hay ventas abiertas.')).toBeTruthy()
@@ -301,7 +327,7 @@ describe('POS sales workspace', () => {
   })
 
   it('paginates the OPEN Sale collection and permits resuming multiple sales', async () => {
-    const second = { ...summary, id: 'sale-2', totalAmount: 22 }
+    const second = { ...summary, id: 'sale-2', totalAmount: '22' }
     const backend = setup({ initialSales: [summary, second] })
     expect(await screen.findByRole('button', { name: /Reanudar venta SALE-1/ })).toBeTruthy()
     expect(screen.getByRole('button', { name: /Reanudar venta SALE-2/ })).toBeTruthy()

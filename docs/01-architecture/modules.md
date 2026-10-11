@@ -68,12 +68,14 @@ concede permisos: los errores de lectura/apertura/cierre del backend se
 presentan en la etapa del recurso correspondiente. Una Branch o Register
 inactiva puede conservar un turno OPEN y permitir su cierre, pero nunca habilita
 la apertura de uno nuevo. El workspace de ventas consume este contexto sin
-crear ventas automáticamente. El componente de ventas es candidato mientras su
-PR esté abierto; reanuda/crea OPEN Sales y renderiza el Sale detail como carrito
-persistido. Las mutaciones siempre usan la versión devuelta por el servidor; el
-frontend no persiste líneas/totales ni calcula precios.
+crear ventas automáticamente. Reanuda OPEN Sales y crea una venta solo mediante
+acción explícita. El Sale detail es el carrito persistido y la autoridad de precios;
+las mutaciones usan la versión actual devuelta por el servidor. El checkout se
+presenta como candidato mientras su PR esté abierto: sus instrucciones CASH/CARD
+son efímeras y se envían en una sola operación atómica. La UI no consulta historial
+de pagos para confirmar éxito ni implementa procesamiento de tarjetas.
 
-## Frontend POS sales (candidate / PR abierto)
+## Frontend POS sales
 
 `src/features/pos-sales` consume los endpoints branch-context de Sales y
 Operational Catalog con query keys que incluyen Organization, Branch, Register y
@@ -83,7 +85,11 @@ detail y sus snapshots/totales son la única fuente del carrito. Catálogo y cam
 de líneas se deshabilitan con Branch/Register inactivos, pero la venta recuperada
 se puede leer y cancelar. No se almacenan carrito, selección de venta ni permisos
 en browser storage; catálogo y permisos siempre se vuelven a consultar al backend.
-Checkout UI y captura de pagos no forman parte de este slice.
+El checkout UI está en un slice candidato con PR abierto. Sus borradores CASH/CARD
+no se persisten en browser storage ni crean Payments antes del POST atómico. El
+cálculo exacto de importes/restante/cambio es solo previsualización UX; backend
+valida cobertura, cambio y estado final. No se consulta `payment.read` al confirmar,
+ni se captura información sensible de tarjeta o se procesa una tarjeta.
 
 ## Convención de paquetes
 
