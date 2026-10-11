@@ -64,6 +64,36 @@ class SaleConcurrencyTest extends AbstractRbacIntegrationTest {
     }
 
     @Test
+    void cancelLastOpenSaleAndCloseShiftRaceReconcilesToCancelledSaleAndClosedShift() throws Exception {
+        RbacFixture fixture = fixture();
+        String token = adminToken(fixture);
+        UUID branchId = createBranch(fixture, "race-cancel-close");
+        String registerId = createRegister(fixture, branchId, token);
+        String shiftId = openShift(fixture, branchId, registerId, token);
+        String salesUrl = salesUrl(fixture, branchId, registerId, shiftId);
+        String saleId = id(post(salesUrl).header("Authorization", bearer(token)));
+        String closeUrl = shiftsUrl(fixture, branchId, registerId) + "/" + shiftId + "/close";
+
+        List<Integer> statuses = runParallel(List.of(
+                () -> responseStatus(post(salesUrl + "/" + saleId + "/cancel").header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":0}")),
+                () -> responseStatus(post(closeUrl).header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":0,\"declaredCashAmount\":0}"))));
+
+        assertThat(statuses).allMatch(status -> status == 200 || status == 409);
+        assertThat(statuses).contains(200);
+        UUID shiftUuid = UUID.fromString(shiftId);
+        if (jdbcTemplate.queryForObject("select status from cash_shifts where id = ?", String.class, shiftUuid).equals("OPEN")) {
+            assertThat(responseStatus(post(closeUrl).header("Authorization", bearer(token))
+                    .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":0,\"declaredCashAmount\":0}"))).isEqualTo(200);
+        }
+        assertThat(jdbcTemplate.queryForObject("select status from sales where id = ?", String.class, UUID.fromString(saleId)))
+                .isEqualTo("CANCELLED");
+        assertThat(jdbcTemplate.queryForObject("select status from cash_shifts where id = ?", String.class, shiftUuid))
+                .isEqualTo("CLOSED");
+    }
+
+    @Test
     void parallelSameVersionItemAddsHaveOneWinnerAndOneResultingLine() throws Exception {
         RbacFixture fixture = fixture();
         String token = adminToken(fixture);

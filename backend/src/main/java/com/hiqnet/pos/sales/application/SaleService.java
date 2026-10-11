@@ -346,8 +346,10 @@ public class SaleService {
 
     private SaleDetail detail(Sale sale) {
         List<SaleItem> items = saleItemRepository.findBySaleIdOrderByPositionAsc(sale.getId());
-        Map<UUID, List<SaleItemModifier>> modifiers = items.stream().collect(Collectors.toMap(SaleItem::getId,
-                item -> saleItemModifierRepository.findBySaleItemIdOrderByDisplayOrderAsc(item.getId())));
+        Map<UUID, List<SaleItemModifier>> modifiers = saleItemModifierRepository
+                .findBySaleItemIdInOrderBySaleItemIdAscDisplayOrderAsc(items.stream().map(SaleItem::getId).toList())
+                .stream()
+                .collect(Collectors.groupingBy(SaleItemModifier::getSaleItemId));
         return new SaleDetail(sale, items, modifiers);
     }
 

@@ -40,6 +40,7 @@ public class SaleItemModifier {
         return new SaleItemModifier(organizationId, saleItemId, group, option, displayOrder);
     }
     public UUID getId() { return id; }
+    public UUID getSaleItemId() { return saleItemId; }
     public UUID getModifierGroupId() { return modifierGroupId; }
     public UUID getModifierOptionId() { return modifierOptionId; }
     public String getGroupCodeSnapshot() { return groupCodeSnapshot; }

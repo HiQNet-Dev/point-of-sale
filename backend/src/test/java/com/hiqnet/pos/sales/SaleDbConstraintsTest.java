@@ -84,6 +84,26 @@ class SaleDbConstraintsTest extends AbstractRbacIntegrationTest {
     }
 
     @Test
+    void saleItemModifierCannotReferenceAnOptionFromAnotherOrganization() {
+        Scope scope = scope("sale-db-modifier-org-a");
+        UUID saleId = insertSale(scope.organization().getId(), scope.branch().getId(), scope.register().getId(), scope.shift().getId(),
+                scope.userId(), "OPEN", BigDecimal.ZERO, null, null);
+        UUID productId = insertProduct(scope.organization().getId(), "LOCAL-MODIFIER-PRODUCT");
+        UUID itemId = insertItem(scope.organization().getId(), saleId, productId, "ACTIVE", null, null);
+        Organization otherOrganization = organizationService.create("Other modifier organization", "sale-db-modifier-org-b", "UTC", "MXN", "es-MX");
+        UUID groupId = insertModifierGroup(otherOrganization.getId(), "other-group");
+        UUID optionId = insertModifierOption(otherOrganization.getId(), groupId, "other-option");
+        Timestamp now = Timestamp.from(Instant.now());
+
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update(
+                "INSERT INTO sale_item_modifiers (id, organization_id, sale_item_id, modifier_group_id, modifier_option_id, "
+                        + "group_code_snapshot, group_name_snapshot, option_code_snapshot, option_name_snapshot, price_delta_snapshot, display_order, created_at) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                UUID.randomUUID(), scope.organization().getId(), itemId, groupId, optionId,
+                "other-group", "Other group", "other-option", "Other option", BigDecimal.ZERO, 0, now));
+    }
+
+    @Test
     void saleItemLifecycleCheckRejectsPartialRemoval() {
         Scope scope = scope("sale-db-item-lifecycle");
         UUID saleId = insertSale(scope.organization().getId(), scope.branch().getId(), scope.register().getId(), scope.shift().getId(),
@@ -93,6 +113,19 @@ class SaleDbConstraintsTest extends AbstractRbacIntegrationTest {
         assertThrows(DataIntegrityViolationException.class, () -> insertItem(
                 scope.organization().getId(), saleId, productId, "ACTIVE", scope.userId(), Instant.now()));
         assertDoesNotThrow(() -> insertItem(scope.organization().getId(), saleId, productId, "REMOVED", scope.userId(), Instant.now()));
+    }
+
+    @Test
+    void saleItemQuantityCheckRejectsZeroAndNegativeValues() {
+        Scope scope = scope("sale-db-item-quantity");
+        UUID saleId = insertSale(scope.organization().getId(), scope.branch().getId(), scope.register().getId(), scope.shift().getId(),
+                scope.userId(), "OPEN", BigDecimal.ZERO, null, null);
+        UUID productId = insertProduct(scope.organization().getId(), "QUANTITY-PRODUCT");
+
+        assertThrows(DataIntegrityViolationException.class, () -> insertItem(
+                scope.organization().getId(), saleId, productId, "ACTIVE", null, null, 0));
+        assertThrows(DataIntegrityViolationException.class, () -> insertItem(
+                scope.organization().getId(), saleId, productId, "ACTIVE", null, null, -1));
     }
 
     private Scope scope(String organizationCode) {
@@ -124,11 +157,35 @@ class SaleDbConstraintsTest extends AbstractRbacIntegrationTest {
         return id;
     }
 
-    private void insertItem(UUID organizationId, UUID saleId, UUID productId, String status, UUID removedBy, Instant removedAt) {
+    private UUID insertItem(UUID organizationId, UUID saleId, UUID productId, String status, UUID removedBy, Instant removedAt) {
+        return insertItem(organizationId, saleId, productId, status, removedBy, removedAt, 1);
+    }
+
+    private UUID insertItem(UUID organizationId, UUID saleId, UUID productId, String status, UUID removedBy, Instant removedAt, int quantity) {
+        UUID id = UUID.randomUUID();
         Timestamp now = Timestamp.from(Instant.now());
-        jdbcTemplate.update(INSERT_ITEM, UUID.randomUUID(), organizationId, saleId, productId, "SKU", "Product",
-                new BigDecimal("1.0000"), BigDecimal.ZERO, new BigDecimal("1.0000"), 1, new BigDecimal("1.0000"),
+        jdbcTemplate.update(INSERT_ITEM, id, organizationId, saleId, productId, "SKU", "Product",
+                new BigDecimal("1.0000"), BigDecimal.ZERO, new BigDecimal("1.0000"), quantity, new BigDecimal("1.0000"),
                 status, 0, now, now, removedAt == null ? null : Timestamp.from(removedAt), removedBy);
+        return id;
+    }
+
+    private UUID insertModifierGroup(UUID organizationId, String code) {
+        UUID id = UUID.randomUUID();
+        Timestamp now = Timestamp.from(Instant.now());
+        jdbcTemplate.update("INSERT INTO modifier_groups (id, organization_id, code, name, min_selections, max_selections, status, version, created_at, updated_at) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                id, organizationId, code, "Other group", 0, 1, "ACTIVE", 0L, now, now);
+        return id;
+    }
+
+    private UUID insertModifierOption(UUID organizationId, UUID groupId, String code) {
+        UUID id = UUID.randomUUID();
+        Timestamp now = Timestamp.from(Instant.now());
+        jdbcTemplate.update("INSERT INTO modifier_options (id, organization_id, modifier_group_id, code, name, price_delta, display_order, status, version, created_at, updated_at) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                id, organizationId, groupId, code, "Other option", BigDecimal.ZERO, 0, "ACTIVE", 0L, now, now);
+        return id;
     }
 
     private record Scope(Organization organization, Branch branch, CashRegister register, CashShift shift, UUID userId) {}
