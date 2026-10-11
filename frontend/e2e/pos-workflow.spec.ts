@@ -101,9 +101,7 @@ test('cashier can recover POS, configure products and complete sales without pay
   await signIn(page, fixtures.cashierEmail)
   await expect(page.getByRole('heading', { name: 'Punto de venta' })).toBeVisible()
 
-  // A valid login reaches the POS; credentials are memory-only across reloads.
-  await page.goto('/pos')
-  await expect(page.getByRole('heading', { name: 'Punto de venta' })).toBeVisible()
+  // Credentials are memory-only across reloads.
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
   await signIn(page, fixtures.cashierEmail)
