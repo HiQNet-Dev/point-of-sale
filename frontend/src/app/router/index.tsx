@@ -3,9 +3,10 @@ import { LoginRoute } from '../../features/auth/components/LoginRoute'
 import { ProtectedRoute } from '../../features/auth/components/ProtectedRoute'
 import { LoginPage } from '../../features/auth/pages/LoginPage'
 import { SessionHomePage } from '../../features/auth/pages/SessionHomePage'
+import { PosSessionPage } from '../../features/pos-session/pages/PosSessionPage'
 
 /**
- * Public login and one protected session landing page. Business modules add
+ * Public login plus protected session and POS routes. Business modules add
  * their own protected routes as they are implemented.
  */
 export const router = createBrowserRouter([
@@ -22,6 +23,14 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <SessionHomePage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/pos',
+    element: (
+      <ProtectedRoute>
+        <PosSessionPage />
       </ProtectedRoute>
     ),
   },

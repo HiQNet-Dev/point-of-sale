@@ -8,10 +8,14 @@ All notable changes to HiQNet POS are documented in this file.
 
 Development for v0.2.x has started.
 
-- Added candidate frontend authentication/session infrastructure: a memory-only
+- Added candidate POS operational session UI: `/pos` rediscovers the signed-in
+  user's branches and their cash registers, recovers an OPEN cash shift, and
+  supports opening or closing a shift with scoped queries and exact decimal
+  strings. Inactive branches/registers remain discoverable for close recovery;
+  selections and amounts are not persisted. Sales and checkout are not included.
+- Added frontend authentication/session infrastructure: a memory-only
   authenticated API client, single-flight rotating refresh, `/auth/me` bootstrap,
-  protected routing, and login/logout. This does not include POS session UI or
-  operational selectors.
+  protected routing, and login/logout.
 - Added the Catalog Foundation: organization-owned Categories and Products
   with an immutable normalized `code`/`sku`, an optional per-organization
   unique `barcode`, a base `unitPrice` (currency inherited from the

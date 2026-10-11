@@ -5,6 +5,7 @@ import Divider from '@mui/material/Divider'
 import Paper from '@mui/material/Paper'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
+import { Link } from 'react-router-dom'
 import { useAuthSession } from '../model/useAuthSession'
 
 export function SessionHomePage() {
@@ -29,6 +30,10 @@ export function SessionHomePage() {
               <Typography variant="body2" color="text.secondary">Signed in as</Typography>
               <Typography variant="body1" sx={{ fontWeight: 600 }}>{me.email}</Typography>
             </Box>
+
+            <Button component={Link} to="/pos" variant="contained">
+              Abrir punto de venta
+            </Button>
 
             <Divider />
 
