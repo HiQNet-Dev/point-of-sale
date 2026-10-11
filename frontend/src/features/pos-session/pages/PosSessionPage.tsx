@@ -12,10 +12,11 @@ import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { Suspense, lazy, useMemo, useState } from 'react'
 import { useAuthSession } from '../../auth/model/useAuthSession'
 import { ApiNetworkError, ApiRequestError } from '../../../shared/api/client'
 import { AmountDialog } from '../components/AmountDialog'
+
 import {
   closeCashShift,
   listCashRegisters,
@@ -26,6 +27,9 @@ import {
 import type { Branch, CashRegister, CashShift } from '../api/posSessionApi'
 import { formatMoney, formatTimestamp } from '../model/moneyInput'
 import { posSessionKeys } from '../model/posSessionKeys'
+
+const SalesWorkspace = lazy(() => import('../../pos-sales/components/SalesWorkspace')
+  .then((module) => ({ default: module.SalesWorkspace })))
 
 const PAGE_SIZE = 20
 const EMPTY_BRANCHES: Branch[] = []
@@ -309,6 +313,11 @@ export function PosSessionPage() {
         })
         return
       }
+      if (error instanceof ApiRequestError && error.code === 'CASH_SHIFT_HAS_OPEN_SALES') {
+        setDialogMode(null)
+        setMessage('No se puede cerrar el turno mientras tenga ventas abiertas. Reanuda o cancela cada venta primero.')
+        return
+      }
       if (isNotFound(error)) {
         setDialogMode(null)
         setSelectedRegisterId('')
@@ -573,6 +582,7 @@ export function PosSessionPage() {
                     </Stack>
                   )}
                   {shiftsQuery.isSuccess && activeShift && (
+                    <>
                     <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 }, bgcolor: 'background.paper' }}>
                       <Stack spacing={2.5}>
                         <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
@@ -603,6 +613,18 @@ export function PosSessionPage() {
                         </Box>
                       </Stack>
                     </Paper>
+                    <Suspense fallback={<LoadingState label="ventas" />}>
+                      <SalesWorkspace
+                        key={`${me.organizationId}-${selectedBranch.id}-${selectedRegister.id}-${activeShift.id}`}
+                        organizationId={me.organizationId}
+                        branch={selectedBranch}
+                        register={selectedRegister}
+                        shift={activeShift}
+                        locale={me.organization.locale}
+                        currency={me.organization.currency}
+                      />
+                    </Suspense>
+                    </>
                   )}
                 </Box>
               )}
