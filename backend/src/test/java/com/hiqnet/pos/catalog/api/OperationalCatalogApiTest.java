@@ -214,6 +214,13 @@ class OperationalCatalogApiTest extends AbstractRbacIntegrationTest {
                         + "/pos/catalog/categories")
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isOk());
+
+        branch.updateStatus(BranchStatus.INACTIVE);
+        branchRepository.saveAndFlush(branch);
+        mockMvc.perform(get("/api/v1/organizations/" + fx.orgId() + "/branches/" + branch.getId()
+                        + "/pos/catalog/categories")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isForbidden());
     }
 
     private Branch branch(RbacFixture fx, String code) {
