@@ -154,7 +154,7 @@ test('cashier can recover POS, configure products and complete sales without pay
   await noMutationRegister.click()
   await noMutationPage.getByRole('option', { name: /E2E Register A1/ }).click()
   await expect(noMutationPage.getByText(new RegExp(`1 × ${fixtures.simpleProductName}`))).toBeVisible()
-  await noMutationPage.getByRole('button', { name: new RegExp(fixtures.simpleProductName) }).click()
+  await noMutationPage.getByRole('button', { name: new RegExp(`^${fixtures.simpleProductName} SKU E2E-SIMPLE`) }).click()
   const rejectedAdd = noMutationPage.waitForResponse((response) =>
     response.request().method() === 'POST' && /\/sales\/[^/]+\/items$/.test(response.url()),
   )
