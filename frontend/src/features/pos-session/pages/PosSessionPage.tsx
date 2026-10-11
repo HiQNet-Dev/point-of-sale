@@ -93,7 +93,11 @@ export function PosSessionPage() {
   const [branchPage, setBranchPage] = useState(0)
   const [registerPage, setRegisterPage] = useState(0)
   const [selectedBranchId, setSelectedBranchId] = useState('')
+  const [selectedBranchSnapshot, setSelectedBranchSnapshot] = useState<Branch | null>(null)
+  const [selectedBranchPage, setSelectedBranchPage] = useState<number | null>(null)
   const [selectedRegisterId, setSelectedRegisterId] = useState('')
+  const [selectedRegisterSnapshot, setSelectedRegisterSnapshot] = useState<CashRegister | null>(null)
+  const [selectedRegisterPage, setSelectedRegisterPage] = useState<number | null>(null)
   const [suppressRegisterAutoSelect, setSuppressRegisterAutoSelect] = useState(false)
   const [dialogMode, setDialogMode] = useState<DialogMode>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -105,13 +109,19 @@ export function PosSessionPage() {
   })
   const branches = branchesQuery.data?.items ?? EMPTY_BRANCHES
   const selectedBranchIdForScope = useMemo(() => {
-    if (branches.some((branch) => branch.id === selectedBranchId)) return selectedBranchId
-    if (!selectedBranchId && branchesQuery.isSuccess && branchesQuery.data.totalElements === 1 && branches.length === 1) {
+    if (selectedBranchId) {
+      if (selectedBranchPage !== branchPage) return selectedBranchId
+      return branchesQuery.isSuccess && !branches.some((branch) => branch.id === selectedBranchId)
+        ? ''
+        : selectedBranchId
+    }
+    if (branchesQuery.isSuccess && branchesQuery.data.totalElements === 1 && branches.length === 1) {
       return branches[0].id
     }
     return ''
-  }, [branches, branchesQuery.data, branchesQuery.isSuccess, selectedBranchId])
+  }, [branchPage, branches, branchesQuery.data, branchesQuery.isSuccess, selectedBranchId, selectedBranchPage])
   const selectedBranch = branches.find((branch) => branch.id === selectedBranchIdForScope)
+    ?? (selectedBranchPage !== branchPage ? selectedBranchSnapshot : undefined)
 
   const registersQuery = useQuery({
     queryKey: posSessionKeys.registers(me?.organizationId ?? '', selectedBranchIdForScope, registerPage, PAGE_SIZE),
@@ -122,10 +132,14 @@ export function PosSessionPage() {
   const canAutoSelectRegister = !suppressRegisterAutoSelect && !isNotFound(registersQuery.error)
   const selectedRegisterIdForScope = useMemo(() => {
     if (isNotFound(registersQuery.error)) return ''
-    if (registers.some((register) => register.id === selectedRegisterId)) return selectedRegisterId
+    if (selectedRegisterId) {
+      if (selectedRegisterPage !== registerPage) return selectedRegisterId
+      return registersQuery.isSuccess && !registers.some((register) => register.id === selectedRegisterId)
+        ? ''
+        : selectedRegisterId
+    }
     if (
       canAutoSelectRegister
-      && !selectedRegisterId
       && registersQuery.isSuccess
       && registersQuery.data.totalElements === 1
       && registers.length === 1
@@ -133,8 +147,9 @@ export function PosSessionPage() {
       return registers[0].id
     }
     return ''
-  }, [canAutoSelectRegister, registers, registersQuery.data, registersQuery.error, registersQuery.isSuccess, selectedRegisterId])
+  }, [canAutoSelectRegister, registerPage, registers, registersQuery.data, registersQuery.error, registersQuery.isSuccess, selectedRegisterId, selectedRegisterPage])
   const selectedRegister = registers.find((register) => register.id === selectedRegisterIdForScope)
+    ?? (selectedRegisterPage !== registerPage ? selectedRegisterSnapshot : undefined)
 
   const shiftsQuery = useQuery({
     queryKey: posSessionKeys.openShifts(me?.organizationId ?? '', selectedBranchIdForScope, selectedRegisterIdForScope),
@@ -146,8 +161,14 @@ export function PosSessionPage() {
   const activeShift = !invariantBroken && openShifts.length === 1 ? openShifts[0] : undefined
 
   const branchSelection = (id: string) => {
+    const branch = branches.find((item) => item.id === id)
+    if (!branch) return
     setSelectedBranchId(id)
+    setSelectedBranchSnapshot(branch)
+    setSelectedBranchPage(branchPage)
     setSelectedRegisterId('')
+    setSelectedRegisterSnapshot(null)
+    setSelectedRegisterPage(null)
     setSuppressRegisterAutoSelect(false)
     setRegisterPage(0)
     setDialogMode(null)
@@ -155,10 +176,41 @@ export function PosSessionPage() {
   }
 
   const registerSelection = (id: string) => {
+    const register = registers.find((item) => item.id === id)
+    if (!register) return
     setSelectedRegisterId(id)
+    setSelectedRegisterSnapshot(register)
+    setSelectedRegisterPage(registerPage)
     setSuppressRegisterAutoSelect(false)
     setDialogMode(null)
     setMessage(null)
+  }
+
+  async function refreshBranchDiscoveryAfterNotFound() {
+    const pageToCheck = selectedBranchPage ?? branchPage
+    try {
+      const refreshed = await queryClient.fetchQuery({
+        queryKey: posSessionKeys.branches(pageToCheck, PAGE_SIZE),
+        queryFn: () => listMyBranches({ page: pageToCheck, size: PAGE_SIZE }),
+      })
+      const stillVisible = refreshed.items.find((branch) => branch.id === selectedBranchIdForScope)
+      if (selectedBranchId && stillVisible) {
+        setSelectedBranchSnapshot(stillVisible)
+      } else if (selectedBranchId && !stillVisible) {
+        setSelectedBranchId('')
+        setSelectedBranchSnapshot(null)
+        setSelectedBranchPage(null)
+        setSelectedRegisterId('')
+        setSelectedRegisterSnapshot(null)
+        setSelectedRegisterPage(null)
+        setRegisterPage(0)
+      }
+    } catch {
+      await queryClient.invalidateQueries({ queryKey: posSessionKeys.branches(branchPage, PAGE_SIZE) })
+    }
+    if (pageToCheck !== branchPage) {
+      await queryClient.invalidateQueries({ queryKey: posSessionKeys.branches(branchPage, PAGE_SIZE) })
+    }
   }
 
   const openMutation = useMutation({
@@ -214,10 +266,12 @@ export function PosSessionPage() {
       if (isNotFound(error)) {
         setDialogMode(null)
         setSelectedRegisterId('')
+        setSelectedRegisterSnapshot(null)
+        setSelectedRegisterPage(null)
         setSuppressRegisterAutoSelect(true)
         setMessage('La sucursal o la caja ya no están disponibles. Se actualizarán los datos.')
         await Promise.all([
-          queryClient.invalidateQueries({ queryKey: posSessionKeys.branches(branchPage, PAGE_SIZE) }),
+          refreshBranchDiscoveryAfterNotFound(),
           queryClient.invalidateQueries({
             queryKey: posSessionKeys.registers(me!.organizationId, selectedBranchIdForScope, registerPage, PAGE_SIZE),
           }),
@@ -258,12 +312,17 @@ export function PosSessionPage() {
       if (isNotFound(error)) {
         setDialogMode(null)
         setSelectedRegisterId('')
+        setSelectedRegisterSnapshot(null)
+        setSelectedRegisterPage(null)
         setSuppressRegisterAutoSelect(true)
         setRegisterPage(0)
         setMessage('La caja o el turno ya no están disponibles. Selecciona una caja actualizada.')
-        await queryClient.invalidateQueries({
-          queryKey: posSessionKeys.registers(me!.organizationId, selectedBranchIdForScope, registerPage, PAGE_SIZE),
-        })
+        await Promise.all([
+          refreshBranchDiscoveryAfterNotFound(),
+          queryClient.invalidateQueries({
+            queryKey: posSessionKeys.registers(me!.organizationId, selectedBranchIdForScope, 0, PAGE_SIZE),
+          }),
+        ])
         return
       }
       setMessage(isPermissionError(error) ? 'No tienes permiso para cerrar este turno.' : safeErrorMessage(error))
@@ -331,11 +390,19 @@ export function PosSessionPage() {
                       onChange={(event) => branchSelection(event.target.value)}
                       displayEmpty
                       renderValue={(id) => {
-                        const branch = branches.find((item) => item.id === id)
+                        const branch = branches.find((item) => item.id === id) ?? selectedBranch
                         return branch ? `${branch.name} · ${branch.code}` : 'Selecciona una sucursal'
                       }}
                     >
                       <MenuItem value="" disabled>Selecciona una sucursal</MenuItem>
+                      {selectedBranch && !branches.some((branch) => branch.id === selectedBranch.id) && (
+                        <MenuItem key={selectedBranch.id} value={selectedBranch.id}>
+                          <Stack direction="row" spacing={1.5} sx={{ width: '100%', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span>{selectedBranch.name} · {selectedBranch.code}</span>
+                            <StatusChip status={selectedBranch.status} />
+                          </Stack>
+                        </MenuItem>
+                      )}
                       {branches.map((branch) => (
                         <MenuItem key={branch.id} value={branch.id}>
                           <Stack direction="row" spacing={1.5} sx={{ width: '100%', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -359,14 +426,7 @@ export function PosSessionPage() {
                     page={branchPage}
                     totalPages={branchesQuery.data.totalPages}
                     label="sucursales"
-                    onChange={(page) => {
-                      setBranchPage(page)
-                      setSelectedBranchId('')
-                      setSelectedRegisterId('')
-                      setSuppressRegisterAutoSelect(false)
-                      setRegisterPage(0)
-                      setDialogMode(null)
-                    }}
+                    onChange={setBranchPage}
                   />
                 </>
               )}
@@ -381,7 +441,12 @@ export function PosSessionPage() {
                         severity={isPermissionError(registerError) ? 'warning' : 'error'}
                         role="alert"
                         action={isNotFound(registerError)
-                          ? <Button color="inherit" onClick={() => void registersQuery.refetch()}>Reintentar</Button>
+                          ? <Button
+                              color="inherit"
+                              onClick={() => void refreshBranchDiscoveryAfterNotFound()}
+                            >
+                              Actualizar sucursales
+                            </Button>
                           : undefined}
                       >
                         {isPermissionError(registerError)
@@ -406,11 +471,19 @@ export function PosSessionPage() {
                             onChange={(event) => registerSelection(event.target.value)}
                             displayEmpty
                             renderValue={(id) => {
-                              const register = registers.find((item) => item.id === id)
+                              const register = registers.find((item) => item.id === id) ?? selectedRegister
                               return register ? `${register.name} · ${register.code}` : 'Selecciona una caja'
                             }}
                           >
                             <MenuItem value="" disabled>Selecciona una caja</MenuItem>
+                            {selectedRegister && !registers.some((register) => register.id === selectedRegister.id) && (
+                              <MenuItem key={selectedRegister.id} value={selectedRegister.id}>
+                                <Stack direction="row" spacing={1.5} sx={{ width: '100%', alignItems: 'center', justifyContent: 'space-between' }}>
+                                  <span>{selectedRegister.name} · {selectedRegister.code}</span>
+                                  <StatusChip status={selectedRegister.status} />
+                                </Stack>
+                              </MenuItem>
+                            )}
                             {registers.map((register) => (
                               <MenuItem key={register.id} value={register.id}>
                                 <Stack direction="row" spacing={1.5} sx={{ width: '100%', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -434,12 +507,7 @@ export function PosSessionPage() {
                           page={registerPage}
                           totalPages={registersQuery.data.totalPages}
                           label="cajas"
-                          onChange={(page) => {
-                            setRegisterPage(page)
-                            setSelectedRegisterId('')
-                            setSuppressRegisterAutoSelect(false)
-                            setDialogMode(null)
-                          }}
+                          onChange={setRegisterPage}
                         />
                       </Stack>
                     )}
@@ -460,8 +528,13 @@ export function PosSessionPage() {
                             color="inherit"
                             onClick={() => {
                               setSelectedRegisterId('')
+                              setSelectedRegisterSnapshot(null)
+                              setSelectedRegisterPage(null)
                               setSuppressRegisterAutoSelect(true)
                               setMessage('La caja ya no está disponible. Selecciona una caja actualizada.')
+                              void queryClient.invalidateQueries({
+                                queryKey: posSessionKeys.registers(me.organizationId, selectedBranchIdForScope, 0, PAGE_SIZE),
+                              })
                             }}
                           >
                             Elegir otra caja

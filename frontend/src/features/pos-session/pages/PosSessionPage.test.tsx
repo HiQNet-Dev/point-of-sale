@@ -76,6 +76,9 @@ interface BackendOptions {
   shiftsStatus?: number
   closeStatus?: number
   openStatus?: number
+  openConflictCode?: 'BRANCH_INACTIVE' | 'CASH_REGISTER_INACTIVE'
+  closeConflictCode?: 'CONCURRENT_MODIFICATION' | 'CASH_SHIFT_ALREADY_CLOSED'
+  registerGate?: { branchId: string; promise: Promise<void> }
 }
 
 function createBackend(options: BackendOptions = {}) {
@@ -84,6 +87,7 @@ function createBackend(options: BackendOptions = {}) {
   let activeShift = options.openShift ?? null
   const branchRequests: URL[] = []
   const registerRequests: URL[] = []
+  const registerResponses: URL[] = []
   const shiftRequests: Array<{ url: URL; method: string; body: Record<string, unknown> | null }> = []
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -102,6 +106,8 @@ function createBackend(options: BackendOptions = {}) {
       const branchId = url.pathname.split('/branches/')[1]?.split('/')[0]
       const pageNumber = Number(url.searchParams.get('page') ?? 0)
       const scopedRegisters = registers.filter((register) => register.branchId === branchId)
+      if (options.registerGate?.branchId === branchId) await options.registerGate.promise
+      registerResponses.push(url)
       return json(page(scopedRegisters.slice(pageNumber * 20, (pageNumber + 1) * 20), scopedRegisters.length, pageNumber))
     }
     if (url.pathname.includes('/cash-shifts')) {
@@ -109,13 +115,30 @@ function createBackend(options: BackendOptions = {}) {
       shiftRequests.push({ url, method, body })
       if (method === 'POST' && url.pathname.endsWith('/close')) {
         if (options.closeStatus) return json({ code: 'FORBIDDEN', message: 'Forbidden' }, options.closeStatus)
+        if (options.closeConflictCode) {
+          if (options.closeConflictCode === 'CASH_SHIFT_ALREADY_CLOSED') activeShift = null
+          return json({ code: options.closeConflictCode, message: 'Changed' }, 409)
+        }
         if (options.openStatus) return json({ code: 'CONCURRENT_MODIFICATION', message: 'Changed' }, options.openStatus)
         const closed = activeShift ? { ...activeShift, status: 'CLOSED' as const } : null
         activeShift = null
         return json(closed)
       }
       if (method === 'POST') {
-        if (options.openStatus) return json({ code: 'CASH_REGISTER_ALREADY_HAS_OPEN_SHIFT', message: 'Already open' }, options.openStatus)
+        if (options.openConflictCode) return json({ code: options.openConflictCode, message: 'Inactive parent' }, 409)
+        if (options.openStatus) {
+          activeShift = {
+            id: SHIFT_ID,
+            organizationId: ORGANIZATION_ID,
+            branchId: BRANCH_A_ID,
+            cashRegisterId: REGISTER_A_ID,
+            status: 'OPEN',
+            openingAmount: 25,
+            openedAt: '2026-10-10T10:00:00Z',
+            version: 1,
+          }
+          return json({ code: 'CASH_REGISTER_ALREADY_HAS_OPEN_SHIFT', message: 'Already open' }, options.openStatus)
+        }
         activeShift = {
           id: SHIFT_ID,
           organizationId: ORGANIZATION_ID,
@@ -136,7 +159,7 @@ function createBackend(options: BackendOptions = {}) {
     return new Response(null, { status: 204 })
   })
 
-  return { fetchMock, branchRequests, registerRequests, shiftRequests }
+  return { fetchMock, branchRequests, registerRequests, registerResponses, shiftRequests }
 }
 
 function renderPosApp(backend: ReturnType<typeof createBackend>) {
@@ -293,6 +316,8 @@ describe('POS session operational vertical', () => {
     await chooseOption('Sucursal', /Centro · CTR/)
     expect(await screen.findByText('TURNO ACTIVO')).toBeTruthy()
     await chooseOption('Sucursal', /Norte · NTE/)
+    expect(screen.queryByText('TURNO ACTIVO')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Cerrar turno' })).toBeNull()
 
     await waitFor(() => expect(backend.registerRequests.some((url) => url.pathname.includes(`/branches/${BRANCH_B_ID}/`))).toBe(true))
     expect(screen.getByRole('combobox', { name: 'Sucursal' }).textContent).toBe('Norte · NTE')
@@ -300,6 +325,39 @@ describe('POS session operational vertical', () => {
     expect(screen.getByRole('combobox', { name: 'Caja' }).textContent).toBe('Caja secundaria · CAJA-2')
     expect(backend.shiftRequests.some((request) => request.url.pathname.includes(`/branches/${BRANCH_B_ID}/cash-registers/${REGISTER_B_ID}/`))).toBe(true)
     expect(screen.queryByText('TURNO ACTIVO')).toBeNull()
+  })
+
+  it('does not let a late register response from the previous branch contaminate the current selection', async () => {
+    const branchB: Branch = { ...branchA, id: BRANCH_B_ID, name: 'Norte', code: 'NTE' }
+    const registerB: CashRegister = {
+      ...registerA,
+      id: REGISTER_B_ID,
+      branchId: BRANCH_B_ID,
+      name: 'Caja norte',
+      code: 'NORTE-1',
+    }
+    let releaseBranchA!: () => void
+    const branchAGate = new Promise<void>((resolve) => { releaseBranchA = resolve })
+    const backend = createBackend({
+      branches: [branchA, branchB],
+      registers: [registerA, registerB],
+      registerGate: { branchId: BRANCH_A_ID, promise: branchAGate },
+    })
+    renderPosApp(backend)
+    await loginToPos()
+
+    await chooseOption('Sucursal', /Centro · CTR/)
+    await waitFor(() => expect(backend.registerRequests.some((url) => url.pathname.includes(`/branches/${BRANCH_A_ID}/`))).toBe(true))
+    await chooseOption('Sucursal', /Norte · NTE/)
+    expect(await screen.findByText('Sin turno activo')).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: 'Sucursal' }).textContent).toBe('Norte · NTE')
+    expect(screen.getByRole('combobox', { name: 'Caja' }).textContent).toBe('Caja norte · NORTE-1')
+
+    releaseBranchA()
+    await waitFor(() => expect(backend.registerResponses.some((url) => url.pathname.includes(`/branches/${BRANCH_A_ID}/`))).toBe(true))
+    expect(screen.getByRole('combobox', { name: 'Sucursal' }).textContent).toBe('Norte · NTE')
+    expect(screen.getByRole('combobox', { name: 'Caja' }).textContent).toBe('Caja norte · NORTE-1')
+    expect(backend.shiftRequests.some((request) => request.url.pathname.includes(`/branches/${BRANCH_B_ID}/cash-registers/${REGISTER_B_ID}/`))).toBe(true)
   })
 
   it('shows an empty self-scoped branch result instead of an error', async () => {
@@ -362,6 +420,67 @@ describe('POS session operational vertical', () => {
     expect(screen.queryByRole('button', { name: 'Cerrar turno' })).toBeNull()
   })
 
+  it.each([
+    {
+      code: 'BRANCH_INACTIVE' as const,
+      message: 'Esta sucursal está inactiva. Se actualizará su estado.',
+      refreshedResource: 'branch',
+    },
+    {
+      code: 'CASH_REGISTER_INACTIVE' as const,
+      message: 'Esta caja está inactiva. Se actualizará su estado.',
+      refreshedResource: 'register',
+    },
+  ])('reconciles an open conflict for $code without retrying', async ({ code, message, refreshedResource }) => {
+    const backend = createBackend({ openConflictCode: code })
+    renderPosApp(backend)
+    await loginToPos()
+    await screen.findByText('Sin turno activo')
+    fireEvent.click(screen.getByRole('button', { name: 'Abrir turno' }))
+    fireEvent.change(screen.getByLabelText('Fondo inicial'), { target: { value: '25' } })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Abrir turno' }))
+
+    expect(await screen.findByText(message)).toBeTruthy()
+    expect(backend.shiftRequests.filter((request) => request.method === 'POST')).toHaveLength(1)
+    expect(refreshedResource === 'branch' ? backend.branchRequests.length : backend.registerRequests.length).toBe(2)
+  })
+
+  it.each([
+    {
+      code: 'CONCURRENT_MODIFICATION' as const,
+      message: 'El turno cambió mientras intentabas cerrarlo. Se actualizarán los datos.',
+      expectActive: true,
+    },
+    {
+      code: 'CASH_SHIFT_ALREADY_CLOSED' as const,
+      message: 'El turno ya fue cerrado. Se actualizarán los datos.',
+      expectActive: false,
+    },
+  ])('reconciles close conflict $code from the OPEN-shift query', async ({ code, message, expectActive }) => {
+    const openShift: CashShift = {
+      id: SHIFT_ID,
+      organizationId: ORGANIZATION_ID,
+      branchId: BRANCH_A_ID,
+      cashRegisterId: REGISTER_A_ID,
+      status: 'OPEN',
+      openingAmount: 100,
+      openedAt: '2026-10-10T16:30:00Z',
+      version: 3,
+    }
+    const backend = createBackend({ openShift, closeConflictCode: code })
+    renderPosApp(backend)
+    await loginToPos()
+    expect(await screen.findByText('TURNO ACTIVO')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar turno' }))
+    fireEvent.change(screen.getByLabelText('Efectivo declarado'), { target: { value: '100' } })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cerrar turno' }))
+
+    expect(await screen.findByText(message)).toBeTruthy()
+    if (expectActive) expect(await screen.findByText('TURNO ACTIVO')).toBeTruthy()
+    else expect(await screen.findByText('Sin turno activo')).toBeTruthy()
+    expect(backend.shiftRequests.filter((request) => request.method === 'GET')).toHaveLength(2)
+  })
+
   it('keeps an OPEN shift visible when close is forbidden', async () => {
     const openShift: CashShift = {
       id: SHIFT_ID,
@@ -398,10 +517,45 @@ describe('POS session operational vertical', () => {
 
     expect(await screen.findByText('La caja ya tiene un turno activo. Se actualizará su estado.')).toBeTruthy()
     expect(backend.shiftRequests.filter((request) => request.method === 'GET')).toHaveLength(2)
-    expect(screen.getByText('Sin turno activo')).toBeTruthy()
+    expect(await screen.findByText('TURNO ACTIVO')).toBeTruthy()
   })
 
-  it('paginates branches with default size and resets downstream context', async () => {
+  it('preserves a selected branch and register when paging, and reaches registers beyond the first page', async () => {
+    const registers = Array.from({ length: 21 }, (_, index) => ({
+      ...registerA,
+      id: index === 0 ? REGISTER_A_ID : `register-response-${index}`,
+      name: `Register ${index}`,
+      code: `R-${index}`,
+    }))
+    const openShift: CashShift = {
+      id: SHIFT_ID,
+      organizationId: ORGANIZATION_ID,
+      branchId: BRANCH_A_ID,
+      cashRegisterId: REGISTER_A_ID,
+      status: 'OPEN',
+      openingAmount: 50,
+      openedAt: '2026-10-10T16:30:00Z',
+      version: 0,
+    }
+    const backend = createBackend({ registers, openShift })
+    renderPosApp(backend)
+    await loginToPos()
+
+    await chooseOption('Caja', /Register 0 · R-0/)
+    expect(await screen.findByText('TURNO ACTIVO')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Página siguiente de cajas' }))
+    await waitFor(() => expect(backend.registerRequests.some((url) => url.searchParams.get('page') === '1')).toBe(true))
+    expect((await screen.findByRole('combobox', { name: 'Caja' })).textContent).toBe('Register 0 · R-0')
+
+    await chooseOption('Caja', /Register 20 · R-20/)
+    expect(screen.getByRole('combobox', { name: 'Caja' }).textContent).toBe('Register 20 · R-20')
+    expect(screen.queryByText('TURNO ACTIVO')).toBeNull()
+    expect(backend.registerRequests[0]?.searchParams.get('page')).toBe('0')
+    expect(backend.registerRequests[0]?.searchParams.get('size')).toBe('20')
+    expect(backend.shiftRequests.some((request) => request.url.pathname.includes('/cash-registers/register-response-20/'))).toBe(true)
+  })
+
+  it('preserves a selected branch when paging to another branch page', async () => {
     const branches = Array.from({ length: 21 }, (_, index) => ({
       ...branchA,
       id: `branch-response-${index}`,
@@ -417,7 +571,10 @@ describe('POS session operational vertical', () => {
     expect(backend.branchRequests[0]?.searchParams.get('size')).toBe('20')
     fireEvent.click(screen.getByRole('button', { name: 'Página siguiente de sucursales' }))
     await waitFor(() => expect(backend.branchRequests.some((url) => url.searchParams.get('page') === '1')).toBe(true))
+    expect((await screen.findByRole('combobox', { name: 'Sucursal' })).textContent).toBe('Branch 0 · B-0')
     fireEvent.mouseDown(await screen.findByRole('combobox', { name: 'Sucursal' }))
     expect(await screen.findByRole('option', { name: /Branch 20 · B-20/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole('option', { name: /Branch 20 · B-20/ }))
+    expect(screen.getByRole('combobox', { name: 'Sucursal' }).textContent).toBe('Branch 20 · B-20')
   })
 })
