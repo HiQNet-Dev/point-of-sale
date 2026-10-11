@@ -48,6 +48,8 @@ function errorMessage(error: unknown, fallback: string): string {
   if (errorCode(error) === 'CASH_SHIFT_NOT_OPEN' || errorCode(error) === 'CASH_SHIFT_ALREADY_CLOSED') {
     return 'El turno ya no está abierto. Se actualizará el contexto operacional.'
   }
+  if (saleStateConflict(error)) return 'La venta ya no está abierta. Se actualizará la lista de ventas.'
+  if (errorCode(error) === 'SALE_ITEM_ALREADY_REMOVED') return 'El producto ya se había quitado. Se actualizará el carrito.'
   return fallback
 }
 
@@ -73,6 +75,10 @@ function requiredInactiveGroup(configuration: ProductConfiguration | undefined):
 
 function saleStateConflict(error: unknown): boolean {
   return ['SALE_NOT_OPEN', 'SALE_ALREADY_CANCELLED', 'SALE_ALREADY_COMPLETED'].includes(errorCode(error) ?? '')
+}
+
+function modifierConfigurationConflict(error: unknown): boolean {
+  return errorCode(error) === 'PRODUCT_MODIFIER_CONFIGURATION_UNAVAILABLE'
 }
 
 export function SalesWorkspace({ organizationId, branch, register, shift, locale, currency }: Props) {
@@ -154,6 +160,12 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
   const configuration = configurationQuery.data
 
   useEffect(() => {
+    if (errorCode(configurationQuery.error) === 'PRODUCT_INACTIVE') {
+      void queryClient.invalidateQueries({ queryKey: ['pos-catalog', organizationId, branchId, 'products'] })
+    }
+  }, [branchId, configurationQuery.error, organizationId, queryClient])
+
+  useEffect(() => {
     const nextSearch = searchInput.trim()
     if (nextSearch === search) return
     const timer = window.setTimeout(() => {
@@ -233,10 +245,20 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
     },
     onError: async (error) => {
       setOperationMessage(errorMessage(error, itemErrorMessage(error)))
-      if (errorCode(error) === 'CONCURRENT_MODIFICATION') await invalidateSale()
+      if (errorCode(error) === 'CONCURRENT_MODIFICATION' || saleStateConflict(error)) {
+        if (saleStateConflict(error)) {
+          setDialogMode(null)
+          setSelectedProductId('')
+        }
+        await invalidateSale()
+      }
+      if (modifierConfigurationConflict(error)) {
+        await queryClient.invalidateQueries({ queryKey: configurationKey })
+      }
       if (errorCode(error) === 'PRODUCT_INACTIVE') {
         setDialogMode(null)
         setSelectedProductId('')
+        setEditingItem(null)
         await queryClient.invalidateQueries({ queryKey: ['pos-catalog', organizationId, branchId, 'products'] })
       }
       if (['BRANCH_INACTIVE', 'CASH_REGISTER_INACTIVE', 'CASH_SHIFT_NOT_OPEN'].includes(errorCode(error) ?? '')) {
@@ -259,7 +281,23 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
     },
     onError: async (error) => {
       setOperationMessage(errorMessage(error, itemErrorMessage(error)))
-      if (errorCode(error) === 'CONCURRENT_MODIFICATION' || saleStateConflict(error)) await invalidateSale()
+      if (errorCode(error) === 'CONCURRENT_MODIFICATION' || saleStateConflict(error)) {
+        if (saleStateConflict(error)) {
+          setDialogMode(null)
+          setSelectedProductId('')
+          setEditingItem(null)
+        }
+        await invalidateSale()
+      }
+      if (modifierConfigurationConflict(error)) {
+        await queryClient.invalidateQueries({ queryKey: configurationKey })
+      }
+      if (errorCode(error) === 'PRODUCT_INACTIVE') {
+        setDialogMode(null)
+        setSelectedProductId('')
+        setEditingItem(null)
+        await queryClient.invalidateQueries({ queryKey: ['pos-catalog', organizationId, branchId, 'products'] })
+      }
       if (['BRANCH_INACTIVE', 'CASH_REGISTER_INACTIVE', 'CASH_SHIFT_NOT_OPEN'].includes(errorCode(error) ?? '')) {
         await refreshOperationalContext()
       }
@@ -277,7 +315,11 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
     },
     onError: async (error) => {
       setOperationMessage(errorMessage(error, 'No se pudo quitar el producto.'))
-      if (errorCode(error) === 'CONCURRENT_MODIFICATION' || saleStateConflict(error)) await invalidateSale()
+      if (errorCode(error) === 'CONCURRENT_MODIFICATION' || saleStateConflict(error)
+        || errorCode(error) === 'SALE_ITEM_ALREADY_REMOVED') {
+        setItemToRemove(null)
+        await invalidateSale()
+      }
       if (['BRANCH_INACTIVE', 'CASH_REGISTER_INACTIVE', 'CASH_SHIFT_NOT_OPEN'].includes(errorCode(error) ?? '')) {
         await refreshOperationalContext()
       }
@@ -297,7 +339,10 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
     },
     onError: async (error) => {
       setOperationMessage(errorMessage(error, 'No se pudo cancelar la venta.'))
-      if (errorCode(error) === 'CONCURRENT_MODIFICATION' || saleStateConflict(error)) await invalidateSale()
+      if (errorCode(error) === 'CONCURRENT_MODIFICATION' || saleStateConflict(error)) {
+        setCancelDialogOpen(false)
+        await invalidateSale()
+      }
     },
   })
 

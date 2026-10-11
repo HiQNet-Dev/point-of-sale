@@ -132,6 +132,8 @@ interface HarnessOptions {
   products?: typeof product[]
   configuration?: ProductConfiguration
   addError?: { status: number; code: string }
+  failFirstSaleDetail?: boolean
+  configurationError?: { status: number; code: string }
   parents?: { branch?: Branch; register?: CashRegister; shift?: CashShift }
 }
 
@@ -139,6 +141,7 @@ function setup(options: HarnessOptions = {}) {
   let sales = [...(options.initialSales ?? [])]
   let detail = options.initialDetail ?? { sale: summary, items: [] }
   const products = options.products ?? [product]
+  let failFirstSaleDetail = options.failFirstSaleDetail ?? false
   const requests: Array<{ url: URL; method: string; body: Record<string, unknown> | null }> = []
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), 'http://localhost')
@@ -148,7 +151,9 @@ function setup(options: HarnessOptions = {}) {
 
     if (url.pathname.endsWith('/sales') && method === 'GET') {
       const pageNumber = Number(url.searchParams.get('page') ?? '0')
-      return json(page(sales.slice(pageNumber * 20, pageNumber * 20 + 20), sales.length, pageNumber))
+      const status = url.searchParams.get('status')
+      const matchingSales = status ? sales.filter((sale) => sale.status === status) : sales
+      return json(page(matchingSales.slice(pageNumber * 20, pageNumber * 20 + 20), matchingSales.length, pageNumber))
     }
     if (url.pathname.endsWith('/sales') && method === 'POST') {
       const created = { ...summary, id: `sale-${sales.length + 1}`, totalAmount: 0, version: 0 }
@@ -160,12 +165,23 @@ function setup(options: HarnessOptions = {}) {
     if (detailSaleId && method === 'GET') {
       const selected = sales.find((sale) => sale.id === detailSaleId)
       if (selected) {
+        if (failFirstSaleDetail) {
+          failFirstSaleDetail = false
+          return json({ code: 'TEMPORARY_FAILURE', message: 'Try again' }, 503)
+        }
         if (detail.sale.id !== selected.id) detail = { sale: selected, items: [] }
         return json(detail)
       }
     }
     if (url.pathname.endsWith(`/sales/${detail.sale.id}/items`) && method === 'POST') {
-      if (options.addError) return json({ code: options.addError.code, message: 'Rejected' }, options.addError.status)
+      if (options.addError) {
+        if (['SALE_NOT_OPEN', 'SALE_ALREADY_CANCELLED', 'SALE_ALREADY_COMPLETED'].includes(options.addError.code)) {
+          const status = options.addError.code === 'SALE_ALREADY_COMPLETED' ? 'COMPLETED' : 'CANCELLED'
+          detail = { ...detail, sale: { ...detail.sale, status } }
+          sales = sales.map((sale) => sale.id === detail.sale.id ? detail.sale : sale)
+        }
+        return json({ code: options.addError.code, message: 'Rejected' }, options.addError.status)
+      }
       detail = {
         sale: { ...detail.sale, totalAmount: 37, version: detail.sale.version + 1 },
         items: [item({ quantity: Number(body?.quantity), lineTotal: 37 })],
@@ -200,7 +216,12 @@ function setup(options: HarnessOptions = {}) {
       const pageNumber = Number(url.searchParams.get('page') ?? '0')
       return json(page(products.slice(pageNumber * 20, pageNumber * 20 + 20), products.length, pageNumber))
     }
-    if (url.pathname.endsWith(`/pos/catalog/products/${productId}/configuration`)) return json(options.configuration ?? configuration)
+    if (url.pathname.endsWith(`/pos/catalog/products/${productId}/configuration`)) {
+      if (options.configurationError) {
+        return json({ code: options.configurationError.code, message: 'Unavailable' }, options.configurationError.status)
+      }
+      return json(options.configuration ?? configuration)
+    }
     return json({ code: 'NOT_FOUND', message: 'Not found' }, 404)
   })
 
@@ -241,6 +262,17 @@ describe('POS sales workspace', () => {
     expect(await screen.findByText('Tu venta está vacía. Selecciona un producto para comenzar.')).toBeTruthy()
     expect(backend.requests.filter((request) => request.method === 'POST' && request.url.pathname.endsWith('/sales'))).toHaveLength(1)
     expect(backend.requests.some((request) => request.url.pathname.endsWith('/pos/catalog/products'))).toBe(true)
+  })
+
+  it('recovers a created Sale after its first detail request fails without creating a replacement', async () => {
+    const backend = setup({ failFirstSaleDetail: true })
+    expect(await screen.findByText('No hay ventas abiertas.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Nueva venta' }))
+    expect(await screen.findByText('No se pudo cargar la venta.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Actualizar' }))
+    expect(await screen.findByText('Tu venta está vacía. Selecciona un producto para comenzar.')).toBeTruthy()
+    expect(backend.requests.filter((request) => request.method === 'POST' && request.url.pathname.endsWith('/sales'))).toHaveLength(1)
+    expect(backend.requests.filter((request) => request.method === 'GET' && request.url.pathname.endsWith('/sales/sale-1'))).toHaveLength(2)
   })
 
   it('resumes the persisted Sale, renders snapshots and uses server version for add', async () => {
@@ -399,6 +431,19 @@ describe('POS sales workspace', () => {
       && request.url.searchParams.get('categoryId') === 'category-1')).toBe(true))
   })
 
+  it('refreshes Product discovery when configuration reports that Product became inactive', async () => {
+    const backend = setup({
+      initialSales: [summary],
+      configurationError: { status: 409, code: 'PRODUCT_INACTIVE' },
+    })
+    expect(await screen.findByRole('button', { name: /Café de olla/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Café de olla/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Agregar producto' })
+    expect(await within(dialog).findByText('Este producto dejó de estar disponible. Cierra la configuración y actualiza el catálogo.')).toBeTruthy()
+    expect(within(dialog).getByRole('button', { name: 'Agregar a la venta' }).hasAttribute('disabled')).toBe(true)
+    await waitFor(() => expect(backend.requests.filter((request) => request.url.pathname.endsWith('/pos/catalog/products'))).toHaveLength(2))
+  })
+
   it('blocks a product with an inactive required group and keeps inactive options unavailable', async () => {
     const unavailableConfiguration: ProductConfiguration = {
       ...configuration,
@@ -415,6 +460,23 @@ describe('POS sales workspace', () => {
     expect(screen.queryByText('Grupo opcional oculto')).toBeNull()
     expect(within(dialog).getByRole('button', { name: 'Agregar a la venta' }).hasAttribute('disabled')).toBe(true)
     expect((within(dialog).getByLabelText(/No disponible/) as HTMLInputElement).disabled).toBe(true)
+  })
+
+  it('reconciles an externally completed Sale after an add terminal-state conflict', async () => {
+    const backend = setup({
+      initialSales: [summary],
+      addError: { status: 409, code: 'SALE_ALREADY_COMPLETED' },
+    })
+    expect(await screen.findByRole('button', { name: /Café de olla/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Café de olla/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Agregar producto' })
+    fireEvent.click(await within(dialog).findByLabelText(/Entera/))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Agregar a la venta' }))
+    expect(await screen.findByText('La venta ya no está abierta. Se actualizará la lista de ventas.')).toBeTruthy()
+    expect(await screen.findByText('No hay ventas abiertas.')).toBeTruthy()
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Agregar producto' })).toBeNull())
+    expect(backend.requests.filter((request) => request.method === 'GET' && request.url.pathname.endsWith('/sales/sale-1'))).toHaveLength(2)
+    expect(backend.requests.filter((request) => request.method === 'POST' && request.url.pathname.endsWith('/sales/sale-1/items'))).toHaveLength(1)
   })
 
   it('does not retry a stale add and refetches Sale detail after conflict', async () => {
