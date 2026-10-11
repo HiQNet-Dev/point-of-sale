@@ -148,10 +148,13 @@ public class SaleService {
         SaleItem item = SaleItem.create(organizationId, saleId, quote.product().getId(), quote.product().getSku(), quote.product().getName(),
                 quote.product().getUnitPrice(), quote.modifierDelta(), quote.effectiveUnitPrice(), quantity,
                 saleItemRepository.findMaxPositionBySaleId(saleId) + 1);
+        // Persist the aggregate version before inserting a child row. Competing
+        // writes with the same expected version therefore fail as a deliberate
+        // optimistic conflict rather than leaking a child-position constraint.
+        recalculateTotal(sale, activeLineTotal(saleId, null).add(item.getLineTotal()));
+        Sale saved = saleRepository.saveAndFlush(sale);
         saleItemRepository.save(item);
         saveModifierSnapshots(item, quote.selections());
-        recalculateTotal(sale);
-        Sale saved = saleRepository.saveAndFlush(sale);
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("productId", productId.toString());
         metadata.put("quantity", quantity);
@@ -175,14 +178,15 @@ public class SaleService {
         if (item.getQuantity() == quantity && previousOptions.equals(requestedOptions)) {
             return detail(sale);
         }
+        BigDecimal proposedLineTotal = lineTotal(quote.effectiveUnitPrice(), quantity);
+        recalculateTotal(sale, activeLineTotal(saleId, saleItemId).add(proposedLineTotal));
+        Sale saved = saleRepository.saveAndFlush(sale);
         item.updateQuote(quote.product().getSku(), quote.product().getName(), quote.product().getUnitPrice(), quote.modifierDelta(), quote.effectiveUnitPrice(), quantity);
         // Modifiers of an ACTIVE line represent its current quote. Removed/cancelled
         // line snapshots are never touched because the state guards above reject them.
         saleItemModifierRepository.deleteBySaleItemId(saleItemId);
         saleItemModifierRepository.flush();
         saveModifierSnapshots(item, quote.selections());
-        recalculateTotal(sale);
-        Sale saved = saleRepository.saveAndFlush(sale);
         auditPort.record(AuditRecord.ofBranch(organizationId, branchId, "sale.item.updated", "sale", saleId,
                 AuditMetadata.of(Map.of("saleItemId", saleItemId.toString(), "changedFields", List.of("quantity", "modifierOptionIds")))));
         return detail(saved);
@@ -195,9 +199,9 @@ public class SaleService {
         Sale sale = requireMutableSale(organizationId, branchId, cashRegisterId, cashShiftId, saleId, expectedSaleVersion);
         SaleItem item = saleItemRepository.findByIdAndSaleId(saleItemId, saleId)
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, ErrorCodes.SALE_ITEM_NOT_FOUND, "Sale item not found"));
-        item.remove(actorUserId, clock.instant());
-        recalculateTotal(sale);
+        recalculateTotal(sale, activeLineTotal(saleId, saleItemId));
         Sale saved = saleRepository.saveAndFlush(sale);
+        item.remove(actorUserId, clock.instant());
         auditPort.record(AuditRecord.ofBranch(organizationId, branchId, "sale.item.removed", "sale", saleId,
                 AuditMetadata.of("saleItemId", saleItemId.toString())));
         return detail(saved);
@@ -321,11 +325,23 @@ public class SaleService {
         saleItemModifierRepository.saveAll(snapshots);
     }
 
-    private void recalculateTotal(Sale sale) {
-        BigDecimal total = saleItemRepository.findBySaleIdAndStatusOrderByPositionAsc(sale.getId(), SaleItemStatus.ACTIVE).stream()
-                .map(SaleItem::getLineTotal).reduce(BigDecimal.ZERO, BigDecimal::add);
+    /** Recomputes from the persisted ACTIVE lines, excluding a line being replaced or removed. */
+    private BigDecimal activeLineTotal(UUID saleId, UUID excludedSaleItemId) {
+        return saleItemRepository.findBySaleIdAndStatusOrderByPositionAsc(saleId, SaleItemStatus.ACTIVE).stream()
+                .filter(item -> !item.getId().equals(excludedSaleItemId))
+                .map(SaleItem::getLineTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private void recalculateTotal(Sale sale, BigDecimal total) {
         validateMoney("totalAmount", total);
         sale.recalculateTotal(total, clock.instant());
+    }
+
+    private BigDecimal lineTotal(BigDecimal effectiveUnitPrice, int quantity) {
+        BigDecimal total = effectiveUnitPrice.multiply(BigDecimal.valueOf(quantity));
+        validateMoney("lineTotal", total);
+        return total;
     }
 
     private SaleDetail detail(Sale sale) {

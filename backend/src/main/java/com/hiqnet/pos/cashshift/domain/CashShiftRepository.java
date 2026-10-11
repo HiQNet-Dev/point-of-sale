@@ -36,10 +36,7 @@ public interface CashShiftRepository extends JpaRepository<CashShift, UUID>, Jpa
     boolean existsByOrganizationIdAndBranchIdAndCashRegisterIdAndStatus(
             UUID organizationId, UUID branchId, UUID cashRegisterId, CashShiftStatus status);
 
-    /**
-     * The open shift of a register (if any). Kept for a future Sales module to
-     * attach a sale to the current shift; no Sales code exists yet.
-     */
+    /** The open shift of a register, if any. */
     Optional<CashShift> findFirstByOrganizationIdAndBranchIdAndCashRegisterIdAndStatusOrderByOpenedAtDesc(
             UUID organizationId, UUID branchId, UUID cashRegisterId, CashShiftStatus status);
 }

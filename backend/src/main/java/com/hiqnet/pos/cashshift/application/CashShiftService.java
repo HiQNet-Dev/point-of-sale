@@ -179,10 +179,7 @@ public class CashShiftService {
                 buildSpecification(organizationId, branchId, cashRegisterId, status), pageable);
     }
 
-    /**
-     * The current OPEN shift of a register, if any. Kept for a future Sales
-     * module; there is no Sales coupling now.
-     */
+    /** The current OPEN shift of a register, if any. */
     @Transactional(readOnly = true)
     public Optional<CashShift> findOpen(UUID organizationId, UUID branchId, UUID cashRegisterId) {
         return cashShiftRepository.findFirstByOrganizationIdAndBranchIdAndCashRegisterIdAndStatusOrderByOpenedAtDesc(
