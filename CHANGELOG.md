@@ -4,14 +4,16 @@ All notable changes to HiQNet POS are documented in this file.
 
 ## [Unreleased]
 
-### Inventory — Branch Stock/Ledger candidate / PR open
+### Inventory — v0.3 development
 
-- Added V17 branch-scoped lazy balances and immutable `OPENING`/`ADJUSTMENT` ledger, exact `NUMERIC(19,6)` quantity strings, row locking/expectedVersion, transactional audit and branch-scoped stock permissions (47 → 49). Existing grants are unchanged. Manual adjustments may correct stock below zero; Sales checkout policy remains open. Recipes, Purchasing, Transfers, costing, frontend and Sales integration are excluded.
-- Inventory Item Catalog is implemented in V16: organization-owned definitions, immutable slug code, base units, fractional-unit metadata and organization-scoped API. Migration permission additions do not auto-grant existing roles; fresh bootstrap receives the current catalog.
+- Implemented V17 branch-scoped lazy balances and immutable `OPENING`/`ADJUSTMENT` ledger, exact `NUMERIC(19,6)` quantity strings, row locking/expectedVersion, transactional audit and branch-scoped stock permissions (47 → 49). Existing grants are unchanged. Manual adjustments may correct stock below zero; the Sales checkout policy remains unresolved. Recipes, Purchasing, Transfers, costing, frontend and Sales integration are excluded.
+- Implemented the V16 Inventory Item Catalog: organization-owned definitions, immutable slug code, base units, fractional-unit metadata and organization-scoped API. Permission additions do not auto-grant existing roles; fresh bootstrap receives the current catalog.
+
+## [0.2.0] - 2026-10-12
 
 ### POS Core
 
-Development for v0.2.x has started.
+Released POS Core v0.2.0 from the historical POS Core cut; Inventory is not part of that release.
 
 - POS integrated E2E verification is green 3/3 in isolated CI runs against Chromium, Spring Boot and PostgreSQL 17; the suite includes real POS browser journeys and read-only persistence assertions.
 - Product Browser + Persisted Cart frontend is implemented: `/pos` lists and resumes OPEN Sales, creates a Sale only from an explicit action, browses the branch-context Operational Catalog, and performs SaleItem add/edit/remove/cancel mutations. The Sale detail is the persisted cart and pricing authority.

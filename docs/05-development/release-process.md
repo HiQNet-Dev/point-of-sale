@@ -1,9 +1,9 @@
 # Proceso de release
 
-**Estado: primera release técnica privada preparada — `v0.1.0` (Foundation,
-2026-10-10).** El texto siguiente describe el proceso ejecutable; los gates
-técnicos y legales del repositorio están cerrados y la release se materializa
-en un único commit `chore(release): v0.1.0`.
+**Estado: release técnica privada publicada — `v0.2.0` (POS Core,
+2026-10-12).** La release se validó sobre su corte histórico POS Core y no incluye
+Inventory, que pertenece al desarrollo actual v0.3. La secuencia sigue el proceso
+verificado en v0.1.0: commit dedicado, CI verde, tag anotado y GitHub Release.
 
 ## Versionado: SemVer
 
@@ -18,11 +18,11 @@ en un único commit `chore(release): v0.1.0`.
 
 1. `VERSION` (raíz) = **fuente de verdad de release**.
 2. `backend/pom.xml` = debe coincidir con `VERSION`.
-3. `frontend/package.json` = paquete privado; se sincroniza con `VERSION` como
-   `0.1.0-SNAPSHOT`/`0.1.0`; no define la versión de release.
+3. `frontend/package.json` = paquete privado; se sincroniza con `VERSION` para
+   releases y snapshots; no define la versión de release.
 
 En un release, el bump se hace en el ORDEN: `VERSION` → `pom.xml` →
-`package.json` (mismo valor), en un commit dedicado (`chore(release): v0.1.0`).
+`package.json` (mismo valor), en un commit dedicado (`chore(release): vX.Y.Z`).
 
 ## Release gate v0.1.0 (checklist de autorización)
 
@@ -54,18 +54,18 @@ comerciales** correspondientes (EULA/acuerdos de servicio, futuros).
    (`docs/05-development/legal-status.md`). Los términos comerciales hacia el
    cliente (EULA/servicio/suscripción) se definen aparte antes del primer
    piloto/cliente externo.
-2. **Bump**: `VERSION` → `0.1.0` (+ `pom.xml`, `package.json` sincronizados).
+2. **Bump**: `VERSION` → versión final del release (+ `pom.xml`, `package.json` sincronizados).
 3. **CI completo** sobre el commit de bump (backend+frontend+compose verdes).
 4. **Changelog / release notes**: derivar de Conventional Commits desde el
    último punto de referencia; revisión humana de HiQNet.
-5. **Tag `v0.1.0`** en Git, apuntando al commit de bump validado.
+5. **Tag anotado `vX.Y.Z`** en Git, apuntando al commit de bump validado.
 6. **GitHub Release** con las notas aprobadas.
 7. **Artefactos**: política mínima para esta fundación — fuente = tag +
    `backend/target/hiqnet-pos-backend-0.1.0.jar` del build validado si el
    workflow de release lo justifica. No existe pipeline de imágenes OCI, npm
    package ni instaladores todavía (nada que inventar).
-8. **Post-release**: abrir el ciclo siguiente (`0.2.0-SNAPSHOT` en `VERSION`
-   y `pom.xml`).
+8. **Post-release**: abrir el ciclo siguiente en `main` (`0.3.0-SNAPSHOT` en
+   `VERSION`, `pom.xml` y `package.json`) después de publicar `v0.2.0`.
 
 ## Rollback / corrección
 
@@ -77,8 +77,8 @@ comerciales** correspondientes (EULA/acuerdos de servicio, futuros).
 
 ## Hoy
 
-- **Primera release preparada: `v0.1.0`** (release técnica privada de la
-  Foundation; tag y GitHub Release privada publicados tras CI final verde).
+- **Última release: `v0.2.0`** (POS Core, release técnica privada desde el corte
+  histórico `cd3acf5`; el `main` de desarrollo puede contener trabajo posterior).
 - Producto **no comercialmente estable**; sin garantías entre snapshots.
 - **Distribución legal del repositorio resuelta**: propietario / All Rights
   Reserved, `LICENSE` presente, repo privado (no open-source).
