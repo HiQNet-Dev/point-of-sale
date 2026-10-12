@@ -49,6 +49,21 @@ async function completeCheckout(page: import('@playwright/test').Page) {
   await expect(page.getByRole('button', { name: 'Nueva venta' })).toBeVisible()
 }
 
+function exactMoneyUnits(value: string): bigint {
+  const match = /^(-?)(\d+)(?:\.(\d{1,4}))?$/.exec(value)
+  if (!match) throw new Error(`Invalid E2E money value: ${value}`)
+  const units = BigInt(match[2]) * 10_000n + BigInt((match[3] ?? '').padEnd(4, '0') || '0')
+  return match[1] === '-' ? -units : units
+}
+
+function normalizePayments(payments: Array<{ method: string; amount: string; tenderedAmount?: string }>) {
+  return payments.map(({ method, amount, tenderedAmount }) => ({
+    method,
+    amount: exactMoneyUnits(amount),
+    ...(tenderedAmount === undefined ? {} : { tenderedAmount: exactMoneyUnits(tenderedAmount) }),
+  }))
+}
+
 test('cashier can recover POS, configure products and complete sales without payment.read', async ({ page, browser, request }) => {
   const fixtures = JSON.parse(await readFile(fixtureFile, 'utf8')) as Fixtures
   const apiBase = process.env.E2E_API_URL ?? 'http://127.0.0.1:8080/api/v1'
@@ -187,8 +202,8 @@ test('cashier can recover POS, configure products and complete sales without pay
   await page.getByLabel('Efectivo recibido').fill('20.0000')
   await expect(page.getByRole('status').filter({ hasText: 'Cambio estimado' })).toBeVisible()
   await completeCheckout(page)
-  expect(checkoutBodies.at(-1)?.payments).toEqual([
-    { method: 'CASH', amount: '10.1000', tenderedAmount: '20.0000' },
+  expect(normalizePayments(checkoutBodies.at(-1)?.payments ?? [])).toEqual([
+    { method: 'CASH', amount: 101_000n, tenderedAmount: 200_000n },
   ])
 
   await newSale(page, saleCreates)
@@ -229,9 +244,9 @@ test('cashier can recover POS, configure products and complete sales without pay
   await page.getByRole('option', { name: 'Tarjeta' }).click()
   await page.getByRole('button', { name: /Usar restante/ }).click()
   await completeCheckout(page)
-  expect(checkoutBodies.at(-1)?.payments).toHaveLength(1)
-  expect(checkoutBodies.at(-1)?.payments[0]).toMatchObject({ method: 'CARD', amount: '0.2000' })
-  expect(checkoutBodies.at(-1)?.payments[0]).not.toHaveProperty('tenderedAmount')
+  expect(normalizePayments(checkoutBodies.at(-1)?.payments ?? [])).toEqual([
+    { method: 'CARD', amount: 2_000n },
+  ])
   expect(paymentReads).toBe(0)
   expect(saleCreates).toHaveLength(3)
 
@@ -250,9 +265,9 @@ test('cashier can recover POS, configure products and complete sales without pay
   await page.getByLabel('Efectivo recibido').fill('10.0000')
   await expect(page.getByRole('status').filter({ hasText: 'Cambio estimado' })).toBeVisible()
   await completeCheckout(page)
-  expect(checkoutBodies.at(-1)?.payments).toEqual([
-    { method: 'CARD', amount: '4.1000' },
-    { method: 'CASH', amount: '6.0000', tenderedAmount: '10.0000' },
+  expect(normalizePayments(checkoutBodies.at(-1)?.payments ?? [])).toEqual([
+    { method: 'CARD', amount: 41_000n },
+    { method: 'CASH', amount: 60_000n, tenderedAmount: 100_000n },
   ])
 
   await newSale(page, saleCreates)
@@ -268,9 +283,9 @@ test('cashier can recover POS, configure products and complete sales without pay
   await page.getByRole('option', { name: 'Tarjeta' }).click()
   await page.getByRole('button', { name: /Usar restante/ }).last().click()
   await completeCheckout(page)
-  expect(checkoutBodies.at(-1)?.payments).toEqual([
-    { method: 'CARD', amount: '3.1000' },
-    { method: 'CARD', amount: '7.0000' },
+  expect(normalizePayments(checkoutBodies.at(-1)?.payments ?? [])).toEqual([
+    { method: 'CARD', amount: 31_000n },
+    { method: 'CARD', amount: 70_000n },
   ])
   expect(saleCreates).toHaveLength(5)
 
