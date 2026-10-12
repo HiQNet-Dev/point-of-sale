@@ -4,10 +4,15 @@ All notable changes to HiQNet POS are documented in this file.
 
 ## [Unreleased]
 
+### Inventory — candidate / PR open
+
+- Added the organization-owned Inventory Item catalog foundation (`V16` candidate): immutable normalized codes, `UNIT`/`GRAM`/`MILLILITER`, fractional-unit metadata, ACTIVE/INACTIVE lifecycle, optimistic concurrency, organization-scoped API, two RBAC permissions and transactional AuditEvent integration. Existing role grants are unchanged; fresh bootstrap receives the current permission catalog. Branch stock, movement ledger, recipes and Sales integration are not included.
+
 ### POS Core
 
 Development for v0.2.x has started.
 
+- POS integrated E2E verification is green 3/3 in isolated CI runs against Chromium, Spring Boot and PostgreSQL 17; the suite includes real POS browser journeys and read-only persistence assertions.
 - Product Browser + Persisted Cart frontend is implemented: `/pos` lists and resumes OPEN Sales, creates a Sale only from an explicit action, browses the branch-context Operational Catalog, and performs SaleItem add/edit/remove/cancel mutations. The Sale detail is the persisted cart and pricing authority.
 - Added candidate POS Checkout UI: CASH, CARD and split-tender instructions are held only in ephemeral form state and submitted atomically to the existing checkout endpoint. Exact scale-4 BigInt arithmetic previews applied/remaining/cash change; the backend remains authoritative. No `payment.read` dependency, actual card processing, payment-draft persistence or automatic next Sale.
 - Added candidate Operational POS Catalog (`V15`): branch-context `pos.catalog.read`

@@ -76,7 +76,7 @@ class BootstrapApiTest extends AbstractBootstrapIntegrationTest {
         Long granted = jdbcTemplate.queryForObject(
                 "select count(*) from role_permissions where role_id = ?", Long.class, administratorRoleId);
         Long catalog = jdbcTemplate.queryForObject("select count(*) from permissions", Long.class);
-        assertThat(catalog).isEqualTo(45);
+        assertThat(catalog).isEqualTo(47);
         assertThat(granted).isEqualTo(catalog);
         assertThat(administratorId).isNotNull();
     }

@@ -11,7 +11,7 @@ User
   ↓ user_organization_roles (organization_id, user_id, role_id)     [ORGANIZATION scope]
 Role  (per Organization; code slug único e inmutable; status ACTIVE|INACTIVE)
   ↓ role_permissions (role_id, permission_code)
-Permission (catálogo, sembrado por V5/V6/V7/V9/V10/V11/V12/V13/V14/V15; sin CRUD de cliente)
+Permission (catálogo, sembrado por V5/V6/V7/V9/V10/V11/V12/V13/V14/V15/V16; sin CRUD de cliente)
 
 User
   ↓ branch_memberships (organization_id, branch_id, user_id, status)  [BRANCH scope]
@@ -20,7 +20,7 @@ Role   (mismas definiciones de roles; sin modelo BranchRole separado)
 ```
 
 - **Permissions**: catálogo del SISTEMA (`permissions.code` PK natural).
-  Se crean únicamente vía Flyway (`V5`/`V6`/`V7`/`V9`/`V10`/`V11`/`V12`/`V13`/`V14`/`V15`). Orden `code ASC`.
+  Se crean únicamente vía Flyway (`V5`/`V6`/`V7`/`V9`/`V10`/`V11`/`V12`/`V13`/`V14`/`V15`/`V16`). Orden `code ASC`.
 - **Role**: pertenece a una organización; `code` normalizado (trim+lowercase,
   slug) único por organización e inmutable; `name` editable; sin DELETE
   (baja = `status INACTIVE`).
@@ -114,6 +114,9 @@ avala en una sola `EXISTS` (`BranchMembershipRoleRepository`
 | GET /organizations/{id}/branches/{branchId}/pos/catalog/categories | `pos.catalog.read` (branch context; Branch ACTIVE) |
 | GET /organizations/{id}/branches/{branchId}/pos/catalog/products | `pos.catalog.read` (branch context; Product ACTIVE-only) |
 | GET /organizations/{id}/branches/{branchId}/pos/catalog/products/{productId}/configuration | `pos.catalog.read` (branch context; configuration and options batched) |
+| GET /organizations/{id}/inventory-items[/{inventoryItemId}] | `inventory.item.read` (organization scope) |
+| POST /organizations/{id}/inventory-items | `inventory.item.write` (organization scope) |
+| PATCH /organizations/{id}/inventory-items/{inventoryItemId} | `inventory.item.write` (organization scope) |
 | GET /organizations/{id}/categories | `category.read` (org scope; administrative catalog) |
 | POST /organizations/{id}/categories | `category.create` (org scope) |
 | GET /organizations/{id}/categories/{categoryId} | `category.read` (org scope) |
@@ -182,6 +185,14 @@ If-Match todavía.
 Un rol `INACTIVE` **no concede** permissions; los assignments permanecen y al
 volver `ACTIVE` vuelven a conceder (intencional; documentado).
 
+## Inventory Item catalog (V16 candidate)
+
+`inventory.item.read` and `inventory.item.write` are independent organization-scope
+permissions. V16 adds both to the system catalog without granting either to existing
+roles. New secure-bootstrap installations receive both because bootstrap grants the
+complete current permission catalog. Inventory permissions are not included in JWT
+claims.
+
 ## POS operational catalog
 
 `pos.catalog.read` es una capability separada de `product.read`, `category.read`
@@ -189,8 +200,9 @@ y `modifier.*`. Se evalúa con `hasBranchPermission`: un grant organization-wide
 actúa como override para Branches de esa organización; una membresía con el grant
 solo autoriza la Branch exacta y ACTIVE. No se infiere desde `sale.create` ni
 `sale.update`, y el grant branch-scoped nunca autoriza endpoints administrativos.
-Catalog entities siguen organization-owned. La migración V15 agrega el permiso
-sin auto-grant a roles existentes; bootstrap nuevo recibe el catálogo completo.
+Catalog entities siguen organization-owned. V15 agrega `pos.catalog.read`; V16
+agrega `inventory.item.read` y `inventory.item.write`. Ninguno auto-grants a roles
+existentes; bootstrap nuevo recibe el catálogo completo.
 
 ## No implementado (fronteras)
 
