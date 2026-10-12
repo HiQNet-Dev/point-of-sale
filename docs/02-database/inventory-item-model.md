@@ -42,4 +42,4 @@ Crear emite `inventory.item.created`; cambios efectivos emiten `inventory.item.u
 
 ## Fuera de esta fundación
 
-`V16` no crea balances ni cantidades. `V17` incorpora balances branch-scoped, ledger append-only, opening y ajustes manuales; recipes, modifier effects, Purchasing y Sales/checkout siguen diferidos.
+`V16` does not create balances or quantities. `V17` adds branch-scoped balances, an append-only ledger, opening and manual adjustments. V18 adds organization-owned Product recipes, modifier effects and the per-unit resolver; PR C2 snapshots resolved values on SaleItems. Checkout stock deduction, Purchasing, Transfers, Costing and Inventory UI remain deferred.

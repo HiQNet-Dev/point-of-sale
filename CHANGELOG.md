@@ -6,7 +6,9 @@ All notable changes to HiQNet POS are documented in this file.
 
 ### Inventory — v0.3 development
 
-- Implemented V17 branch-scoped lazy balances and immutable `OPENING`/`ADJUSTMENT` ledger, exact `NUMERIC(19,6)` quantity strings, row locking/expectedVersion, transactional audit and branch-scoped stock permissions (47 → 49). Existing grants are unchanged. Manual adjustments may correct stock below zero; the Sales checkout policy remains unresolved. Recipes, Purchasing, Transfers, costing, frontend and Sales integration are excluded.
+- PR C2 candidate: Sales-owned SaleItem consumption snapshots resolve current Product Recipes and selected ModifierOption effects at create/material edit time; preserve exact per-unit and total quantities plus InventoryItem metadata. V19 does not backfill legacy lines. Checkout still does not deduct stock.
+- Implemented V18 organization-owned Product Recipes and Inventory-owned ModifierOption effects with exact `NUMERIC(19,6)`, replace-all concurrency, transactional audit and the Inventory consumption resolver (permissions 49 → 51; existing grants unchanged).
+- Implemented V17 branch-scoped lazy balances and immutable `OPENING`/`ADJUSTMENT` ledger, exact `NUMERIC(19,6)` quantity strings, row locking/expectedVersion, transactional audit and branch-scoped stock permissions (47 → 49). Existing grants are unchanged. Manual adjustments may correct stock below zero; the future checkout policy remains unresolved. No stock deduction, reservations, Purchasing, Transfers, costing or frontend are included.
 - Implemented the V16 Inventory Item Catalog: organization-owned definitions, immutable slug code, base units, fractional-unit metadata and organization-scoped API. Permission additions do not auto-grant existing roles; fresh bootstrap receives the current catalog.
 
 ## [0.2.0] - 2026-10-12

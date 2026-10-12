@@ -45,4 +45,4 @@ Recetas activas no pueden estar vacías; cada cantidad de componente es positiva
 
 El resolver combina la receta activa y los ModifierOptions seleccionados ya validados por el caller, suma exacta por InventoryItem, elimina totales cero y rechaza configuraciones con componentes inactivos, saldo teórico negativo o cantidades inválidas. No consulta Branch stock. Product sin receta y receta INACTIVE son untracked. Las APIs de receta y efectos son organization-scoped mediante `inventory.recipe.read/write`; V18 no auto-grants estos permisos a roles existentes.
 
-La configuración es candidata en PR C1. SaleItem snapshots, Sales/Checkout, deducción/reserva de stock, disponibilidad por stock, Purchasing, Transfers, Costing y UI siguen fuera de alcance.
+The configuration is implemented in V18. PR C2 adds a Sales-owned historical per-line consumption snapshot using the Inventory resolver; V19 does not backfill existing SaleItems. Checkout stock deduction, `SALE_CONSUMPTION`, reservations, stock-based availability, Purchasing, Transfers, Costing and UI remain deferred.
