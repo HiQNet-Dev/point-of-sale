@@ -227,7 +227,8 @@ test('cashier can recover POS, configure products and complete sales without pay
   await page.getByRole('button', { name: 'Quitar ' + fixtures.requiredProductName }).click()
   await page.getByRole('button', { name: 'Quitar', exact: true }).click()
   await expect(page.getByText('Elementos retirados (1)')).toBeVisible()
-  await expect(page.getByText('Agrega al menos un producto antes de cobrar.')).toBeVisible()
+  await expect(page.getByText(new RegExp(`1 × ${fixtures.multipleProductName}`))).toBeVisible()
+  await expect(page.getByText('Multiple choice: Positive option')).toBeVisible()
 
   // A fresh explicit sale is required after an item was removed.
   await page.getByRole('button', { name: 'Cancelar venta' }).click()
