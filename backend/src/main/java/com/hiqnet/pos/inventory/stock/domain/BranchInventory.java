@@ -54,7 +54,12 @@ public class BranchInventory {
 
     public long getVersion() { return version; }
 
-    public void setQuantityOnHand(BigDecimal value) { quantityOnHand = value; }
+    /** Marks every committed movement as a new client-visible balance version, including OPENING 0. */
+    public void applyMovement(BigDecimal value) {
+        quantityOnHand = value;
+        Instant now = Instant.now();
+        updatedAt = updatedAt != null && !now.isAfter(updatedAt) ? updatedAt.plusNanos(1_000) : now;
+    }
 
     @PrePersist
     void onCreate() {

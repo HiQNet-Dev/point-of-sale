@@ -52,7 +52,8 @@ class InventoryStockApiTest extends AbstractAuditIntegrationTest {
     @Test void openingZeroIsValidButZeroAdjustmentAndFractionalDiscreteUnitAreRejected() throws Exception {
         Fixture f=setup("UNIT",false); String auth=bearer(f.token);
         mockMvc.perform(post(url(f)+"/opening-stock").header("Authorization",auth).contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":0,\"quantity\":\"0\"}"))
-          .andExpect(status().isOk()).andExpect(jsonPath("$.quantityOnHand").value("0.000000"));
+          .andExpect(status().isOk()).andExpect(jsonPath("$.quantityOnHand").value("0.000000"))
+          .andExpect(jsonPath("$.version").value(1));
         mockMvc.perform(post(url(f)+"/opening-stock").header("Authorization",auth).contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":1,\"quantity\":\"1\"}"))
           .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("INVENTORY_OPENING_ALREADY_EXISTS"));
         mockMvc.perform(post(url(f)+"/adjustments").header("Authorization",auth).contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":1,\"quantityDelta\":\"0\",\"reason\":\"count\"}"))

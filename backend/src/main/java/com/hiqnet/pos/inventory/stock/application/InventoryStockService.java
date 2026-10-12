@@ -194,7 +194,7 @@ public class InventoryStockService {
         InventoryQuantity.validateRange(resultingQuantity, "resulting quantity");
         validateUnit(item, resultingQuantity);
 
-        balance.setQuantityOnHand(resultingQuantity);
+        balance.applyMovement(resultingQuantity);
         BranchInventory savedBalance = branchInventoryRepository.saveAndFlush(balance);
         UUID movementId = UUID.randomUUID();
         movementRepository.insert(
