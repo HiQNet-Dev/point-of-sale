@@ -55,6 +55,13 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
+function mutationErrorMessage(error: unknown, fallback: string): string {
+  if (errorCode(error) === 'FORBIDDEN' || (error instanceof ApiRequestError && error.status === 403)) {
+    return 'No tienes permiso para modificar esta venta.'
+  }
+  return errorMessage(error, fallback)
+}
+
 function formatMoney(amount: number | string, locale: string, currency: string): string {
   if (typeof amount === 'string') return formatExactMoney(amount, locale, currency)
   try {
@@ -102,6 +109,7 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
   const [itemToRemove, setItemToRemove] = useState<SaleItem | null>(null)
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [operationMessage, setOperationMessage] = useState<string | null>(null)
+  const [dialogMutationError, setDialogMutationError] = useState<string | null>(null)
   const [checkoutSaleId, setCheckoutSaleId] = useState('')
 
   const branchId = branch.id
@@ -126,6 +134,7 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
     : ''
   const activeSaleId = selectedSaleId || autoSelectedSaleId
   const activeSaleIdRef = useRef(activeSaleId)
+  const itemMutationInFlightRef = useRef(false)
   useEffect(() => { activeSaleIdRef.current = activeSaleId }, [activeSaleId])
   const selectedSaleKey = activeSaleId
     ? posSalesKeys.sale(organizationId, branchId, registerId, shiftId, activeSaleId)
@@ -246,15 +255,19 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
     onSuccess: async () => {
       setDialogMode(null)
       setSelectedProductId('')
+      setDialogMutationError(null)
       setOperationMessage(null)
       await invalidateSale()
     },
     onError: async (error) => {
-      setOperationMessage(errorMessage(error, itemErrorMessage(error)))
+      const message = mutationErrorMessage(error, itemErrorMessage(error))
+      setDialogMutationError(message)
       if (errorCode(error) === 'CONCURRENT_MODIFICATION' || saleStateConflict(error)) {
+        setOperationMessage(message)
         if (saleStateConflict(error)) {
           setDialogMode(null)
           setSelectedProductId('')
+          setDialogMutationError(null)
         }
         await invalidateSale()
       }
@@ -262,15 +275,19 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
         await queryClient.invalidateQueries({ queryKey: configurationKey })
       }
       if (errorCode(error) === 'PRODUCT_INACTIVE') {
+        setOperationMessage(message)
+        setDialogMutationError(null)
         setDialogMode(null)
         setSelectedProductId('')
         setEditingItem(null)
         await queryClient.invalidateQueries({ queryKey: ['pos-catalog', organizationId, branchId, 'products'] })
       }
       if (['BRANCH_INACTIVE', 'CASH_REGISTER_INACTIVE', 'CASH_SHIFT_NOT_OPEN'].includes(errorCode(error) ?? '')) {
+        setOperationMessage(message)
         await refreshOperationalContext()
       }
     },
+    onSettled: () => { itemMutationInFlightRef.current = false },
   })
 
   const updateMutation = useMutation({
@@ -282,16 +299,20 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
       setDialogMode(null)
       setEditingItem(null)
       setSelectedProductId('')
+      setDialogMutationError(null)
       setOperationMessage(null)
       await invalidateSale()
     },
     onError: async (error) => {
-      setOperationMessage(errorMessage(error, itemErrorMessage(error)))
+      const message = mutationErrorMessage(error, itemErrorMessage(error))
+      setDialogMutationError(message)
       if (errorCode(error) === 'CONCURRENT_MODIFICATION' || saleStateConflict(error)) {
+        setOperationMessage(message)
         if (saleStateConflict(error)) {
           setDialogMode(null)
           setSelectedProductId('')
           setEditingItem(null)
+          setDialogMutationError(null)
         }
         await invalidateSale()
       }
@@ -299,15 +320,19 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
         await queryClient.invalidateQueries({ queryKey: configurationKey })
       }
       if (errorCode(error) === 'PRODUCT_INACTIVE') {
+        setOperationMessage(message)
+        setDialogMutationError(null)
         setDialogMode(null)
         setSelectedProductId('')
         setEditingItem(null)
         await queryClient.invalidateQueries({ queryKey: ['pos-catalog', organizationId, branchId, 'products'] })
       }
       if (['BRANCH_INACTIVE', 'CASH_REGISTER_INACTIVE', 'CASH_SHIFT_NOT_OPEN'].includes(errorCode(error) ?? '')) {
+        setOperationMessage(message)
         await refreshOperationalContext()
       }
     },
+    onSettled: () => { itemMutationInFlightRef.current = false },
   })
 
   const removeMutation = useMutation({
@@ -316,17 +341,22 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
     ),
     onSuccess: async () => {
       setItemToRemove(null)
+      setDialogMutationError(null)
       setOperationMessage(null)
       await invalidateSale()
     },
     onError: async (error) => {
-      setOperationMessage(errorMessage(error, 'No se pudo quitar el producto.'))
+      const message = mutationErrorMessage(error, 'No se pudo quitar el producto.')
+      setDialogMutationError(message)
       if (errorCode(error) === 'CONCURRENT_MODIFICATION' || saleStateConflict(error)
         || errorCode(error) === 'SALE_ITEM_ALREADY_REMOVED') {
+        setOperationMessage(message)
         setItemToRemove(null)
+        setDialogMutationError(null)
         await invalidateSale()
       }
       if (['BRANCH_INACTIVE', 'CASH_REGISTER_INACTIVE', 'CASH_SHIFT_NOT_OPEN'].includes(errorCode(error) ?? '')) {
+        setOperationMessage(message)
         await refreshOperationalContext()
       }
     },
@@ -338,15 +368,19 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
     ),
     onSuccess: async () => {
       setCancelDialogOpen(false)
+      setDialogMutationError(null)
       setDismissedSaleId(activeSaleId)
       setSelectedSaleId('')
       setOperationMessage('Venta cancelada. La venta permanece en el historial.')
       await invalidateSale(activeSaleId)
     },
     onError: async (error) => {
-      setOperationMessage(errorMessage(error, 'No se pudo cancelar la venta.'))
+      const message = mutationErrorMessage(error, 'No se pudo cancelar la venta.')
+      setDialogMutationError(message)
       if (errorCode(error) === 'CONCURRENT_MODIFICATION' || saleStateConflict(error)) {
+        setOperationMessage(message)
         setCancelDialogOpen(false)
+        setDialogMutationError(null)
         await invalidateSale()
       }
     },
@@ -354,6 +388,7 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
 
   function openAdd(product: Product) {
     setOperationMessage(null)
+    setDialogMutationError(null)
     setEditingItem(null)
     setOptionSelectionOverride([])
     setQuantityInput('1')
@@ -363,6 +398,7 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
 
   function openEdit(item: SaleItem) {
     setOperationMessage(null)
+    setDialogMutationError(null)
     setEditingItem(item)
     setOptionSelectionOverride(null)
     setQuantityInput(null)
@@ -375,6 +411,7 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
     setDialogMode(null)
     setSelectedProductId('')
     setEditingItem(null)
+    setDialogMutationError(null)
   }
 
   function toggleOption(group: ModifierGroup, optionId: string, checked: boolean) {
@@ -404,10 +441,17 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
 
   function submitItem() {
     const parsedQuantity = Number(quantity)
-    if (!Number.isInteger(parsedQuantity) || parsedQuantity < 1 || parsedQuantity > 1_000_000 || !configuration || invalidSelection) return
+    if (itemMutationInFlightRef.current || addMutation.isPending || updateMutation.isPending
+      || !Number.isInteger(parsedQuantity) || parsedQuantity < 1 || parsedQuantity > 1_000_000
+      || !configuration || invalidSelection) return
     const payload = { quantity: parsedQuantity, modifierOptionIds: selectedOptionIds }
-    if (dialogMode === 'edit') updateMutation.mutate(payload)
-    else if (dialogMode === 'add') addMutation.mutate({ ...payload, productId: selectedProductId })
+    if (dialogMode === 'edit') {
+      itemMutationInFlightRef.current = true
+      updateMutation.mutate(payload)
+    } else if (dialogMode === 'add') {
+      itemMutationInFlightRef.current = true
+      addMutation.mutate({ ...payload, productId: selectedProductId })
+    }
   }
 
   const pageSales = salesQuery.data
@@ -529,8 +573,8 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
             operationMessage={operationMessage}
             onOpenAdd={openAdd}
             onOpenEdit={openEdit}
-            onRemove={setItemToRemove}
-            onCancel={() => setCancelDialogOpen(true)}
+            onRemove={(item) => { setDialogMutationError(null); setItemToRemove(item) }}
+            onCancel={() => { setDialogMutationError(null); setCancelDialogOpen(true) }}
             onExitSale={() => {
               setCheckoutSaleId('')
               setDismissedSaleId(activeSaleId)
@@ -553,6 +597,7 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
       <Dialog open={Boolean(dialogMode)} onClose={closeConfiguration} fullWidth maxWidth="sm" aria-labelledby="product-config-title">
         <DialogTitle id="product-config-title">{dialogMode === 'edit' ? 'Editar producto' : 'Agregar producto'}</DialogTitle>
         <DialogContent dividers>
+          {dialogMutationError && <Alert role="alert" severity="error">{dialogMutationError}</Alert>}
           {configurationQuery.isLoading && <Stack spacing={1}><Skeleton /><Skeleton /><Skeleton /></Stack>}
           {configLoadError && (
             <Alert
@@ -622,22 +667,38 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
         </DialogActions>
       </Dialog>
 
-      <Dialog open={Boolean(itemToRemove)} onClose={() => !removeMutation.isPending && setItemToRemove(null)}>
+      <Dialog open={Boolean(itemToRemove)} onClose={() => {
+        if (!removeMutation.isPending) {
+          setItemToRemove(null)
+          setDialogMutationError(null)
+        }
+      }}>
         <DialogTitle>Quitar producto</DialogTitle>
-        <DialogContent><Typography>¿Quieres quitar {itemToRemove?.productNameSnapshot} de esta venta?</Typography></DialogContent>
+        <DialogContent>
+          {dialogMutationError && <Alert role="alert" severity="error">{dialogMutationError}</Alert>}
+          <Typography>¿Quieres quitar {itemToRemove?.productNameSnapshot} de esta venta?</Typography>
+        </DialogContent>
         <DialogActions>
-          <Button onClick={() => setItemToRemove(null)} disabled={removeMutation.isPending}>Conservar</Button>
+          <Button onClick={() => { setItemToRemove(null); setDialogMutationError(null) }} disabled={removeMutation.isPending}>Conservar</Button>
           <Button color="error" onClick={() => itemToRemove && removeMutation.mutate(itemToRemove)} disabled={removeMutation.isPending}>
             {removeMutation.isPending ? 'Quitando…' : 'Quitar'}
           </Button>
         </DialogActions>
       </Dialog>
 
-      <Dialog open={cancelDialogOpen} onClose={() => !cancelMutation.isPending && setCancelDialogOpen(false)}>
+      <Dialog open={cancelDialogOpen} onClose={() => {
+        if (!cancelMutation.isPending) {
+          setCancelDialogOpen(false)
+          setDialogMutationError(null)
+        }
+      }}>
         <DialogTitle>Cancelar venta</DialogTitle>
-        <DialogContent><Typography>La venta quedará cancelada y ya no podrá modificarse. Se conservará en el historial.</Typography></DialogContent>
+        <DialogContent>
+          {dialogMutationError && <Alert role="alert" severity="error">{dialogMutationError}</Alert>}
+          <Typography>La venta quedará cancelada y ya no podrá modificarse. Se conservará en el historial.</Typography>
+        </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCancelDialogOpen(false)} disabled={cancelMutation.isPending}>Volver</Button>
+          <Button onClick={() => { setCancelDialogOpen(false); setDialogMutationError(null) }} disabled={cancelMutation.isPending}>Volver</Button>
           <Button color="error" onClick={() => cancelMutation.mutate()} disabled={cancelMutation.isPending || !saleDetail || saleDetail.sale.status !== 'OPEN'}>
             {cancelMutation.isPending ? 'Cancelando…' : 'Cancelar venta'}
           </Button>
