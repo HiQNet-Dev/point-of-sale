@@ -1,6 +1,6 @@
 # Inventory Item catalog — modelo de datos
 
-**Estado:** candidato / PR abierto. Foundation organization-scoped propuesta en `V16`; no incluye balances ni cantidades de stock.
+**Estado:** implementado en `V16`. No modela cantidades; el contrato de balances y movimientos vive en `inventory-branch-stock-model.md`.
 
 ## `inventory_items`
 
@@ -28,11 +28,11 @@ Constraints principales:
 
 `InventoryItem` pertenece a Organization y no contiene `branchId`, quantity ni stock. La misma definición podrá utilizarse en distintas Branches; stock físico será un aggregate branch-scoped posterior.
 
-`code` no se puede cambiar. `name`, description, unidad, flag de fracción y status sí pueden cambiar en esta fase. `UNIT` con `fractionalUnitAllowed=false` representa unidades discretas; con `true`, futura cantidad fraccionaria. En este PR el flag se almacena, no valida cantidades porque no hay cantidades todavía.
+`code` no se puede cambiar. `name`, description, unidad, flag de fracción y status sí pueden cambiar en esta fase. `UNIT` con `fractionalUnitAllowed=false` representa unidades discretas; con `true`, futura cantidad fraccionaria. `V16` solo almacena la flag; los casos de uso de stock de `V17` aplican la regla a `UNIT`.
 
 `baseUnit` puede corregirse mientras no existen dependencias históricas. Una migración futura de Recipes/Balances/Movements debe congelarla cuando el item tenga hechos dependientes. Las unidades de display y conversiones no se modelan.
 
-`INACTIVE` conserva la definición y sigue siendo legible. No hay hard delete. No existe todavía una regla de stock/receta asociada al estado.
+`INACTIVE` conserva la definición y sigue siendo legible. En V17 bloquea opening/adjustment nuevos pero no las lecturas históricas. No hay hard delete.
 
 ## Autorización y auditoría
 
@@ -42,4 +42,4 @@ Crear emite `inventory.item.created`; cambios efectivos emiten `inventory.item.u
 
 ## Fuera de esta fundación
 
-`BranchInventory`, stock on hand, `InventoryMovement`, apertura/ajustes, recipes, modifier effects, cantidades, cantidades negativas, Purchasing y Sales/checkout no se crean por `V16`.
+`V16` no crea balances ni cantidades. `V17` incorpora balances branch-scoped, ledger append-only, opening y ajustes manuales; recipes, modifier effects, Purchasing y Sales/checkout siguen diferidos.
