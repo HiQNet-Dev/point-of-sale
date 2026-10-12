@@ -135,8 +135,11 @@ class SaleInventorySnapshotApiTest extends AbstractRbacIntegrationTest {
         String trackedProduct = product(fx, token, "TRACKED", "Tracked", "1.0000");
         String flourId = item(fx, token, "flour", "Flour", "GRAM", false);
         replaceRecipe(fx, token, trackedProduct, 0, "ACTIVE", List.of(component(flourId, "50")));
+        String groupId = modifierGroup(fx, token, "tracked-options");
+        String optionId = modifierOption(fx, token, groupId, "tracked-option", "Tracked option", "0.0000");
+        assignGroup(fx, token, trackedProduct, groupId);
         String existingSale = sale(scope, token);
-        addItem(scope, token, existingSale, 0, trackedProduct, 1, List.of()).andExpect(status().isOk());
+        addItem(scope, token, existingSale, 0, trackedProduct, 1, List.of(optionId)).andExpect(status().isOk());
         UUID existingSaleItemId = jdbc.queryForObject("select id from sale_items where sale_id = ?", UUID.class,
                 UUID.fromString(existingSale));
         mockMvc.perform(patch(ORG + fx.orgId() + "/inventory-items/" + flourId)
@@ -146,7 +149,7 @@ class SaleInventorySnapshotApiTest extends AbstractRbacIntegrationTest {
 
         String failedSale = sale(scope, token);
         long auditsBefore = auditCount(fx.orgId(), "sale.item.added");
-        addItem(scope, token, failedSale, 0, trackedProduct, 1, List.of())
+        addItem(scope, token, failedSale, 0, trackedProduct, 1, List.of(optionId))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("INVENTORY_CONFIGURATION_UNAVAILABLE"));
         assertThat(jdbc.queryForObject("select version from sales where id = ?", Long.class,
@@ -155,13 +158,17 @@ class SaleInventorySnapshotApiTest extends AbstractRbacIntegrationTest {
                 UUID.fromString(failedSale))).isZero();
         assertThat(auditCount(fx.orgId(), "sale.item.added")).isEqualTo(auditsBefore);
 
-        addItemUpdate(scope, token, existingSale, existingSaleItemId.toString(), 1, 2, List.of())
+        addItemUpdate(scope, token, existingSale, existingSaleItemId.toString(), 1, 2, List.of(optionId))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("INVENTORY_CONFIGURATION_UNAVAILABLE"));
         assertThat(jdbc.queryForObject("select version from sales where id = ?", Long.class,
                 UUID.fromString(existingSale))).isEqualTo(1L);
         assertThat(jdbc.queryForObject("select quantity from sale_items where id = ?", Integer.class,
                 existingSaleItemId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from sale_item_modifiers where sale_item_id = ?", Long.class,
+                existingSaleItemId)).isEqualTo(1L);
+        assertThat(jdbc.queryForObject("select modifier_option_id from sale_item_modifiers where sale_item_id = ?", UUID.class,
+                existingSaleItemId)).isEqualTo(UUID.fromString(optionId));
         assertSnapshot(existingSaleItemId.toString(), flourId, "flour", "Flour", "GRAM", "50", "50");
 
         String inactiveRecipeProduct = product(fx, token, "INACTIVERECIPE", "Inactive recipe", "1.0000");
@@ -171,6 +178,40 @@ class SaleInventorySnapshotApiTest extends AbstractRbacIntegrationTest {
         UUID inactiveRecipeSaleItem = jdbc.queryForObject("select id from sale_items where sale_id = ?", UUID.class,
                 UUID.fromString(inactiveRecipeSale));
         assertThat(snapshot(inactiveRecipeSaleItem.toString())).isEmpty();
+    }
+
+    @Test
+    void quantityOnlyRequoteUsesCurrentRecipeAndLegacyLineReceivesSnapshotOnEdit() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        Scope scope = scope(fx, "snapshot-legacy-requote");
+        String productId = product(fx, token, "REQUOTE", "Requote", "1.0000");
+        String beansId = item(fx, token, "requote-beans", "Requote beans", "GRAM", false);
+        replaceRecipe(fx, token, productId, 0, "ACTIVE", List.of(component(beansId, "18")));
+
+        String saleId = sale(scope, token);
+        addItem(scope, token, saleId, 0, productId, 1, List.of()).andExpect(status().isOk());
+        String saleItemId = jdbc.queryForObject("select id from sale_items where sale_id = ?", UUID.class,
+                UUID.fromString(saleId)).toString();
+        assertSnapshot(saleItemId, beansId, "requote-beans", "Requote beans", "GRAM", "18", "18");
+
+        replaceRecipe(fx, token, productId, 1, "ACTIVE", List.of(component(beansId, "20")));
+        addItemUpdate(scope, token, saleId, saleItemId, 1, 3, List.of()).andExpect(status().isOk());
+        assertThat(jdbc.queryForObject("select version from sales where id = ?", Long.class, UUID.fromString(saleId)))
+                .isEqualTo(2L);
+        assertSnapshot(saleItemId, beansId, "requote-beans", "Requote beans", "GRAM", "20", "60");
+
+        String legacySaleId = sale(scope, token);
+        addItem(scope, token, legacySaleId, 0, productId, 1, List.of()).andExpect(status().isOk());
+        String legacyItemId = jdbc.queryForObject("select id from sale_items where sale_id = ?", UUID.class,
+                UUID.fromString(legacySaleId)).toString();
+        jdbc.update("delete from sale_item_inventory_components where sale_item_id = ?", UUID.fromString(legacyItemId));
+        assertThat(snapshot(legacyItemId)).isEmpty();
+
+        addItemUpdate(scope, token, legacySaleId, legacyItemId, 1, 2, List.of()).andExpect(status().isOk());
+        assertThat(jdbc.queryForObject("select version from sales where id = ?", Long.class, UUID.fromString(legacySaleId)))
+                .isEqualTo(2L);
+        assertSnapshot(legacyItemId, beansId, "requote-beans", "Requote beans", "GRAM", "20", "40");
     }
 
     @Test
@@ -216,6 +257,25 @@ class SaleInventorySnapshotApiTest extends AbstractRbacIntegrationTest {
         String foreignItemId = item(foreignFx, foreignToken, "foreign-item", "Foreign item", "GRAM", false);
         assertThatThrownBy(() -> jdbc.update(insert, UUID.randomUUID(), fx.orgId(), saleItemId,
                 UUID.fromString(foreignItemId))).isInstanceOf(DataIntegrityViolationException.class);
+
+        String unitItemId = item(fx, token, "invalid-unit-item", "Invalid unit item", "GRAM", false);
+        String zeroItemId = item(fx, token, "zero-quantity-item", "Zero quantity item", "GRAM", false);
+        String negativeItemId = item(fx, token, "negative-quantity-item", "Negative quantity item", "GRAM", false);
+        String invalidUnit = "insert into sale_item_inventory_components (id,organization_id,sale_item_id,inventory_item_id,"
+                + "inventory_item_code_snapshot,inventory_item_name_snapshot,base_unit_snapshot,quantity_per_unit,quantity_total,created_at) "
+                + "values (?,?,?,?,'bad','Bad','NOT_A_UNIT',1,1,now())";
+        assertThatThrownBy(() -> jdbc.update(invalidUnit, UUID.randomUUID(), fx.orgId(), saleItemId,
+                UUID.fromString(unitItemId))).isInstanceOf(DataIntegrityViolationException.class);
+        String zeroQuantity = "insert into sale_item_inventory_components (id,organization_id,sale_item_id,inventory_item_id,"
+                + "inventory_item_code_snapshot,inventory_item_name_snapshot,base_unit_snapshot,quantity_per_unit,quantity_total,created_at) "
+                + "values (?,?,?,?,'zero','Zero','GRAM',0,1,now())";
+        assertThatThrownBy(() -> jdbc.update(zeroQuantity, UUID.randomUUID(), fx.orgId(), saleItemId,
+                UUID.fromString(zeroItemId))).isInstanceOf(DataIntegrityViolationException.class);
+        String negativeQuantity = "insert into sale_item_inventory_components (id,organization_id,sale_item_id,inventory_item_id,"
+                + "inventory_item_code_snapshot,inventory_item_name_snapshot,base_unit_snapshot,quantity_per_unit,quantity_total,created_at) "
+                + "values (?,?,?,?,'negative','Negative','GRAM',1,-1,now())";
+        assertThatThrownBy(() -> jdbc.update(negativeQuantity, UUID.randomUUID(), fx.orgId(), saleItemId,
+                UUID.fromString(negativeItemId))).isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
@@ -237,6 +297,9 @@ class SaleInventorySnapshotApiTest extends AbstractRbacIntegrationTest {
                 UUID.fromString(saleId));
         assertSnapshot(saleItemId, beansId, "beans", "Beans", "GRAM", "12.5", "25");
 
+        jdbc.update("insert into branch_inventory (id,organization_id,branch_id,inventory_item_id,quantity_on_hand,created_at,updated_at) "
+                        + "values (?,?,?,?,?,now(),now())",
+                UUID.randomUUID(), fx.orgId(), scope.branchId(), UUID.fromString(beansId), new BigDecimal("100"));
         long movementsBefore = jdbc.queryForObject("select count(*) from inventory_movements", Long.class);
         long balancesBefore = jdbc.queryForObject("select count(*) from branch_inventory", Long.class);
         mockMvc.perform(post(saleUrl(scope) + "/" + saleId + "/checkout")
@@ -246,6 +309,8 @@ class SaleInventorySnapshotApiTest extends AbstractRbacIntegrationTest {
         assertThat(snapshot(saleItemId)).hasSize(1);
         assertThat(jdbc.queryForObject("select count(*) from inventory_movements", Long.class)).isEqualTo(movementsBefore);
         assertThat(jdbc.queryForObject("select count(*) from branch_inventory", Long.class)).isEqualTo(balancesBefore);
+        assertThat(jdbc.queryForObject("select quantity_on_hand from branch_inventory where branch_id = ? and inventory_item_id = ?",
+                BigDecimal.class, scope.branchId(), UUID.fromString(beansId))).isEqualByComparingTo("100");
     }
 
     private String item(RbacFixture fx, String token, String code, String name, String unit, boolean fractional)
