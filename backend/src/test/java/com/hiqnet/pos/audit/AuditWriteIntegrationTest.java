@@ -54,6 +54,34 @@ class AuditWriteIntegrationTest extends AbstractAuditIntegrationTest {
     }
 
     @Test
+    void organizationNegativeStockPolicyChangeAuditsChangedFieldAndNoOpDoesNot() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        long before = auditCount(fx.orgId());
+
+        mockMvc.perform(patch("/api/v1/organizations/" + fx.orgId())
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"inventoryNegativeStockPolicy\":\"ALLOW_NEGATIVE\"}"))
+                .andExpect(status().isOk());
+
+        assertThat(auditCount(fx.orgId())).isEqualTo(before + 1);
+        AuditRow row = latestAudit(fx.orgId());
+        assertThat(row.action()).isEqualTo("organization.updated");
+        assertThat(row.entityType()).isEqualTo("organization");
+        assertThat(metadataOf(row).get("changedFields").toString())
+                .isEqualTo("[inventoryNegativeStockPolicy]");
+
+        // STRICT -> ALLOW_NEGATIVE -> ALLOW_NEGATIVE is a no-op: no new event.
+        mockMvc.perform(patch("/api/v1/organizations/" + fx.orgId())
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":1,\"inventoryNegativeStockPolicy\":\"ALLOW_NEGATIVE\"}"))
+                .andExpect(status().isOk());
+        assertThat(auditCount(fx.orgId())).isEqualTo(before + 1);
+    }
+
+    @Test
     void branchCreateAndUpdateProduceAudits() throws Exception {
         RbacFixture fx = fixture();
         String token = adminToken(fx);

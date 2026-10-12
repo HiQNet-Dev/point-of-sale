@@ -6,6 +6,7 @@ All notable changes to HiQNet POS are documented in this file.
 
 ### Inventory — v0.3 development
 
+- PR C3a candidate: Organization-scoped `inventoryNegativeStockPolicy` (`STRICT` | `ALLOW_NEGATIVE`, default `STRICT`) added in V20 and configured through the existing Organization PATCH with `organization.update`; the permission catalog remains 51. Configuration only: checkout does not consume it yet, no `SALE_CONSUMPTION` is written, and manual adjustments are unchanged (C3b pending).
 - PR C2 candidate: Sales-owned SaleItem consumption snapshots resolve current Product Recipes and selected ModifierOption effects at create/material edit time; preserve exact per-unit and total quantities plus InventoryItem metadata. V19 does not backfill legacy lines. Checkout still does not deduct stock.
 - Implemented V18 organization-owned Product Recipes and Inventory-owned ModifierOption effects with exact `NUMERIC(19,6)`, replace-all concurrency, transactional audit and the Inventory consumption resolver (permissions 49 → 51; existing grants unchanged).
 - Implemented V17 branch-scoped lazy balances and immutable `OPENING`/`ADJUSTMENT` ledger, exact `NUMERIC(19,6)` quantity strings, row locking/expectedVersion, transactional audit and branch-scoped stock permissions (47 → 49). Existing grants are unchanged. Manual adjustments may correct stock below zero; the future checkout policy remains unresolved. No stock deduction, reservations, Purchasing, Transfers, costing or frontend are included.

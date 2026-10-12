@@ -1,6 +1,7 @@
 package com.hiqnet.pos;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -20,7 +21,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * contexts that reuse a Testcontainers DB across the suite):
  *
  * <ul>
- * <li><b>Clean install</b>: V1 → V19 applies completely and validates, leaving
+ * <li><b>Clean install</b>: V1 → V20 applies completely and validates, leaving
  *       the expected seed state (permission catalog = 51, bootstrap singleton = 1,
  *       catalog/modifier/cash-register/cash-shift/sales and inventory-item tables present).</li>
  *   <li><b>Upgrade path (V7)</b>: a database migrated up to V7 (the state before
@@ -40,12 +41,12 @@ class FlywayMigrationPathTest {
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
 
     @Test
-    void cleanInstallationMigratesV1ThroughV19AndValidates() {
+    void cleanInstallationMigratesV1ThroughV20AndValidates() {
         Flyway flyway = flyway("clean_foundation");
 
         MigrateResult result = flyway.migrate();
 
-        assertThat(result.migrationsExecuted).isEqualTo(19);
+        assertThat(result.migrationsExecuted).isEqualTo(20);
         flyway.validate();
         assertThat(countRows("clean_foundation", "permissions")).isEqualTo(51);
         assertThat(countRows("clean_foundation", "installation_bootstrap")).isEqualTo(1);
@@ -68,6 +69,8 @@ class FlywayMigrationPathTest {
         assertThat(tableExists("clean_foundation", "modifier_option_inventory_configs")).isTrue();
         assertThat(tableExists("clean_foundation", "modifier_option_inventory_effects")).isTrue();
         assertThat(tableExists("clean_foundation", "sale_item_inventory_components")).isTrue();
+        assertThat(columnExists("clean_foundation", "organizations", "inventory_negative_stock_policy"))
+                .isTrue();
     }
 
     @Test
@@ -534,12 +537,79 @@ class FlywayMigrationPathTest {
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas(schema)
                 .load();
-        assertThat(latest.migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(latest.migrate().migrationsExecuted).isEqualTo(2);
         latest.validate();
         assertThat(countRows(schema, "permissions")).isEqualTo(51);
         assertThat(countRows(schema, "role_permissions")).isEqualTo(49);
         assertThat(tableExists(schema, "sale_item_inventory_components")).isTrue();
         assertThat(countRows(schema, "sale_item_inventory_components")).isZero();
+        assertThat(columnExists(schema, "organizations", "inventory_negative_stock_policy"))
+                .isTrue();
+    }
+
+    @Test
+    void upgradeFromV19AddsNegativeStockPolicyColumnWithStrictDefaultWithoutChangingGrants() {
+        String schema = "upgrade_negative_stock_policy";
+        // 1. Migrate to V19: the exact pre-policy state.
+        Flyway upToV19 = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema)
+                .target(MigrationVersion.fromVersion("19"))
+                .load();
+        assertThat(upToV19.migrate().migrationsExecuted).isEqualTo(19);
+        assertThat(countRows(schema, "permissions")).isEqualTo(51);
+        assertThat(columnExists(schema, "organizations", "inventory_negative_stock_policy")).isFalse();
+
+        // 2. Existing deployment: one organization plus a role granted EVERY
+        //    permission present before V20 (51).
+        UUID organizationId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        execute("insert into " + schema + ".organizations (id,name,code,timezone,currency,locale,created_at,updated_at) values ('"
+                + organizationId + "','Existing Org','existing-policy','UTC','MXN','es-MX',now(),now())");
+        execute("insert into " + schema + ".roles (id,organization_id,code,name,created_at,updated_at) values ('"
+                + roleId + "','" + organizationId + "','existing-role','Existing role',now(),now())");
+        execute("insert into " + schema + ".role_permissions (role_id,permission_code) select '" + roleId + "',code from " + schema + ".permissions");
+        assertThat(countRows(schema, "role_permissions")).isEqualTo(51);
+
+        // 3. Apply V20.
+        Flyway toV20 = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema)
+                .target(MigrationVersion.fromVersion("20"))
+                .load();
+        assertThat(toV20.migrate().migrationsExecuted).isEqualTo(1);
+        toV20.validate();
+
+        // 4. V20 adds the column (STRICT default for existing rows) without
+        //    touching the permission catalog or existing role grants.
+        assertThat(countRows(schema, "permissions")).isEqualTo(51);
+        assertThat(countRows(schema, "role_permissions")).isEqualTo(51);
+        assertThat(columnExists(schema, "organizations", "inventory_negative_stock_policy")).isTrue();
+        assertThat(valueOfString(schema, "organizations", "inventory_negative_stock_policy", organizationId))
+                .isEqualTo("STRICT");
+
+        // 5. The CHECK rejects an unknown value and NOT NULL rejects NULL on
+        //    direct SQL.
+        assertThatThrownBy(() -> execute("update " + schema + ".organizations set inventory_negative_stock_policy = 'INVALID' where id = '"
+                        + organizationId + "'"))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> execute("insert into " + schema + ".organizations (id,name,code,timezone,currency,locale,inventory_negative_stock_policy,created_at,updated_at) values ('"
+                        + UUID.randomUUID() + "','Null Policy','null-policy','UTC','MXN','es-MX',null,now(),now())"))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    private static String valueOfString(String schema, String table, String column, UUID id) {
+        try (Connection connection = connect();
+                PreparedStatement statement = connection.prepareStatement(
+                        "select " + column + " from " + schema + "." + table + " where id = ?")) {
+            statement.setObject(1, id);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                resultSet.next();
+                return resultSet.getString(1);
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private static boolean columnExists(String schema, String table, String column) {

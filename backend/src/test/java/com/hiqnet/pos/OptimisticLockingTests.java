@@ -105,10 +105,10 @@ class OptimisticLockingTests {
     void sequentialUpdatesSucceedAndBumpVersion() {
         Organization created = organizationService.create("Org", "seq-lock", "UTC", "MXN", "es-MX");
         Organization v1 = organizationService.update(
-                created.getId(), new UpdateOrganizationCommand(0, "New Name", null, null, null, null));
+                created.getId(), new UpdateOrganizationCommand(0, "New Name", null, null, null, null, null));
         assertEquals(1, v1.getVersion());
         Organization v2 = organizationService.update(
-                created.getId(), new UpdateOrganizationCommand(1, "Newer Name", null, null, null, null));
+                created.getId(), new UpdateOrganizationCommand(1, "Newer Name", null, null, null, null, null));
         assertEquals(2, v2.getVersion());
     }
 

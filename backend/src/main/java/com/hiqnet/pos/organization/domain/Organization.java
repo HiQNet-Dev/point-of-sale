@@ -54,6 +54,10 @@ public class Organization {
     @Column(nullable = false, length = 16)
     private OrganizationStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "inventory_negative_stock_policy", nullable = false, length = 16)
+    private InventoryNegativeStockPolicy inventoryNegativeStockPolicy;
+
     @Version
     @Column(nullable = false)
     private long version;
@@ -76,6 +80,7 @@ public class Organization {
         this.currency = currency;
         this.locale = locale;
         this.status = OrganizationStatus.ACTIVE;
+        this.inventoryNegativeStockPolicy = InventoryNegativeStockPolicy.STRICT;
         this.version = 0;
     }
 
@@ -123,6 +128,10 @@ public class Organization {
         return status;
     }
 
+    public InventoryNegativeStockPolicy getInventoryNegativeStockPolicy() {
+        return inventoryNegativeStockPolicy;
+    }
+
     public long getVersion() {
         return version;
     }
@@ -157,6 +166,10 @@ public class Organization {
 
     public void updateStatus(OrganizationStatus newStatus) {
         this.status = newStatus;
+    }
+
+    public void updateInventoryNegativeStockPolicy(InventoryNegativeStockPolicy newPolicy) {
+        this.inventoryNegativeStockPolicy = newPolicy;
     }
 
     /**

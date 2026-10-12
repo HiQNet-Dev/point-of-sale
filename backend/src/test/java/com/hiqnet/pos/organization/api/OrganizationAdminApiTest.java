@@ -181,4 +181,101 @@ class OrganizationAdminApiTest extends AbstractRbacIntegrationTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CONCURRENT_MODIFICATION"));
     }
+
+    @Test
+    void getOrganizationExposesDefaultStrictNegativeStockPolicy() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+
+        mockMvc.perform(get("/api/v1/organizations/" + fx.orgId()).header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.inventoryNegativeStockPolicy").value("STRICT"));
+    }
+
+    @Test
+    void patchOrganizationAllowsStrictToAllowNegativeAndBack() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+
+        mockMvc.perform(patch("/api/v1/organizations/" + fx.orgId())
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"inventoryNegativeStockPolicy\":\"ALLOW_NEGATIVE\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.inventoryNegativeStockPolicy").value("ALLOW_NEGATIVE"))
+                .andExpect(jsonPath("$.version").value(1));
+
+        mockMvc.perform(patch("/api/v1/organizations/" + fx.orgId())
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":1,\"inventoryNegativeStockPolicy\":\"STRICT\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.inventoryNegativeStockPolicy").value("STRICT"))
+                .andExpect(jsonPath("$.version").value(2));
+    }
+
+    @Test
+    void patchOrganizationSameNegativeStockPolicyIsNoOp() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+
+        mockMvc.perform(patch("/api/v1/organizations/" + fx.orgId())
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"inventoryNegativeStockPolicy\":\"STRICT\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.inventoryNegativeStockPolicy").value("STRICT"))
+                .andExpect(jsonPath("$.version").value(0));
+    }
+
+    @Test
+    void patchOrganizationOmittingNegativeStockPolicyLeavesItUnchanged() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+
+        mockMvc.perform(patch("/api/v1/organizations/" + fx.orgId())
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"inventoryNegativeStockPolicy\":\"ALLOW_NEGATIVE\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(patch("/api/v1/organizations/" + fx.orgId())
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":1,\"name\":\"Renamed Org\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.inventoryNegativeStockPolicy").value("ALLOW_NEGATIVE"));
+    }
+
+    @Test
+    void patchOrganizationRejectsUnknownNegativeStockPolicyWithMalformedRequest() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+
+        mockMvc.perform(patch("/api/v1/organizations/" + fx.orgId())
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"inventoryNegativeStockPolicy\":\"WARN\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
+    }
+
+    @Test
+    void patchOrganizationNegativeStockPolicyStaleVersionIs409() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+
+        mockMvc.perform(patch("/api/v1/organizations/" + fx.orgId())
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"inventoryNegativeStockPolicy\":\"ALLOW_NEGATIVE\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(patch("/api/v1/organizations/" + fx.orgId())
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"inventoryNegativeStockPolicy\":\"STRICT\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONCURRENT_MODIFICATION"));
+    }
 }

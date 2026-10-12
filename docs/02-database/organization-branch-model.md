@@ -16,6 +16,7 @@ módulos `organization` y `branch`). Versión `0.1.0`.
 | `currency` | `VARCHAR(3)` NOT NULL | ISO 4217 (validado con Java `Currency`); CHECK longitud 3; mayúsculas |
 | `locale` | `VARCHAR(20)` NOT NULL | BCP 47 (validado con `Locale.forLanguageTag` roundtrip) |
 | `status` | `VARCHAR(16)` NOT NULL | CHECK `IN ('ACTIVE','INACTIVE')`; default `ACTIVE` |
+| `inventory_negative_stock_policy` | `VARCHAR(16)` NOT NULL | CHECK `IN ('STRICT','ALLOW_NEGATIVE')`; default `STRICT` (V20); configuración organization-scoped, aún no consumida por el checkout |
 | `version` | `BIGINT` NOT NULL | Optimistic locking (`@Version`); default 0 |
 | `created_at` / `updated_at` | `TIMESTAMPTZ` NOT NULL | UTC (`Instant`), set por la entidad |
 
@@ -61,6 +62,10 @@ Organization 1 ── N Branch   (la branch pertenece exactamente a una organiza
 - timezone IANA real; currency ISO 4217 real (sin lista manual: `java.util.Currency`);
   locale BCP 47 reconstruible.
 - status solo `ACTIVE`/`INACTIVE`; **sin hard delete** (la baja es status).
+- `inventory_negative_stock_policy` (V20) solo `STRICT`/`ALLOW_NEGATIVE`,
+  default `STRICT`. Política comercial de la organización; en C3a es
+  configuración únicamente (el checkout aún no la consume, C3b pendiente) y no
+  afecta ajustes manuales ni apertura de stock.
 - version `BIGINT` con optimistic locking vía `@Version`; conflictos →
   `409 CONCURRENT_MODIFICATION`.
 
