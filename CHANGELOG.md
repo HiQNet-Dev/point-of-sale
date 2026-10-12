@@ -4,9 +4,10 @@ All notable changes to HiQNet POS are documented in this file.
 
 ## [Unreleased]
 
-### Inventory — candidate / PR open
+### Inventory — Branch Stock/Ledger candidate / PR open
 
-- Added the organization-owned Inventory Item catalog foundation (`V16` candidate): immutable normalized codes, `UNIT`/`GRAM`/`MILLILITER`, fractional-unit metadata, ACTIVE/INACTIVE lifecycle, optimistic concurrency, organization-scoped API, two RBAC permissions and transactional AuditEvent integration. Existing role grants are unchanged; fresh bootstrap receives the current permission catalog. Branch stock, movement ledger, recipes and Sales integration are not included.
+- Added V17 branch-scoped lazy balances and immutable `OPENING`/`ADJUSTMENT` ledger, exact `NUMERIC(19,6)` quantity strings, row locking/expectedVersion, transactional audit and branch-scoped stock permissions (47 → 49). Existing grants are unchanged. Manual adjustments may correct stock below zero; Sales checkout policy remains open. Recipes, Purchasing, Transfers, costing, frontend and Sales integration are excluded.
+- Inventory Item Catalog is implemented in V16: organization-owned definitions, immutable slug code, base units, fractional-unit metadata and organization-scoped API. Migration permission additions do not auto-grant existing roles; fresh bootstrap receives the current catalog.
 
 ### POS Core
 

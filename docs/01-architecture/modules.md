@@ -23,7 +23,7 @@ implementado** hasta que llegue su milestone (ver
 | `sales` | Venta operacional | sales, sale_items, modifier snapshots, pricing server-authoritative, OPEN→CANCELLED/COMPLETED | **implementado** |
 | `payment` | Pagos inmutables de checkout | CASH/CARD, split tender, tendered/change, historical reads | **implementado** |
 | `cash` | Turnos de caja y arqueos | shifts, arqueos (cash registers viven en `cashregister`) | **no implementado** |
-| `inventory` | Definiciones de inventario y futuras existencias | `InventoryItem` organization-owned (`V16` candidate / PR open); balances branch-owned, movements y recipes diferidos | **foundation candidate** |
+| `inventory` | Definiciones de inventario y futuras existencias | `InventoryItem` organization-owned (V16 implemented); Branch balances and immutable movements branch-owned (V17 candidate / PR open); recipes deferred | **stock foundation in progress** |
 | `purchasing` | Compras | suppliers, órdenes, recepción | **no implementado** |
 | `expenses` | Gastos del negocio | expenses, categorías | **no implementado** |
 | `reporting` | Reportes | ventas, inventario, caja | **no implementado** |

@@ -11,7 +11,7 @@ User
   ↓ user_organization_roles (organization_id, user_id, role_id)     [ORGANIZATION scope]
 Role  (per Organization; code slug único e inmutable; status ACTIVE|INACTIVE)
   ↓ role_permissions (role_id, permission_code)
-Permission (catálogo, sembrado por V5/V6/V7/V9/V10/V11/V12/V13/V14/V15/V16; sin CRUD de cliente)
+Permission (catálogo, sembrado por V5/V6/V7/V9/V10/V11/V12/V13/V14/V15/V16/V17; sin CRUD de cliente)
 
 User
   ↓ branch_memberships (organization_id, branch_id, user_id, status)  [BRANCH scope]
@@ -20,7 +20,7 @@ Role   (mismas definiciones de roles; sin modelo BranchRole separado)
 ```
 
 - **Permissions**: catálogo del SISTEMA (`permissions.code` PK natural).
-  Se crean únicamente vía Flyway (`V5`/`V6`/`V7`/`V9`/`V10`/`V11`/`V12`/`V13`/`V14`/`V15`/`V16`). Orden `code ASC`.
+  Se crean únicamente vía Flyway (`V5`/`V6`/`V7`/`V9`/`V10`/`V11`/`V12`/`V13`/`V14`/`V15`/`V16`/`V17`). Orden `code ASC`.
 - **Role**: pertenece a una organización; `code` normalizado (trim+lowercase,
   slug) único por organización e inmutable; `name` editable; sin DELETE
   (baja = `status INACTIVE`).
@@ -224,3 +224,7 @@ existentes; bootstrap nuevo recibe el catálogo completo.
   ACTIVE), para que un recurso ya abierto siga siendo recuperable. `open` y las
   escrituras de Cash Register siguen exigiendo la branch ACTIVE.
 - **Recovery/backdoor** para el administrador destruido: no (operativo/futuro).
+
+## Inventory stock permissions (V17)
+
+`inventory.stock.read` y `inventory.stock.adjust` son permisos BRANCH-scope: lecturas de saldo/historial requieren `hasBranchPermissionIgnoringBranchStatus` y opening/adjustments requieren `hasBranchPermission`. El grant Organization-wide funciona como override según el RBAC existente; una membership branch-scoped solo concede acceso a esa sucursal. No se concede ningún permiso automáticamente a Cashier, y `inventory.item.*` no autoriza cambios de stock.

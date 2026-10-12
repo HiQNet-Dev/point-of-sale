@@ -1,6 +1,6 @@
 # ADR-0009: Inventory Item catalog foundation
 
-- **Status:** Candidate — PR open
+- **Status:** Accepted
 - **Date:** 2026-10-11
 
 ## Context
@@ -18,7 +18,7 @@ Inventory v0.3 begins with reusable item definitions, before branch stock, movem
 
 ## Deliberately deferred
 
-Branch stock, balances, movement ledger, opening/adjustments, recipes/BOM, modifier consumption, quantity precision/JSON contract, Sales snapshots and checkout deduction are later slices. Existing Products remain sellable without inventory configuration. Negative-stock policy remains open until Sales integration.
+Branch stock, balances and opening/adjustments are specified by ADR-0010 / V17. Recipes/BOM, modifier consumption, Sales snapshots and checkout deduction remain later slices. Existing Products remain sellable without inventory configuration. Checkout negative-stock policy remains open until Sales integration.
 
 ## Consequences
 
