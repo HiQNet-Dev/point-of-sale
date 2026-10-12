@@ -1,9 +1,10 @@
 # Modelo de dominio conceptual
 
 **Documento vivo.** `Organization`, `Branch`, `User` (identidad +
-administración), `RefreshSession`, RBAC, memberships, auditoría, bootstrap y el
-catálogo (`Category`/`Product` + modifiers + cash registers + cash shifts), Sales Foundation y Payments + Atomic Checkout ya están implementados (migraciones `V1`–`V14`); el resto de las entidades descritas aquí
-son futuras.
+administración), `RefreshSession`, RBAC, memberships, auditoría, bootstrap, el
+catálogo POS, Sales Foundation y Payments + Atomic Checkout están implementados
+(V1–V15). `InventoryItem` organization-owned es candidato en V16 / PR abierto;
+Branch stock, movements, recipes y Sales integration siguen futuros.
 
 Versión actual: `0.2.0-SNAPSHOT`.
 
@@ -16,6 +17,7 @@ Organization (organización / empresa)  ✔ implementado
  ├── Role / RolePermission / UserOrganizationRole   ✔ implementado (V5)
  ├── AuditEvent (historial append-only)  ✔ implementado (V7)
  ├── Category / Product (catálogo)     ✔ implementado (V9)
+ ├── InventoryItem (definición)         ← candidato V16 / PR abierto, organization-owned
  ├── ModifierGroup / ModifierOption (modifiers)  ✔ implementado (V10)
  │    └── ProductModifierGroup (producto ↔ grupo, ordenado)  ✔ implementado (V10)
  └── Branch (sucursal)                 ✔ implementado
@@ -24,8 +26,7 @@ Organization (organización / empresa)  ✔ implementado
       │    └── CashShift (turno de caja)  ✔ implementado (V12)
       │         └── Sale → SaleItem → SaleItemModifier  ✔ Sales Foundation (V13; OPEN→CANCELLED/COMPLETED)
       │              └── Payment[]  ✔ Atomic Checkout (V14; immutable CASH/CARD)
-      ├── Stock (existencias)  ← descuenta por venta, compra y mermas
-      └── Inventory (ámbito de inventario de la sucursal)
+      └── BranchInventory / movements   ← futuro; existencias físicas por Branch
 ```
 
 ## Entidades previstas (futuro)
@@ -44,6 +45,7 @@ Organization (organización / empresa)  ✔ implementado
 | BranchMembershipRole | organización | **implementada (`V6`)** — roles branch-scoped de una membership; reutiliza las definiciones de `roles`; FKs compuestas impiden cross-tenant |
 | AuditEvent | organización | **implementada (`V7`)** — historial append-only de mutaciones administrativas; trigger DB impide UPDATE/DELETE; actor USER/SYSTEM con FKs compuestas same-org; metadata JSONB acotada (≤16 KiB); ver `docs/02-database/audit-model.md` |
 | Category | organización | **implementada (`V9`)** — agrupador de catálogo; `code` slug único por org e inmutable; `status ACTIVE/INACTIVE`; sin DELETE; ver `docs/02-database/catalog-model.md` |
+| InventoryItem | organización | **candidato (`V16`, PR abierto)** — code slug inmutable y único por organización; baseUnit `UNIT`/`GRAM`/`MILLILITER`; sin stock ni cantidades; ver `docs/02-database/inventory-item-model.md` |
 | Product | organización | **implementada (`V9`)** — `sku` canónico (MAYÚSCULAS) inmutable y único por org, `barcode` opcional único cuando está presente, `unit_price NUMERIC(19,4)` (moneda heredada de la org), `category_id` opcional same-org; sin DELETE; ver `docs/02-database/catalog-model.md` |
 | ModifierGroup | organización | **implementada (`V10`)** — grupo de modifiers reutilizable; `code` slug único por org e inmutable; bounds `min_selections`/`max_selections`; `required`/`singleChoice`/`multipleChoice` **derivados** (no persistidos); `status ACTIVE/INACTIVE`; sin DELETE; ver `docs/02-database/product-modifiers-model.md` |
 | ModifierOption | organización | **implementada (`V10`)** — opción de un grupo; `code` slug inmutable único dentro del grupo; `price_delta NUMERIC(19,4)` **con signo**; `display_order`; `status ACTIVE/INACTIVE`; sin DELETE |
@@ -53,7 +55,7 @@ Organization (organización / empresa)  ✔ implementado
 | Sale / SaleItem / SaleItemModifier | turno/caja/sucursal | **implementada (`V13`/`V14`)** — Sale scoped a Organization/Branch/Register/Shift, lifecycle `OPEN → CANCELLED` o `OPEN → COMPLETED`, total exacto de líneas ACTIVE, snapshots de catálogo/modifiers y sin hard delete; ver `docs/02-database/sales-model.md` |
 | Payment | sale/turno/caja/sucursal | **implementado (`V14`)** — hecho inmutable CASH/CARD creado solo por checkout atómico; ver `docs/02-database/payment-model.md` |
 | ProductVariant | organización | tamaños, sabores (futuro) |
-| Ingredient | **organización** | Insumos del catálogo |
+| Ingredient | — | No es un aggregate separado; ingredientes y consumibles se modelan como `InventoryItem` |
 | Recipe | **organización** | Producto → ingredientes + cantidades |
 | Stock | **sucursal** | Existencias por ingrediente/producto en cada branch |
 | Sale / SaleLine / Payment | sucursal | Dinero siempre en `BigDecimal` |

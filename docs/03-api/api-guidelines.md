@@ -64,6 +64,11 @@ GET   /api/v1/organizations/{organizationId}/products                (paginado, 
 GET   /api/v1/organizations/{organizationId}/products/{productId}
 PATCH /api/v1/organizations/{organizationId}/products/{productId}
 
+POST  /api/v1/organizations/{organizationId}/inventory-items
+GET   /api/v1/organizations/{organizationId}/inventory-items    (paginado, ?page&size&q&status&baseUnit)
+GET   /api/v1/organizations/{organizationId}/inventory-items/{inventoryItemId}
+PATCH /api/v1/organizations/{organizationId}/inventory-items/{inventoryItemId}
+
 POST  /api/v1/organizations/{organizationId}/modifier-groups
 GET   /api/v1/organizations/{organizationId}/modifier-groups          (paginado, ?page&size&status&q)
 GET   /api/v1/organizations/{organizationId}/modifier-groups/{groupId}
