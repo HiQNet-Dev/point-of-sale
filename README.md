@@ -5,12 +5,9 @@ principalmente a **pequeños negocios de alimentos** (cafeterías, juguerías, r
 pequeños) y **retail ligero**.
 
 > **Estado:** HiQNet POS está en desarrollo activo y todavía **no es una release
-> comercial estable**. La versión en desarrollo es `0.2.0-SNAPSHOT`
-> (ver `VERSION`); el último milestone liberado es la release **`v0.1.0`
-> (Foundation)**, la release técnica privada del producto:
-> estructura técnica compilable, ejecutable, documentada y auditada — **no** es
-> el POS comercial completo. Las funcionalidades comerciales del POS (ventas,
-> catálogo, inventario, cajas) aún no existen.
+> comercial estable**. La release técnica privada más reciente es **`v0.2.0`
+> (POS Core)**; no representa el producto comercial completo ni incluye todos
+> los dominios planificados.
 
 ## Foundation implementada (v0.1.x)
 
@@ -19,7 +16,7 @@ La fundación actual ya es operativa como backend administrativo seguro:
 - **Organization / Branch / Users** — administración completa scoped por organización.
 - **Authentication** — login, refresh rotativo (30d, familia 30d), logout en
   familia, `logout-all`, `/me`; JWT identity-only, PostgreSQL autoritativa.
-- **Roles / Permissions / RBAC** — catálogo de 19 permisos sembrado por Flyway,
+- **Roles / Permissions / RBAC** — catálogo de 45 permisos sembrado por Flyway,
   roles por organización, assignments, `@PreAuthorize` database-authoritative.
 - **Branch Memberships** — usuarios por sucursal con roles branch-scoped y
   `hasBranchPermission` (org-wide UNION membership ACTIVE de esa branch).
@@ -31,6 +28,16 @@ La fundación actual ya es operativa como backend administrativo seguro:
 Detalle: `docs/01-architecture/modules.md`, `docs/04-security/security-model.md`
 y `docs/04-security/secure-bootstrap.md`. El roadmap completo en
 `docs/00-product/roadmap.md`.
+
+## POS Core publicado (v0.2.0)
+
+- Catálogo operacional con modificadores, cajas y turnos por sucursal.
+- Contexto operacional autenticado y experiencia POS para sesión, búsqueda de
+  productos y carrito persistido.
+- Sales y checkout atómico con pagos CASH/CARD, split tender y auditoría.
+- CI integrado con pruebas E2E de navegador sobre PostgreSQL.
+
+Esta release no incluye Inventory, Purchasing, Expenses, Reports ni hardware.
 
 ## Filosofía del producto
 
@@ -97,7 +104,7 @@ point-of-sale/
 ├── README.md
 ├── CONTRIBUTING.md
 ├── SECURITY.md
-└── VERSION             0.2.0-SNAPSHOT
+└── VERSION             0.2.0
 ```
 
 ## Requisitos
@@ -175,8 +182,8 @@ CI ejecuta exactamente estos pasos en cada push a `main` y en cada PR.
 
 ```text
 v0.1.x Foundation      ✓ RELEASED (privada, 2026-10-10)
-v0.2.x POS Core        ⬜ IN DEVELOPMENT
-v0.3.x Inventory
+v0.2.x POS Core        ✓ RELEASED (privada, 2026-10-12)
+v0.3.x Inventory       NEXT
 v0.4.x Purchasing
 v0.5.x Expenses & Management
 v0.6.x Reporting
@@ -225,5 +232,5 @@ Los derechos de uso para clientes, instalaciones o terceros se otorgarán
 
 Consulta `LICENSE` y `docs/05-development/legal-status.md`.
 
-La release `v0.1.0` representa únicamente la Foundation técnica del producto;
-no significa que el POS comercial completo esté terminado.
+La release `v0.2.0` añade POS Core a la Foundation, pero no representa el POS
+comercial completo ni incluye Inventario.

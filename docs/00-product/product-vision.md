@@ -1,6 +1,6 @@
 # Visión de producto — HiQNet POS
 
-**Estado:** fundación (v0.1.0). Ninguna funcionalidad de negocio existe todavía.
+**Estado:** POS Core publicado (`v0.2.0`); Inventario, Compras, Reportes y hardware siguen pendientes.
 
 ## Qué es
 
@@ -19,10 +19,9 @@ instalación aislada por cliente (ver `docs/01-architecture/architecture.md`).
 
 **Foco inicial:** un negocio simple con una sucursal, una caja y venta de mostrador.
 
-**Crecimiento previsto (todo futuro / pendiente, no implementado):**
+**Crecimiento previsto (pendiente):**
 
-- Múltiples sucursales y múltiples cajas por sucursal
-- Inventario, ingredientes y recetas
+- Inventario por sucursal, ingredientes y recetas
 - Compras y proveedores
 - Reportes y administración
 - Hardware POS (impresora térmica, cajón de dinero, lectores)
@@ -55,7 +54,7 @@ migraciones, ni su código. HiQNet POS parte de cero con su propia arquitectura.
 - **Repositorio:** privado.
 - **Uso por clientes/terceros:** únicamente mediante acuerdos comerciales
   escritos separados con HiQNet.
-- La release técnica privada `v0.1.0` documenta la Foundation del producto;
-  los derechos comerciales de clientes se pactan aparte.
+- Las releases técnicas privadas `v0.1.0` (Foundation) y `v0.2.0` (POS Core)
+  no sustituyen los acuerdos comerciales de clientes.
 
 Detalle: `LICENSE` y `docs/05-development/legal-status.md`.

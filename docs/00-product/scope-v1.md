@@ -1,13 +1,13 @@
 # Alcance v1 — visión comercial tentativa
 
-**Importante:** este documento describe alcance **futuro** para una hipotética
-**v1.0.0 comercial**. **Nada de lo listado existe hoy.** El repositorio contiene
-solo la fundación técnica (estructura compilable, ejecutable y documentada).
-Todo lo descrito aquí está **no implementado / futuro**.
+**Importante:** este documento describe el alcance objetivo para una futura
+**v1.0.0 comercial**; no es un inventario del estado actual. La Foundation y POS
+Core ya están implementados en milestones previos. Consulta
+`docs/00-product/roadmap.md` para el estado real de cada área.
 
-Versión actual: `0.1.0` (Foundation). La v1.0.0 **no está alcanzada**.
+Versión publicada: `0.2.0` (POS Core). La v1.0.0 **no está alcanzada**.
 
-## Must-have (futuro, no implementado)
+## Áreas objetivo de v1 (incluye capacidades ya entregadas en milestones previos)
 
 | Área | Funcionalidades futuras |
 | --- | --- |
@@ -39,6 +39,6 @@ Versión actual: `0.1.0` (Foundation). La v1.0.0 **no está alcanzada**.
 
 ## Declaración explícita
 
-**Ninguna de las funcionalidades de este documento existe hoy.** Ninguna debe
-darse por entendida en una demo, contrato o promesa comercial sin confirmar que
-su milestone correspondiente (ver `docs/00-product/roadmap.md`) esté completada.
+Las áreas enumeradas no deben interpretarse como funcionalidades completas de
+v1.0.0. Confirma el estado real de cada milestone en
+`docs/00-product/roadmap.md` antes de una demo, contrato o promesa comercial.

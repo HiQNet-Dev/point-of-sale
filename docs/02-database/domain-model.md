@@ -5,7 +5,7 @@ administración), `RefreshSession`, RBAC, memberships, auditoría, bootstrap y e
 catálogo (`Category`/`Product` + modifiers + cash registers + cash shifts), Sales Foundation y Payments + Atomic Checkout ya están implementados (migraciones `V1`–`V14`); el resto de las entidades descritas aquí
 son futuras.
 
-Versión actual: `0.2.0-SNAPSHOT`.
+Versión de esta release: `0.2.0`.
 
 ## Jerarquía principal
 

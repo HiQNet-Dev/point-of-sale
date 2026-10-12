@@ -2,68 +2,63 @@
 
 All notable changes to HiQNet POS are documented in this file.
 
-## [Unreleased]
+## [0.2.0] - 2026-10-12
 
 ### POS Core
 
-Development for v0.2.x has started.
+- Added an organization-owned operational catalog for branch POS discovery,
+  including categories, active products and assigned modifier configuration.
+- Added organization-owned modifier groups/options and ordered product-to-group
+  assignments.
+- Added branch-owned cash registers and register-owned cash shifts, with
+  authenticated operational branch context and recovery reads for inactive
+  branches/registers.
+- Added the POS session UI, product browser and server-persisted cart. Sales are
+  created explicitly; the server Sale detail remains the cart and pricing
+  authority.
 
-- Product Browser + Persisted Cart frontend is implemented: `/pos` lists and resumes OPEN Sales, creates a Sale only from an explicit action, browses the branch-context Operational Catalog, and performs SaleItem add/edit/remove/cancel mutations. The Sale detail is the persisted cart and pricing authority.
-- Added candidate POS Checkout UI: CASH, CARD and split-tender instructions are held only in ephemeral form state and submitted atomically to the existing checkout endpoint. Exact scale-4 BigInt arithmetic previews applied/remaining/cash change; the backend remains authoritative. No `payment.read` dependency, actual card processing, payment-draft persistence or automatic next Sale.
-- Added candidate Operational POS Catalog (`V15`): branch-context `pos.catalog.read`
-  exposes organization-owned categories, ACTIVE products and one-read assigned
-  modifier configuration without granting administrative catalog permissions.
-  V1–V14 remain immutable; no branch-specific prices, inventory, or frontend UI.
-- Corrected modifier-option API documentation: its current administrative
-  collection accepts pagination only; it does not accept a `status` filter.
-- Added Payments + Atomic Checkout (`V14`): Sale lifecycle now supports terminal `COMPLETED`, and immutable CASH/CARD payment facts are created only by one atomic checkout transaction. Exact BigDecimal coverage, split tender, cash tender/change, Sale aggregate concurrency, CashShift close coordination, `sale.checkout`/`payment.read` permissions (catalog 42 → 44), and transactional `sale.completed` audit are included. Partial payments, refunds, gateways, CashMovements, Inventory, Tickets and frontend checkout remain out of scope.
+### Sales & Checkout
 
-- Added Sales Foundation (`V13`): scoped `Sale` with an `OPEN → CANCELLED` lifecycle, retained `SaleItem`/modifier snapshots, server-authoritative exact pricing, sale aggregate optimistic concurrency, transactional audit, and branch-scoped `sale.read/create/update/cancel` permissions (catalog 38 → 42). An OPEN sale blocks CashShift close; sale creation and close coordinate through a scoped CashShift row lock.
+- Added scoped Sales with retained item/modifier snapshots, exact server pricing,
+  optimistic concurrency and the `OPEN → CANCELLED` lifecycle.
+- Added atomic checkout to complete a Sale and create immutable CASH/CARD payment
+  facts, including split tender and exact cash change calculations.
+- Added checkout UI with ephemeral tender input and explicit completion; the
+  backend remains authoritative for amounts and checkout state.
 
-- Added candidate POS operational session UI: `/pos` rediscovers the signed-in
-  user's branches and their cash registers, recovers an OPEN cash shift, and
-  supports opening or closing a shift with scoped queries and exact decimal
-  strings. Inactive branches/registers remain discoverable for close recovery;
-  selections and amounts are not persisted. Sales and checkout are not included.
-- Added frontend authentication/session infrastructure: a memory-only
-  authenticated API client, single-flight rotating refresh, `/auth/me` bootstrap,
-  protected routing, and login/logout.
-- Added the Catalog Foundation: organization-owned Categories and Products
-  with an immutable normalized `code`/`sku`, an optional per-organization
-  unique `barcode`, a base `unitPrice` (currency inherited from the
-  organization) and optional same-organization category assignment (`V9`).
-- Added the `category.*` and `product.*` permissions (permission catalog
-  19 → 25).
-- Added the Product Modifiers foundation: organization-owned, reusable
-  Modifier Groups and Modifier Options (immutable slug `code`, signed
-  `priceDelta`, derived required/single-/multiple-choice selection bounds) and
-  an ordered Product ↔ Modifier Group assignment with atomic replacement à la
-  `expectedVersion` of the product (`V10`).
-- Added the `modifier.group.*`, `modifier.option.*` and
-  `product.modifiers.manage` permissions (permission catalog 25 → 32).
-- Added the Cash Registers foundation: branch-owned Cash Registers with an
-  immutable normalized slug `code` (unique per branch), a required `name` and an
-  `ACTIVE`/`INACTIVE` status, plus branch-scoped authorization and append-only
-  audit (`V11`).
-- Added the `cash-register.read`, `cash-register.create` and
-  `cash-register.update` permissions (permission catalog 32 → 35).
-- Added the Cash Shifts foundation: register-owned Cash Shifts with an
-  `OPEN → CLOSED` lifecycle, server-derived actors and timestamps, `BigDecimal`
-  (`NUMERIC(19,4)`) declaration amounts (`>= 0`, at most 4 decimals), a
-  database-enforced "at most one OPEN shift per register" partial unique index,
-  same-organization composite foreign keys, branch-scoped authorization and
-  append-only audit for open and close (`V12`).
-- Added the `cash-shift.read`, `cash-shift.open` and `cash-shift.close`
-  permissions (permission catalog 35 → 38).
-- Added the Self Operational Context: `GET /api/v1/auth/me` now returns the
-  organization operational context (`organization.currency/locale/timezone`,
-  server-derived) and a new self-scoped `GET /api/v1/auth/me/branches`
-  (paginated) lists the branches visible to the identity — membership-scoped by
-  default, organization-wide with `branch.read`. Visibility only; a deactivated
-  branch stays discoverable to its members.
-- Read-recovery after branch deactivation: Cash Register and Cash Shift reads
-  (and cash-shift close) no longer require the branch to be ACTIVE, so an
-  already-open resource stays reachable; writes still require an ACTIVE branch.
+### Security & RBAC
+
+- Added database-authoritative permissions for catalog discovery, modifiers,
+  cash registers, cash shifts, Sales and checkout, including branch-scoped
+  authorization.
+- Added self-scoped authenticated operational context and visible-branch
+  discovery; branch visibility does not replace authorization on operations.
+- Preserved deny-by-default security, tenant isolation and permission resolution
+  from PostgreSQL.
+
+### Reliability
+
+- Coordinated Sale mutations and CashShift close with scoped locking and
+  optimistic concurrency; checkout and audit changes are transactional.
+- Added constraints and same-organization foreign keys for operational and
+  financial records.
+- Added integrated Chromium E2E assertions against PostgreSQL for persisted
+  Sale, Payment and audit data; inactive branch/register reads remain available
+  for operational recovery.
+
+### Testing
+
+- CI verifies backend, frontend, Docker Compose and three independent integrated
+  POS browser E2E runs against PostgreSQL.
+- Added exact decimal, concurrency, authorization, migration and persistence
+  coverage for POS Core.
+
+### Scope
+
+This is a private, pre-1.0 POS Core technical milestone, not a commercially
+complete POS release. It does not include Inventory, Purchasing, Expenses,
+Reports, tickets, actual card processing or hardware integration. Inventory is
+not part of this release.
 
 ## [0.1.0] - 2026-10-10
 
