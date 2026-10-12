@@ -17,7 +17,8 @@ BEGIN
 
   IF NOT EXISTS (
     SELECT 1 FROM sales
-    WHERE organization_id = e2e_org_id AND status = 'COMPLETED' AND completed_at IS NOT NULL
+    WHERE organization_id = e2e_org_id AND status = 'COMPLETED'
+      AND completed_at IS NOT NULL AND completed_by_user_id IS NOT NULL
   ) THEN
     RAISE EXCEPTION 'No completed Sale persisted for E2E organization';
   END IF;
@@ -41,6 +42,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM sale_items
     WHERE organization_id = e2e_org_id AND product_name_snapshot = 'E2E Simple Product'
+      AND product_sku_snapshot = 'E2E-SIMPLE'
       AND base_unit_price = 10.1000 AND effective_unit_price = 10.1000 AND line_total = 10.1000
   ) THEN
     RAISE EXCEPTION 'Expected exact immutable SaleItem snapshot was not persisted';
