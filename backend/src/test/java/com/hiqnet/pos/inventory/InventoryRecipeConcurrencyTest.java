@@ -65,8 +65,9 @@ class InventoryRecipeConcurrencyTest extends AbstractRbacIntegrationTest {
     private Fixture setup() {
         var fx = fixture();
         var organization = organizations.findById(fx.orgId()).orElseThrow();
-        String suffix = UUID.randomUUID().toString().substring(0, 8).toUpperCase(Locale.ROOT);
-        Product product = products.saveAndFlush(Product.create(organization, "RACE-" + suffix, "Recipe", BigDecimal.ONE));
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        Product product = products.saveAndFlush(Product.create(
+                organization, "RACE-" + suffix.toUpperCase(Locale.ROOT), "Recipe", BigDecimal.ONE));
         ModifierGroup group = groups.saveAndFlush(ModifierGroup.create(organization, "race-" + suffix, "Group", 0, 1));
         ModifierOption option = options.saveAndFlush(ModifierOption.create(
                 organization, group, "race-" + suffix, "Option", BigDecimal.ZERO, 0));

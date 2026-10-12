@@ -57,10 +57,17 @@ class ModifierInventoryEffectsApiTest extends AbstractAuditIntegrationTest {
         String body = "{\"expectedVersion\":0,\"effects\":["
                 + "{\"inventoryItemId\":\"" + milkId + "\",\"quantityDelta\":\"-250\"},"
                 + "{\"inventoryItemId\":\"" + oatId + "\",\"quantityDelta\":\"250.5\"}]}";
-        mockMvc.perform(put(url).header("Authorization", bearer(token)).contentType(MediaType.APPLICATION_JSON).content(body))
+        String createdResponse = mockMvc.perform(put(url).header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1))
-                .andExpect(jsonPath("$.effects[0].quantityDelta").value("-250.000000"))
-                .andExpect(jsonPath("$.effects[1].quantityDelta").value("250.500000"));
+                .andReturn().getResponse().getContentAsString();
+        var createdEffects = objectMapper.readTree(createdResponse).get("effects");
+        assertThat(java.util.List.of(
+                        createdEffects.get(0).get("inventoryItemId").asText() + "="
+                                + createdEffects.get(0).get("quantityDelta").asText(),
+                        createdEffects.get(1).get("inventoryItemId").asText() + "="
+                                + createdEffects.get(1).get("quantityDelta").asText()))
+                .containsExactlyInAnyOrder(milkId + "=-250.000000", oatId + "=250.500000");
         assertThat(latestAudit(fx.orgId()).action()).isEqualTo("inventory.modifier_effects.updated");
         mockMvc.perform(put(url).header("Authorization", bearer(token)).contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CONCURRENT_MODIFICATION"));

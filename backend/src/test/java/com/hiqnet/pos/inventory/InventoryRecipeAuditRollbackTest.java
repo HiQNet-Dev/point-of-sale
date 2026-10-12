@@ -55,8 +55,9 @@ class InventoryRecipeAuditRollbackTest extends AbstractRbacIntegrationTest {
     void failedAuditRollsBackRecipeAndModifierConfigurationRows() {
         RbacFixture fixture = fixture();
         var organization = organizations.findById(fixture.orgId()).orElseThrow();
-        String suffix = UUID.randomUUID().toString().substring(0, 8).toUpperCase(Locale.ROOT);
-        Product product = products.saveAndFlush(Product.create(organization, "RECIPE-" + suffix, "Recipe", BigDecimal.ONE));
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        Product product = products.saveAndFlush(Product.create(
+                organization, "RECIPE-" + suffix.toUpperCase(Locale.ROOT), "Recipe", BigDecimal.ONE));
         ModifierGroup group = groups.saveAndFlush(ModifierGroup.create(organization, "group-" + suffix, "Group", 0, 1));
         ModifierOption option = options.saveAndFlush(ModifierOption.create(
                 organization, group, "option-" + suffix, "Option", BigDecimal.ZERO, 0));
