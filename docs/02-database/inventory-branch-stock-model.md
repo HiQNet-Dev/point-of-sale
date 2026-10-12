@@ -36,3 +36,13 @@ Permisos `inventory.stock.read` y `inventory.stock.adjust` son branch-scoped med
 - `POST .../{inventoryItemId}/opening-stock` y `POST .../{inventoryItemId}/adjustments` — únicos writers de stock de este slice.
 
 No existen PATCH de saldo, DELETE, reservas, Purchasing, Transfers, recipes, costing ni integración Sales.
+
+## Recipe and modifier configuration — V18 candidate / PR C1
+
+V18 añade `product_inventory_recipes` y `product_inventory_recipe_components`, más `modifier_option_inventory_configs` y `modifier_option_inventory_effects`. Son definiciones propiedad de Organization y no incluyen `branch_id`, saldo ni referencias a `SaleItem`. FKs compuestas fuerzan que Product, ModifierOption e InventoryItem pertenezcan a la misma Organization; constraints fijan una receta por Product, una config por ModifierOption y un componente/efecto por InventoryItem dentro del aggregate.
+
+Recetas activas no pueden estar vacías; cada cantidad de componente es positiva. Los efectos de modifiers son deltas firmados no-cero; una lista vacía significa sin impacto. Ambos usan `NUMERIC(19,6)`, `BigDecimal` y strings decimales en API. Los PUT son replace-all, usan `expectedVersion`, locking y `@Version`; cambios de configuración y un AuditEvent se guardan atómicamente. Reemplazos semánticamente iguales no incrementan versión ni generan auditoría.
+
+El resolver combina la receta activa y los ModifierOptions seleccionados ya validados por el caller, suma exacta por InventoryItem, elimina totales cero y rechaza configuraciones con componentes inactivos, saldo teórico negativo o cantidades inválidas. No consulta Branch stock. Product sin receta y receta INACTIVE son untracked. Las APIs de receta y efectos son organization-scoped mediante `inventory.recipe.read/write`; V18 no auto-grants estos permisos a roles existentes.
+
+La configuración es candidata en PR C1. SaleItem snapshots, Sales/Checkout, deducción/reserva de stock, disponibilidad por stock, Purchasing, Transfers, Costing y UI siguen fuera de alcance.

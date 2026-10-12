@@ -176,7 +176,7 @@ CI ejecuta exactamente estos pasos en cada push a `main` y en cada PR.
 ```text
 v0.1.x Foundation      ✓ RELEASED (privada, 2026-10-10)
 v0.2.x POS Core        ✓ RELEASED (privada, 2026-10-12)
-v0.3.x Inventory       ⬜ IN DEVELOPMENT
+v0.3.x Inventory       ⬜ IN DEVELOPMENT (Recipes + Modifier Effects candidate / PR open)
 v0.4.x Purchasing
 v0.5.x Expenses & Management
 v0.6.x Reporting

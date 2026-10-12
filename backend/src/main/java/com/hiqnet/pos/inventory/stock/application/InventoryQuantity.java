@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.regex.Pattern;
 import org.springframework.http.HttpStatus;
+import tools.jackson.databind.JsonNode;
 
 /** Exact decimal boundary. API quantities are strings; binary floating point is never accepted. */
 public final class InventoryQuantity {
@@ -14,6 +15,13 @@ public final class InventoryQuantity {
     private static final BigDecimal MAX = new BigDecimal("9999999999999.999999");
 
     private InventoryQuantity() {}
+
+    public static BigDecimal parse(JsonNode node, String field) {
+        if (node == null || !node.isTextual()) {
+            throw invalid(field + " must be a JSON decimal string");
+        }
+        return parse(node.textValue(), field);
+    }
 
     public static BigDecimal parse(String text, String field) {
         if (text == null || !LEXICAL.matcher(text).matches()) {

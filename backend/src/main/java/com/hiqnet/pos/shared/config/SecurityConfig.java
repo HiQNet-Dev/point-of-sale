@@ -119,6 +119,10 @@ public class SecurityConfig {
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/products").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/products/*").authenticated();
                     auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*/products/*").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/products/*/inventory-recipe").authenticated();
+                    auth.requestMatchers(HttpMethod.PUT, "/api/v1/organizations/*/products/*/inventory-recipe").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/modifier-options/*/inventory-effects").authenticated();
+                    auth.requestMatchers(HttpMethod.PUT, "/api/v1/organizations/*/modifier-options/*/inventory-effects").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/products/*/modifier-groups").authenticated();
                     auth.requestMatchers(HttpMethod.PUT, "/api/v1/organizations/*/products/*/modifier-groups").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/modifier-groups").authenticated();
