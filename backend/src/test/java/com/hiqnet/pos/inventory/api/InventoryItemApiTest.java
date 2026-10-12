@@ -90,11 +90,13 @@ class InventoryItemApiTest extends AbstractAuditIntegrationTest {
         String tokenA = adminToken(fxA);
         String tokenB = adminToken(fxB);
         createItem(fxA.orgId(), tokenA, "milk", "Milk A", "GRAM");
+        long auditsAfterFirstCreate = auditCount(fxA.orgId());
         mockMvc.perform(post(BASE + fxA.orgId() + "/inventory-items")
                         .header("Authorization", bearer(tokenA)).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"code\":\"milk\",\"name\":\"Duplicate\",\"baseUnit\":\"GRAM\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("INVENTORY_ITEM_CODE_ALREADY_EXISTS"));
+        assertThat(auditCount(fxA.orgId())).isEqualTo(auditsAfterFirstCreate);
         mockMvc.perform(post(BASE + fxB.orgId() + "/inventory-items")
                         .header("Authorization", bearer(tokenB)).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"code\":\"milk\",\"name\":\"Milk B\",\"baseUnit\":\"GRAM\"}"))
@@ -160,9 +162,26 @@ class InventoryItemApiTest extends AbstractAuditIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn();
         String itemId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText();
+
         mockMvc.perform(patch(BASE + fx.orgId() + "/inventory-items/" + itemId)
                         .header("Authorization", bearer(token)).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"expectedVersion\":0,\"name\":\"  Whole Milk  \",\"description\":\"  \",\"baseUnit\":\"MILLILITER\",\"fractionalUnitAllowed\":true,\"status\":\"INACTIVE\"}"))
+                        .content("{\"expectedVersion\":0,\"name\":\"  Whole Milk  \"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.description").value("Original description"))
+                .andExpect(jsonPath("$.version").value(1));
+        assertThat(metadataOf(latestAudit(fx.orgId())).get("changedFields").toString()).isEqualTo("[name]");
+        long auditAfterNameChange = auditCount(fx.orgId());
+        mockMvc.perform(patch(BASE + fx.orgId() + "/inventory-items/" + itemId)
+                        .header("Authorization", bearer(token)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":1,\"description\":null}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.description").value("Original description"))
+                .andExpect(jsonPath("$.version").value(1));
+        assertThat(auditCount(fx.orgId())).isEqualTo(auditAfterNameChange);
+
+        mockMvc.perform(patch(BASE + fx.orgId() + "/inventory-items/" + itemId)
+                        .header("Authorization", bearer(token)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":1,\"description\":\"  \",\"baseUnit\":\"MILLILITER\",\"fractionalUnitAllowed\":true,\"status\":\"INACTIVE\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("milk"))
                 .andExpect(jsonPath("$.name").value("Whole Milk"))
@@ -170,10 +189,18 @@ class InventoryItemApiTest extends AbstractAuditIntegrationTest {
                 .andExpect(jsonPath("$.baseUnit").value("MILLILITER"))
                 .andExpect(jsonPath("$.fractionalUnitAllowed").value(true))
                 .andExpect(jsonPath("$.status").value("INACTIVE"))
-                .andExpect(jsonPath("$.version").value(1));
+                .andExpect(jsonPath("$.version").value(2));
         assertThat(latestAudit(fx.orgId()).action()).isEqualTo("inventory.item.updated");
         assertThat(metadataOf(latestAudit(fx.orgId())).get("changedFields").toString())
-                .contains("name", "description", "baseUnit", "fractionalUnitAllowed", "status");
+                .isEqualTo("[description, baseUnit, fractionalUnitAllowed, status]");
+
+        mockMvc.perform(patch(BASE + fx.orgId() + "/inventory-items/" + itemId)
+                        .header("Authorization", bearer(token)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":2,\"status\":\"ACTIVE\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.version").value(3));
+        assertThat(metadataOf(latestAudit(fx.orgId())).get("changedFields").toString()).isEqualTo("[status]");
     }
 
     @Test
@@ -184,7 +211,7 @@ class InventoryItemApiTest extends AbstractAuditIntegrationTest {
         long auditBefore = auditCount(fx.orgId());
         mockMvc.perform(patch(BASE + fx.orgId() + "/inventory-items/" + itemId)
                         .header("Authorization", bearer(token)).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"expectedVersion\":0}"))
+                        .content("{\"expectedVersion\":0,\"name\":\"Milk\",\"baseUnit\":\"GRAM\",\"fractionalUnitAllowed\":false,\"status\":\"ACTIVE\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.version").value(0));
         assertThat(auditCount(fx.orgId())).isEqualTo(auditBefore);

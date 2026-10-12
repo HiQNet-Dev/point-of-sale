@@ -259,6 +259,19 @@ Catálogo organization-scoped (`category.*` / `product.*`; `hasPermission`, no
 - **PATCH /products/{productId}**: campos opcionales + `expectedVersion`;
   `categoryId` tri-estado (omitir/null/valor); `sku` inmutable.
 
+## Inventory Item Catalog (fundación)
+
+El catálogo organization-scoped usa `inventory.item.read` / `inventory.item.write`
+con `hasPermission`; no expone DELETE. `InventoryItem.code` es un slug lowercase
+inmutable, único por organización. `POST` crea `ACTIVE`; `GET` collection usa
+`PageResponse` (page 0, size 20, máximo 100; filtros `q` por `code`/`name`,
+`status`, `baseUnit`; orden `name ASC, id ASC`). `PATCH` requiere
+`expectedVersion`; campos ausentes no cambian. El DTO nullable no distingue un
+campo omitido de JSON `null`: ambos significan “no provisto”. Para `description`,
+`""` o solo whitespace sí limpia el valor a `null`; para `name`, blank es error.
+La unidad base puede corregirse en esta fundación, antes de que existan datos de
+inventario dependientes. Ver `docs/02-database/inventory-item-model.md`.
+
 ## POS Operational Catalog (lecturas operacionales)
 
 El catálogo sigue siendo **Organization-owned**. Las rutas operacionales usan una
