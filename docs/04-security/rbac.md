@@ -11,7 +11,7 @@ User
   ↓ user_organization_roles (organization_id, user_id, role_id)     [ORGANIZATION scope]
 Role  (per Organization; code slug único e inmutable; status ACTIVE|INACTIVE)
   ↓ role_permissions (role_id, permission_code)
-Permission (catálogo, sembrado por V5/V6/V7/V9/V10/V11/V12/V13/V14/V15/V16/V17; sin CRUD de cliente)
+Permission (catálogo, sembrado por V5/V6/V7/V9/V10/V11/V12/V13/V14/V15/V16/V17/V18; sin CRUD de cliente)
 
 User
   ↓ branch_memberships (organization_id, branch_id, user_id, status)  [BRANCH scope]
@@ -20,7 +20,7 @@ Role   (mismas definiciones de roles; sin modelo BranchRole separado)
 ```
 
 - **Permissions**: catálogo del SISTEMA (`permissions.code` PK natural).
-  Se crean únicamente vía Flyway (`V5`/`V6`/`V7`/`V9`/`V10`/`V11`/`V12`/`V13`/`V14`/`V15`/`V16`/`V17`). Orden `code ASC`.
+  Se crean únicamente vía Flyway (`V5`/`V6`/`V7`/`V9`/`V10`/`V11`/`V12`/`V13`/`V14`/`V15`/`V16`/`V17`/`V18`). Orden `code ASC`.
 - **Role**: pertenece a una organización; `code` normalizado (trim+lowercase,
   slug) único por organización e inmutable; `name` editable; sin DELETE
   (baja = `status INACTIVE`).
@@ -174,9 +174,8 @@ el mismo JWT (ADR-0005). Los access JWTs no se blacklistean (stateless, 10m).
 
 Promovido de decisión pendiente a contrato v0.1.x: **`expectedVersion`**
 (requerido, `>= 0`) en PATCH de Organization, Branch, User, Role, Membership,
-Category, Product, ModifierGroup, ModifierOption y CashRegister, y en el `PUT` de
-reemplazo
-producto↔modifier-group. El servidor
+Category, Product, ModifierGroup, ModifierOption y CashRegister, y en los `PUT` de
+reemplazo producto↔modifier-group, Product Inventory Recipe y ModifierOption Inventory Effects. El servidor
 compara con `@Version`; mismatch → `409 CONCURRENT_MODIFICATION`. Sin ETag /
 If-Match todavía.
 
@@ -224,6 +223,13 @@ existentes; bootstrap nuevo recibe el catálogo completo.
   ACTIVE), para que un recurso ya abierto siga siendo recuperable. `open` y las
   escrituras de Cash Register siguen exigiendo la branch ACTIVE.
 - **Recovery/backdoor** para el administrador destruido: no (operativo/futuro).
+
+## Inventory recipe permissions (V18 candidate / PR C1)
+
+`inventory.recipe.read` y `inventory.recipe.write` son organization-scoped y cubren la administración de recetas de Product y efectos de Inventory de ModifierOption. V18 añade únicamente estos dos permisos: el catálogo pasa de 49 a 51; los grants de roles existentes permanecen en 49 y no reciben acceso automáticamente. Bootstrap nuevo concede el catálogo completo (51). No se agregan claims JWT ni permisos branch-scoped.
+
+- GET `/organizations/{id}/products/{productId}/inventory-recipe` y GET `/organizations/{id}/modifier-options/{optionId}/inventory-effects`: `inventory.recipe.read`.
+- PUT de esas rutas: `inventory.recipe.write`.
 
 ## Inventory stock permissions (V17)
 

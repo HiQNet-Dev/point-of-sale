@@ -1,6 +1,8 @@
 package com.hiqnet.pos.inventory.domain;
 
 import jakarta.persistence.LockModeType;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -15,6 +17,8 @@ public interface InventoryItemRepository
         extends JpaRepository<InventoryItem, UUID>, JpaSpecificationExecutor<InventoryItem> {
 
     Optional<InventoryItem> findByIdAndOrganizationId(UUID id, UUID organizationId);
+
+    List<InventoryItem> findByOrganizationIdAndIdIn(UUID organizationId, Collection<UUID> ids);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select item from InventoryItem item where item.id = :id and item.organization.id = :organizationId")
