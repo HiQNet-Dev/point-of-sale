@@ -17,6 +17,7 @@ import com.hiqnet.pos.membership.domain.BranchMembership;
 import com.hiqnet.pos.membership.domain.BranchMembershipRepository;
 import com.hiqnet.pos.membership.domain.BranchMembershipRole;
 import com.hiqnet.pos.membership.domain.BranchMembershipRoleRepository;
+import java.math.BigDecimal;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -114,11 +115,13 @@ class InventoryStockApiTest extends AbstractAuditIntegrationTest {
                 .andExpect(jsonPath("$.version").value(3));
 
         var transitions=jdbc.query(
-                "select quantity_delta,resulting_quantity from inventory_movements where branch_id=? and inventory_item_id=?",
-                (rs,row)->rs.getBigDecimal("quantity_delta").toPlainString()+"->"+rs.getBigDecimal("resulting_quantity").toPlainString(),
+                "select quantity_delta,resulting_quantity from inventory_movements where branch_id=? and inventory_item_id=? order by occurred_at asc,id asc",
+                (rs,row)->new MovementAmounts(rs.getBigDecimal("quantity_delta"),rs.getBigDecimal("resulting_quantity")),
                 f.branch,f.item);
-        assertThat(transitions).containsExactlyInAnyOrder(
-                "100.000000->100.000000", "-20.000000->80.000000", "5.500000->85.500000");
+        assertThat(transitions).containsExactly(
+                new MovementAmounts(new BigDecimal("100.000000"),new BigDecimal("100.000000")),
+                new MovementAmounts(new BigDecimal("-20.000000"),new BigDecimal("80.000000")),
+                new MovementAmounts(new BigDecimal("5.500000"),new BigDecimal("85.500000")));
         assertThat(jdbc.queryForObject(
                 "select quantity_on_hand from branch_inventory where branch_id=? and inventory_item_id=?",
                 java.math.BigDecimal.class,f.branch,f.item)).isEqualByComparingTo("85.5");
@@ -198,4 +201,5 @@ class InventoryStockApiTest extends AbstractAuditIntegrationTest {
     }
 
     private record Fixture(UUID org,UUID branch,UUID item,String token) {}
+    private record MovementAmounts(BigDecimal delta,BigDecimal resulting) {}
 }
