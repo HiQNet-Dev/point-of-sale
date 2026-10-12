@@ -51,7 +51,7 @@ Organization (organización / empresa)  ✔ implementado
 | CashRegister | sucursal | **implementada (`V11`)** — caja física **branch-owned**; `code` slug único por branch e inmutable; `name` no único; `status ACTIVE/INACTIVE`; FK compuesta same-org `(branch_id, organization_id)`; sin DELETE; ver `docs/02-database/cash-register-model.md` |
 | CashShift | sucursal/caja | **implementada (`V12`)** — turno **register-owned**; ciclo `OPEN → CLOSED`, actores/timestamps del servidor, montos declarados `NUMERIC(19,4)` no negativos, un solo `OPEN` por caja (índice único parcial), FKs compuestas same-org/same-branch; sin DELETE; ver `docs/02-database/cash-shift-model.md` |
 | Sale / SaleItem / SaleItemModifier | turno/caja/sucursal | **implementada (`V13`/`V14`)** — Sale scoped a Organization/Branch/Register/Shift, lifecycle `OPEN → CANCELLED` o `OPEN → COMPLETED`, total exacto de líneas ACTIVE, snapshots de catálogo/modifiers y sin hard delete; ver `docs/02-database/sales-model.md` |
-| Payment | sale/turno/caja/sucursal | **candidate (`V14`)** — hecho inmutable CASH/CARD creado solo por checkout atómico; ver `docs/02-database/payment-model.md` |
+| Payment | sale/turno/caja/sucursal | **implementado (`V14`)** — hecho inmutable CASH/CARD creado solo por checkout atómico; ver `docs/02-database/payment-model.md` |
 | ProductVariant | organización | tamaños, sabores (futuro) |
 | Ingredient | **organización** | Insumos del catálogo |
 | Recipe | **organización** | Producto → ingredientes + cantidades |
