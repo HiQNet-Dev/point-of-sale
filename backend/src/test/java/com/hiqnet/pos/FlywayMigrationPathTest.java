@@ -64,7 +64,7 @@ class FlywayMigrationPathTest {
     }
 
     @Test
-    void upgradeFromV7AppliesV8ThroughV11WithoutRecreatingData() {
+    void upgradeFromV7AppliesV8ThroughV15WithoutRecreatingData() {
         // Stop the migration history at V7: the exact pre-bootstrap state.
         Flyway upToV7 = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
@@ -83,6 +83,7 @@ class FlywayMigrationPathTest {
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas("upgrade_path")
+                .target(MigrationVersion.fromVersion("15"))
                 .load();
         MigrateResult migratedToLatest = toLatest.migrate();
 
@@ -97,7 +98,7 @@ class FlywayMigrationPathTest {
     }
 
     @Test
-    void upgradeFromV8AppliesV9ThroughV11WithoutRecreatingData() {
+    void upgradeFromV8AppliesV9ThroughV15WithoutRecreatingData() {
         // Stop the migration history at V8: the exact pre-catalog state.
         Flyway upToV8 = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
@@ -114,6 +115,7 @@ class FlywayMigrationPathTest {
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas("upgrade_catalog")
+                .target(MigrationVersion.fromVersion("15"))
                 .load();
         MigrateResult migratedToLatest = toLatest.migrate();
 
@@ -157,6 +159,7 @@ class FlywayMigrationPathTest {
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas(schema)
+                .target(MigrationVersion.fromVersion("15"))
                 .load();
         assertThat(toLatest.migrate().migrationsExecuted).isEqualTo(7);
         toLatest.validate();
@@ -198,6 +201,7 @@ class FlywayMigrationPathTest {
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas(schema)
+                .target(MigrationVersion.fromVersion("15"))
                 .load();
         assertThat(toLatest.migrate().migrationsExecuted).isEqualTo(6);
         toLatest.validate();
@@ -243,6 +247,7 @@ class FlywayMigrationPathTest {
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas(schema)
+                .target(MigrationVersion.fromVersion("15"))
                 .load();
         assertThat(toLatest.migrate().migrationsExecuted).isEqualTo(5);
         toLatest.validate();
@@ -286,6 +291,7 @@ class FlywayMigrationPathTest {
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas(schema)
+                .target(MigrationVersion.fromVersion("15"))
                 .load();
         assertThat(toLatest.migrate().migrationsExecuted).isEqualTo(4);
         toLatest.validate();
@@ -321,6 +327,7 @@ class FlywayMigrationPathTest {
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas(schema)
+                .target(MigrationVersion.fromVersion("15"))
                 .load();
         assertThat(toLatest.migrate().migrationsExecuted).isEqualTo(3);
         toLatest.validate();
@@ -390,6 +397,7 @@ class FlywayMigrationPathTest {
         Flyway toV15 = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas(schema)
+                .target(MigrationVersion.fromVersion("15"))
                 .load();
         assertThat(toV15.migrate().migrationsExecuted).isEqualTo(1);
         toV15.validate();

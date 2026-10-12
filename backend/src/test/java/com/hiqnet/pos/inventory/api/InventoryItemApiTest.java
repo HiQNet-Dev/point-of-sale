@@ -154,7 +154,12 @@ class InventoryItemApiTest extends AbstractAuditIntegrationTest {
     void updateAllowsMetadataCorrectionAndStatusTransitionWithAudit() throws Exception {
         RbacFixture fx = fixture();
         String token = adminToken(fx);
-        String itemId = createItem(fx.orgId(), token, "milk", "Milk", "GRAM");
+        MvcResult created = mockMvc.perform(post(BASE + fx.orgId() + "/inventory-items")
+                        .header("Authorization", bearer(token)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"milk\",\"name\":\"Milk\",\"description\":\"Original description\",\"baseUnit\":\"GRAM\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String itemId = objectMapper.readTree(created.getResponse().getContentAsString()).get("id").asText();
         mockMvc.perform(patch(BASE + fx.orgId() + "/inventory-items/" + itemId)
                         .header("Authorization", bearer(token)).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"expectedVersion\":0,\"name\":\"  Whole Milk  \",\"description\":\"  \",\"baseUnit\":\"MILLILITER\",\"fractionalUnitAllowed\":true,\"status\":\"INACTIVE\"}"))
