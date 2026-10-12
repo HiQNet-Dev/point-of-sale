@@ -2,10 +2,6 @@
 -- these aggregates reference them without adding Inventory dependencies to Catalog.
 -- Recipe component order is not operational; API reads use a stable InventoryItem id order.
 
--- V10 did not need an (id, organization_id) superkey for modifier options. Add the
--- minimal key needed to enforce same-organization Inventory effects in PostgreSQL.
-ALTER TABLE modifier_options
-    ADD CONSTRAINT modifier_options_id_organization_unique UNIQUE (id, organization_id);
 
 CREATE TABLE product_inventory_recipes (
     id UUID NOT NULL PRIMARY KEY,
