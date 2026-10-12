@@ -37,6 +37,55 @@ class InventoryStockApiTest extends AbstractAuditIntegrationTest {
         return new Fixture(fx.orgId(),branch.getId(),item.getId(),adminToken(fx));
     }
     private String url(Fixture f) { return "/api/v1/organizations/"+f.org+"/branches/"+f.branch+"/inventory-items/"+f.item; }
+    private String listUrl(Fixture f) { return "/api/v1/organizations/"+f.org+"/branches/"+f.branch+"/inventory-items"; }
+
+    @Test void stockListFiltersComposeAndPaginateWithoutCreatingBalancesOrMovements() throws Exception {
+        Fixture f=setup("GRAM",false); String auth=bearer(f.token);
+        var wholeMilk=items.create(f.org,"whole-milk","Whole Milk",null,InventoryBaseUnit.MILLILITER,false);
+        var oatMilk=items.create(f.org,"milk-oat","Oat Milk",null,InventoryBaseUnit.GRAM,false);
+        var milkPowder=items.create(f.org,"milk-powder","Milk Powder",null,InventoryBaseUnit.GRAM,false);
+        milkPowder.updateStatus(InventoryItemStatus.INACTIVE);
+        itemRepository.saveAndFlush(milkPowder);
+        items.create(f.org,"sugar","Sugar",null,InventoryBaseUnit.UNIT,false);
+        long balancesBefore=jdbc.queryForObject("select count(*) from branch_inventory where branch_id=?",Long.class,f.branch);
+        long movementsBefore=jdbc.queryForObject("select count(*) from inventory_movements where branch_id=?",Long.class,f.branch);
+
+        mockMvc.perform(get(listUrl(f)).param("q","WHOLE-MILK").header("Authorization",auth))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.items[0].code").value("whole-milk"));
+        mockMvc.perform(get(listUrl(f)).param("q","oAT mIlK").header("Authorization",auth))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.items[0].inventoryItemId").value(oatMilk.getId().toString()));
+
+        mockMvc.perform(get(listUrl(f)).param("status","ACTIVE").header("Authorization",auth))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(4));
+        mockMvc.perform(get(listUrl(f)).param("status","INACTIVE").header("Authorization",auth))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.items[0].status").value("INACTIVE"))
+                .andExpect(jsonPath("$.items[0].code").value("milk-powder"));
+
+        mockMvc.perform(get(listUrl(f)).param("baseUnit","MILLILITER").header("Authorization",auth))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.items[0].inventoryItemId").value(wholeMilk.getId().toString()));
+        mockMvc.perform(get(listUrl(f)).param("baseUnit","UNIT").header("Authorization",auth))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.items[0].code").value("sugar"));
+
+        mockMvc.perform(get(listUrl(f)).param("q","milk").param("status","ACTIVE").param("baseUnit","GRAM")
+                        .param("page","0").param("size","1").header("Authorization",auth))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.page").value(0)).andExpect(jsonPath("$.size").value(1))
+                .andExpect(jsonPath("$.totalElements").value(2)).andExpect(jsonPath("$.totalPages").value(2))
+                .andExpect(jsonPath("$.items.length()").value(1)).andExpect(jsonPath("$.items[0].inventoryItemId").value(f.item.toString()));
+        mockMvc.perform(get(listUrl(f)).param("q","milk").param("status","ACTIVE").param("baseUnit","GRAM")
+                        .param("page","1").param("size","1").header("Authorization",auth))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.totalPages").value(2)).andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].inventoryItemId").value(oatMilk.getId().toString()));
+
+        assertThat(jdbc.queryForObject("select count(*) from branch_inventory where branch_id=?",Long.class,f.branch)).isEqualTo(balancesBefore);
+        assertThat(jdbc.queryForObject("select count(*) from inventory_movements where branch_id=?",Long.class,f.branch)).isEqualTo(movementsBefore);
+    }
+
     @Test void lazyReadsExactStringsAndMutationsRecordLedgerAndAudit() throws Exception {
         Fixture f=setup("GRAM",false); String auth=bearer(f.token); long before=auditCount(f.org);
         assertThat(jdbc.queryForObject("select count(*) from branch_inventory where branch_id=?",Long.class,f.branch)).isZero();
@@ -54,6 +103,8 @@ class InventoryStockApiTest extends AbstractAuditIntegrationTest {
         mockMvc.perform(post(url(f)+"/opening-stock").header("Authorization",auth).contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":0,\"quantity\":\"0\"}"))
           .andExpect(status().isOk()).andExpect(jsonPath("$.quantityOnHand").value("0.000000"))
           .andExpect(jsonPath("$.version").value(1));
+        mockMvc.perform(post(url(f)+"/adjustments").header("Authorization",auth).contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":0,\"quantityDelta\":\"1\",\"reason\":\"stale after zero opening\"}"))
+          .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CONCURRENT_MODIFICATION"));
         mockMvc.perform(post(url(f)+"/opening-stock").header("Authorization",auth).contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":1,\"quantity\":\"1\"}"))
           .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("INVENTORY_OPENING_ALREADY_EXISTS"));
         mockMvc.perform(post(url(f)+"/adjustments").header("Authorization",auth).contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":1,\"quantityDelta\":\"0\",\"reason\":\"count\"}"))

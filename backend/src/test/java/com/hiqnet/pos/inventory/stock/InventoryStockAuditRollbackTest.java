@@ -29,12 +29,14 @@ class InventoryStockAuditRollbackTest extends AbstractAuditIntegrationTest {
     @Test void auditFailureRollsBackNewBalanceAndMovement() throws Exception {
         var fx=fixture(); var branch=branches.saveAndFlush(Branch.create(organizations.findById(fx.orgId()).orElseThrow(),"Main","rollback-"+java.util.UUID.randomUUID().toString().substring(0,8),null));
         var item=items.create(fx.orgId(),"rollback-"+java.util.UUID.randomUUID().toString().substring(0,8),"Item",null,InventoryBaseUnit.GRAM,false);
+        long stockAuditsBefore=jdbc.queryForObject("select count(*) from audit_events where organization_id=? and action like 'inventory.stock.%'",Long.class,fx.orgId());
         mockMvc.perform(post("/api/v1/organizations/"+fx.orgId()+"/branches/"+branch.getId()+"/inventory-items/"+item.getId()+"/opening-stock")
                 .header("Authorization",bearer(adminToken(fx))).contentType(MediaType.APPLICATION_JSON)
                 .content("{\"expectedVersion\":0,\"quantity\":\"5\"}"))
                 .andExpect(status().isInternalServerError());
         assertThat(jdbc.queryForObject("select count(*) from branch_inventory where branch_id=? and inventory_item_id=?",Long.class,branch.getId(),item.getId())).isZero();
         assertThat(jdbc.queryForObject("select count(*) from inventory_movements where branch_id=? and inventory_item_id=?",Long.class,branch.getId(),item.getId())).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from audit_events where organization_id=? and action like 'inventory.stock.%'",Long.class,fx.orgId())).isEqualTo(stockAuditsBefore);
     }
     @TestConfiguration static class FailingAuditConfig {
         @Bean @Primary AuditPort failingStockAudit(AuditRecorder delegate) { return record->{
