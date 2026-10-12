@@ -1,5 +1,6 @@
 package com.hiqnet.pos.organization.application;
 
+import com.hiqnet.pos.organization.domain.InventoryNegativeStockPolicy;
 import com.hiqnet.pos.organization.domain.Organization;
 import com.hiqnet.pos.organization.domain.OrganizationRepository;
 import com.hiqnet.pos.organization.domain.OrganizationStatus;
@@ -100,6 +101,13 @@ public class OrganizationService {
             organization.updateStatus(command.status());
             if (organization.getStatus() != before) {
                 changedFields.add("status");
+            }
+        }
+        if (command.inventoryNegativeStockPolicy() != null) {
+            InventoryNegativeStockPolicy before = organization.getInventoryNegativeStockPolicy();
+            organization.updateInventoryNegativeStockPolicy(command.inventoryNegativeStockPolicy());
+            if (organization.getInventoryNegativeStockPolicy() != before) {
+                changedFields.add("inventoryNegativeStockPolicy");
             }
         }
         Organization saved = organizationRepository.saveAndFlush(organization);

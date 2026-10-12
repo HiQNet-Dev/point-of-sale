@@ -1,5 +1,6 @@
 package com.hiqnet.pos.organization.api;
 
+import com.hiqnet.pos.organization.domain.InventoryNegativeStockPolicy;
 import com.hiqnet.pos.organization.domain.Organization;
 import com.hiqnet.pos.organization.domain.OrganizationStatus;
 import java.time.Instant;
@@ -13,6 +14,7 @@ public record OrganizationResponse(
         String currency,
         String locale,
         OrganizationStatus status,
+        InventoryNegativeStockPolicy inventoryNegativeStockPolicy,
         long version,
         Instant createdAt,
         Instant updatedAt) {
@@ -26,6 +28,7 @@ public record OrganizationResponse(
                 organization.getCurrency(),
                 organization.getLocale(),
                 organization.getStatus(),
+                organization.getInventoryNegativeStockPolicy(),
                 organization.getVersion(),
                 organization.getCreatedAt(),
                 organization.getUpdatedAt());

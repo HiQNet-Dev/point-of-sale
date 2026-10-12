@@ -1,5 +1,6 @@
 package com.hiqnet.pos.organization.api;
 
+import com.hiqnet.pos.organization.domain.InventoryNegativeStockPolicy;
 import com.hiqnet.pos.organization.domain.OrganizationStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Min;
@@ -20,5 +21,6 @@ public record UpdateOrganizationRequest(
         @Size(max = 64) String timezone,
         @Size(min = 3, max = 3) String currency,
         @Size(max = 20) String locale,
-        OrganizationStatus status) {
+        OrganizationStatus status,
+        InventoryNegativeStockPolicy inventoryNegativeStockPolicy) {
 }

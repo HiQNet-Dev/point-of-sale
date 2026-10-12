@@ -77,6 +77,7 @@ public class OrganizationController {
                         request.timezone(),
                         request.currency(),
                         request.locale(),
-                        request.status())));
+                        request.status(),
+                        request.inventoryNegativeStockPolicy())));
     }
 }
