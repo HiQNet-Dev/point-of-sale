@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { configureApiAuth } from '../../../shared/api/client'
 import type { Branch, CashRegister, CashShift } from '../../pos-session/api/posSessionApi'
@@ -132,6 +132,7 @@ interface HarnessOptions {
   products?: typeof product[]
   configuration?: ProductConfiguration
   addError?: { status: number; code: string }
+  addNetworkError?: boolean
   updateError?: { status: number; code: string }
   removeError?: { status: number; code: string }
   cancelError?: { status: number; code: string }
@@ -182,6 +183,7 @@ function setup(options: HarnessOptions = {}) {
       }
     }
     if (url.pathname.endsWith(`/sales/${detail.sale.id}/items`) && method === 'POST') {
+      if (options.addNetworkError) throw new TypeError('Network request failed')
       if (options.addError) {
         if (['SALE_NOT_OPEN', 'SALE_ALREADY_CANCELLED', 'SALE_ALREADY_COMPLETED'].includes(options.addError.code)) {
           const status = options.addError.code === 'SALE_ALREADY_COMPLETED' ? 'COMPLETED' : 'CANCELLED'
@@ -358,8 +360,10 @@ describe('POS sales workspace', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Agregar producto' })
     fireEvent.click(await within(dialog).findByLabelText(/Entera/))
     const addButton = within(dialog).getByRole('button', { name: 'Agregar a la venta' })
-    fireEvent.click(addButton)
-    fireEvent.click(addButton)
+    act(() => {
+      fireEvent.click(addButton)
+      fireEvent.click(addButton)
+    })
 
     const permissionAlert = await within(dialog).findByRole('alert')
     expect(permissionAlert.textContent).toContain('No tienes permiso para modificar esta venta.')
@@ -370,11 +374,51 @@ describe('POS sales workspace', () => {
     expect(backend.requests.filter((request) => request.method === 'GET'
       && request.url.pathname.endsWith('/sales/sale-1'))).toHaveLength(1)
 
+    fireEvent.click(addButton)
+    await waitFor(() => expect(backend.requests.filter((request) => request.method === 'POST'
+      && request.url.pathname.endsWith('/sales/sale-1/items'))).toHaveLength(2))
+    await waitFor(() => expect(addButton.hasAttribute('disabled')).toBe(false))
     fireEvent.click(within(dialog).getByRole('button', { name: 'Volver' }))
     expect(await screen.findByRole('button', { name: /Café de olla/ })).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /Café de olla/ }))
     const nextDialog = await screen.findByRole('dialog', { name: 'Agregar producto' })
     expect(within(nextDialog).queryByRole('alert')).toBeNull()
+  })
+
+  it('releases the item mutation guard after a successful add so another Product can be added', async () => {
+    const backend = setup({ initialSales: [summary] })
+    expect(await screen.findByRole('button', { name: /Café de olla/ })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /Café de olla/ }))
+    let dialog = await screen.findByRole('dialog', { name: 'Agregar producto' })
+    fireEvent.click(await within(dialog).findByLabelText(/Entera/))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Agregar a la venta' }))
+    await waitFor(() => expect(backend.requests.filter((request) => request.method === 'POST'
+      && request.url.pathname.endsWith('/sales/sale-1/items'))).toHaveLength(1))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Agregar producto' })).toBeNull())
+
+    fireEvent.click(screen.getByRole('button', { name: /Café de olla/ }))
+    dialog = await screen.findByRole('dialog', { name: 'Agregar producto' })
+    fireEvent.click(await within(dialog).findByLabelText(/Entera/))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Agregar a la venta' }))
+    await waitFor(() => expect(backend.requests.filter((request) => request.method === 'POST'
+      && request.url.pathname.endsWith('/sales/sale-1/items'))).toHaveLength(2))
+  })
+
+  it('releases the item mutation guard after a transport error for an intentional retry', async () => {
+    const backend = setup({ initialSales: [summary], addNetworkError: true })
+    expect(await screen.findByRole('button', { name: /Café de olla/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Café de olla/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Agregar producto' })
+    fireEvent.click(await within(dialog).findByLabelText(/Entera/))
+    const addButton = within(dialog).getByRole('button', { name: 'Agregar a la venta' })
+    fireEvent.click(addButton)
+    expect(await within(dialog).findByRole('alert')).toBeTruthy()
+    await waitFor(() => expect(addButton.hasAttribute('disabled')).toBe(false))
+
+    fireEvent.click(addButton)
+    await waitFor(() => expect(backend.requests.filter((request) => request.method === 'POST'
+      && request.url.pathname.endsWith('/sales/sale-1/items'))).toHaveLength(2))
   })
 
   it('paginates the OPEN Sale collection and permits resuming multiple sales', async () => {
@@ -452,7 +496,11 @@ describe('POS sales workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Editar Café histórico' }))
     const dialog = await screen.findByRole('dialog', { name: 'Editar producto' })
     fireEvent.change(await within(dialog).findByLabelText('Cantidad'), { target: { value: '2' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Guardar cambios' }))
+    const saveButton = within(dialog).getByRole('button', { name: 'Guardar cambios' })
+    act(() => {
+      fireEvent.click(saveButton)
+      fireEvent.click(saveButton)
+    })
 
     const permissionAlert = await within(dialog).findByRole('alert')
     expect(permissionAlert.textContent).toContain('No tienes permiso para modificar esta venta.')
