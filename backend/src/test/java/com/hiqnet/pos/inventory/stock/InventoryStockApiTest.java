@@ -98,6 +98,35 @@ class InventoryStockApiTest extends AbstractAuditIntegrationTest {
         mockMvc.perform(get(url(f)+"/movements").header("Authorization",auth)).andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(2));
         assertThat(auditCount(f.org)).isEqualTo(before+2); assertThat(latestAudit(f.org).action()).isEqualTo("inventory.stock.adjusted");
     }
+    @Test void openingAndAdjustmentsPersistExactResultingQuantitySequence() throws Exception {
+        Fixture f=setup("GRAM",false); String auth=bearer(f.token);
+        mockMvc.perform(post(url(f)+"/opening-stock").header("Authorization",auth).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":0,\"quantity\":\"100\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.quantityOnHand").value("100.000000"))
+                .andExpect(jsonPath("$.version").value(1));
+        mockMvc.perform(post(url(f)+"/adjustments").header("Authorization",auth).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":1,\"quantityDelta\":\"-20\",\"reason\":\"First correction\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.quantityOnHand").value("80.000000"))
+                .andExpect(jsonPath("$.version").value(2));
+        mockMvc.perform(post(url(f)+"/adjustments").header("Authorization",auth).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":2,\"quantityDelta\":\"5.5\",\"reason\":\"Second correction\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.quantityOnHand").value("85.500000"))
+                .andExpect(jsonPath("$.version").value(3));
+
+        var transitions=jdbc.query(
+                "select quantity_delta,resulting_quantity from inventory_movements where branch_id=? and inventory_item_id=?",
+                (rs,row)->rs.getBigDecimal("quantity_delta").toPlainString()+"->"+rs.getBigDecimal("resulting_quantity").toPlainString(),
+                f.branch,f.item);
+        assertThat(transitions).containsExactlyInAnyOrder(
+                "100.000000->100.000000", "-20.000000->80.000000", "5.500000->85.500000");
+        assertThat(jdbc.queryForObject(
+                "select quantity_on_hand from branch_inventory where branch_id=? and inventory_item_id=?",
+                java.math.BigDecimal.class,f.branch,f.item)).isEqualByComparingTo("85.5");
+        assertThat(jdbc.queryForObject(
+                "select version from branch_inventory where branch_id=? and inventory_item_id=?",
+                Long.class,f.branch,f.item)).isEqualTo(3);
+    }
+
     @Test void openingZeroIsValidButZeroAdjustmentAndFractionalDiscreteUnitAreRejected() throws Exception {
         Fixture f=setup("UNIT",false); String auth=bearer(f.token);
         mockMvc.perform(post(url(f)+"/opening-stock").header("Authorization",auth).contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":0,\"quantity\":\"0\"}"))
