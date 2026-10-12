@@ -155,12 +155,15 @@ test('cashier can recover POS, configure products and complete sales without pay
   await noMutationPage.getByRole('option', { name: /E2E Register A1/ }).click()
   await expect(noMutationPage.getByText(new RegExp(`1 × ${fixtures.simpleProductName}`))).toBeVisible()
   await noMutationPage.getByRole('button', { name: new RegExp(`^${fixtures.simpleProductName} SKU E2E-SIMPLE`) }).click()
+  const mutationDialog = noMutationPage.getByRole('dialog', { name: 'Agregar producto' })
+  await expect(mutationDialog).toBeVisible()
   const rejectedAdd = noMutationPage.waitForResponse((response) =>
     response.request().method() === 'POST' && /\/sales\/[^/]+\/items$/.test(response.url()),
   )
-  await noMutationPage.getByRole('button', { name: 'Agregar a la venta' }).click()
+  await mutationDialog.getByRole('button', { name: 'Agregar a la venta' }).click()
   expect((await rejectedAdd).status()).toBe(403)
-  await expect(noMutationPage.getByRole('status').filter({ hasText: 'No tienes permiso para realizar esta operación.' })).toBeVisible()
+  await expect(mutationDialog.getByRole('alert')).toHaveText('No tienes permiso para modificar esta venta.')
+  await expect(noMutationPage.getByText(new RegExp(`1 × ${fixtures.simpleProductName}`))).toBeVisible()
   await noMutationPage.close()
 
   // Recover the OPEN Shift and persisted Sale/cart after memory-only auth is lost.
