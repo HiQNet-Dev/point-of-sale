@@ -224,6 +224,18 @@ class InventoryRecipeApiTest extends AbstractAuditIntegrationTest {
                         .content("{\"expectedVersion\":0,\"status\":\"ACTIVE\",\"components\":["
                                 + "{\"inventoryItemId\":\"" + unitId + "\",\"quantity\":\"1\"}]}"))
                 .andExpect(status().isOk());
+        String optionId = modifierOption(fx, token, "legacy-fraction");
+        replaceEffects(fx, token, optionId, "[]");
+        UUID configId = jdbc.queryForObject("select id from modifier_option_inventory_configs where modifier_option_id = ?",
+                UUID.class, UUID.fromString(optionId));
+        jdbc.update("insert into modifier_option_inventory_effects "
+                        + "(id,organization_id,config_id,inventory_item_id,quantity_delta) values (?,?,?,?,?)",
+                UUID.randomUUID(), fx.orgId(), configId, UUID.fromString(unitId), new java.math.BigDecimal("0.5"));
+        assertThatThrownBy(() -> resolver.resolve(fx.orgId(), UUID.fromString(productId),
+                java.util.List.of(UUID.fromString(optionId))))
+                .isInstanceOf(BusinessException.class)
+                .extracting(exception -> ((BusinessException) exception).getCode())
+                .isEqualTo("INVENTORY_CONFIGURATION_UNAVAILABLE");
         jdbc.update("update inventory_items set status = 'INACTIVE' where id = ?", UUID.fromString(unitId));
         assertThatThrownBy(() -> resolver.resolve(fx.orgId(), UUID.fromString(productId), java.util.List.of()))
                 .isInstanceOf(BusinessException.class)
