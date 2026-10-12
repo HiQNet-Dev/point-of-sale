@@ -20,7 +20,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * contexts that reuse a Testcontainers DB across the suite):
  *
  * <ul>
- * <li><b>Clean install</b>: V1 → V18 applies completely and validates, leaving
+ * <li><b>Clean install</b>: V1 → V19 applies completely and validates, leaving
  *       the expected seed state (permission catalog = 51, bootstrap singleton = 1,
  *       catalog/modifier/cash-register/cash-shift/sales and inventory-item tables present).</li>
  *   <li><b>Upgrade path (V7)</b>: a database migrated up to V7 (the state before
@@ -40,12 +40,12 @@ class FlywayMigrationPathTest {
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
 
     @Test
-    void cleanInstallationMigratesV1ThroughV18AndValidates() {
+    void cleanInstallationMigratesV1ThroughV19AndValidates() {
         Flyway flyway = flyway("clean_foundation");
 
         MigrateResult result = flyway.migrate();
 
-        assertThat(result.migrationsExecuted).isEqualTo(18);
+        assertThat(result.migrationsExecuted).isEqualTo(19);
         flyway.validate();
         assertThat(countRows("clean_foundation", "permissions")).isEqualTo(51);
         assertThat(countRows("clean_foundation", "installation_bootstrap")).isEqualTo(1);
@@ -67,6 +67,7 @@ class FlywayMigrationPathTest {
         assertThat(tableExists("clean_foundation", "product_inventory_recipe_components")).isTrue();
         assertThat(tableExists("clean_foundation", "modifier_option_inventory_configs")).isTrue();
         assertThat(tableExists("clean_foundation", "modifier_option_inventory_effects")).isTrue();
+        assertThat(tableExists("clean_foundation", "sale_item_inventory_components")).isTrue();
     }
 
     @Test
@@ -492,6 +493,43 @@ class FlywayMigrationPathTest {
         execute("insert into " + schema + ".roles (id,organization_id,code,name,created_at,updated_at) values ('" + roleId + "','" + organizationId + "','existing-role','Existing role',now(),now())");
         execute("insert into " + schema + ".role_permissions (role_id,permission_code) select '" + roleId + "',code from " + schema + ".permissions");
 
+        Flyway throughV18 = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema)
+                .target(MigrationVersion.fromVersion("18"))
+                .load();
+        assertThat(throughV18.migrate().migrationsExecuted).isEqualTo(1);
+        throughV18.validate();
+        assertThat(countRows(schema, "permissions")).isEqualTo(51);
+        assertThat(countRows(schema, "role_permissions")).isEqualTo(49);
+        assertThat(tableExists(schema, "product_inventory_recipes")).isTrue();
+        assertThat(tableExists(schema, "product_inventory_recipe_components")).isTrue();
+        assertThat(tableExists(schema, "modifier_option_inventory_configs")).isTrue();
+        assertThat(tableExists(schema, "modifier_option_inventory_effects")).isTrue();
+
+        UUID userId = UUID.randomUUID();
+        UUID branchId = UUID.randomUUID();
+        UUID registerId = UUID.randomUUID();
+        UUID shiftId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID saleId = UUID.randomUUID();
+        UUID saleItemId = UUID.randomUUID();
+        execute("insert into " + schema + ".users (id,organization_id,email,password_hash,created_at,updated_at) values ('"
+                + userId + "','" + organizationId + "','legacy@example.test','unused',now(),now())");
+        execute("insert into " + schema + ".branches (id,organization_id,name,code,created_at,updated_at) values ('"
+                + branchId + "','" + organizationId + "','Legacy branch','legacy-branch',now(),now())");
+        execute("insert into " + schema + ".cash_registers (id,organization_id,branch_id,code,name,created_at,updated_at) values ('"
+                + registerId + "','" + organizationId + "','" + branchId + "','legacy-register','Legacy register',now(),now())");
+        execute("insert into " + schema + ".cash_shifts (id,organization_id,branch_id,cash_register_id,opened_by_user_id,status,opening_amount,opened_at,created_at,updated_at) values ('"
+                + shiftId + "','" + organizationId + "','" + branchId + "','" + registerId + "','" + userId + "','OPEN',0,now(),now(),now())");
+        execute("insert into " + schema + ".products (id,organization_id,sku,name,unit_price,created_at,updated_at) values ('"
+                + productId + "','" + organizationId + "','LEGACY','Legacy product',1,now(),now())");
+        execute("insert into " + schema + ".sales (id,organization_id,branch_id,cash_register_id,cash_shift_id,created_by_user_id,status,total_amount,created_at,updated_at) values ('"
+                + saleId + "','" + organizationId + "','" + branchId + "','" + registerId + "','" + shiftId + "','" + userId + "','OPEN',1,now(),now())");
+        execute("insert into " + schema + ".sale_items (id,organization_id,sale_id,product_id,product_sku_snapshot,product_name_snapshot,base_unit_price,modifier_unit_delta,effective_unit_price,quantity,line_total,status,position,created_at,updated_at) values ('"
+                + saleItemId + "','" + organizationId + "','" + saleId + "','" + productId + "','LEGACY','Legacy product',1,0,1,1,1,'ACTIVE',0,now(),now())");
+        assertThat(countRows(schema, "sale_items")).isEqualTo(1);
+
         Flyway latest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas(schema)
@@ -500,10 +538,8 @@ class FlywayMigrationPathTest {
         latest.validate();
         assertThat(countRows(schema, "permissions")).isEqualTo(51);
         assertThat(countRows(schema, "role_permissions")).isEqualTo(49);
-        assertThat(tableExists(schema, "product_inventory_recipes")).isTrue();
-        assertThat(tableExists(schema, "product_inventory_recipe_components")).isTrue();
-        assertThat(tableExists(schema, "modifier_option_inventory_configs")).isTrue();
-        assertThat(tableExists(schema, "modifier_option_inventory_effects")).isTrue();
+        assertThat(tableExists(schema, "sale_item_inventory_components")).isTrue();
+        assertThat(countRows(schema, "sale_item_inventory_components")).isZero();
     }
 
     private static boolean columnExists(String schema, String table, String column) {

@@ -16,6 +16,10 @@ import com.hiqnet.pos.catalog.domain.Product;
 import com.hiqnet.pos.catalog.domain.ProductModifierGroup;
 import com.hiqnet.pos.catalog.domain.ProductModifierGroupRepository;
 import com.hiqnet.pos.catalog.domain.ProductRepository;
+import com.hiqnet.pos.inventory.consumption.InventoryConsumptionResolver;
+import com.hiqnet.pos.inventory.consumption.ResolvedInventoryComponent;
+import com.hiqnet.pos.inventory.domain.InventoryBaseUnit;
+import com.hiqnet.pos.inventory.stock.application.InventoryQuantity;
 import com.hiqnet.pos.organization.domain.Organization;
 import com.hiqnet.pos.organization.domain.OrganizationRepository;
 import com.hiqnet.pos.payment.domain.Payment;
@@ -23,6 +27,8 @@ import com.hiqnet.pos.payment.domain.PaymentMethod;
 import com.hiqnet.pos.payment.domain.PaymentRepository;
 import com.hiqnet.pos.sales.domain.Sale;
 import com.hiqnet.pos.sales.domain.SaleItem;
+import com.hiqnet.pos.sales.domain.SaleItemInventoryComponent;
+import com.hiqnet.pos.sales.domain.SaleItemInventoryComponentRepository;
 import com.hiqnet.pos.sales.domain.SaleItemModifier;
 import com.hiqnet.pos.sales.domain.SaleItemModifierRepository;
 import com.hiqnet.pos.sales.domain.SaleItemRepository;
@@ -68,6 +74,8 @@ public class SaleService {
     private final SaleRepository saleRepository;
     private final SaleItemRepository saleItemRepository;
     private final SaleItemModifierRepository saleItemModifierRepository;
+    private final SaleItemInventoryComponentRepository saleItemInventoryComponentRepository;
+    private final InventoryConsumptionResolver inventoryConsumptionResolver;
     private final ProductRepository productRepository;
     private final ProductModifierGroupRepository productModifierGroupRepository;
     private final ModifierGroupRepository modifierGroupRepository;
@@ -84,6 +92,8 @@ public class SaleService {
             SaleRepository saleRepository,
             SaleItemRepository saleItemRepository,
             SaleItemModifierRepository saleItemModifierRepository,
+            SaleItemInventoryComponentRepository saleItemInventoryComponentRepository,
+            InventoryConsumptionResolver inventoryConsumptionResolver,
             ProductRepository productRepository,
             ProductModifierGroupRepository productModifierGroupRepository,
             ModifierGroupRepository modifierGroupRepository,
@@ -98,6 +108,8 @@ public class SaleService {
         this.saleRepository = saleRepository;
         this.saleItemRepository = saleItemRepository;
         this.saleItemModifierRepository = saleItemModifierRepository;
+        this.saleItemInventoryComponentRepository = saleItemInventoryComponentRepository;
+        this.inventoryConsumptionResolver = inventoryConsumptionResolver;
         this.productRepository = productRepository;
         this.productModifierGroupRepository = productModifierGroupRepository;
         this.modifierGroupRepository = modifierGroupRepository;
@@ -151,6 +163,8 @@ public class SaleService {
             long expectedSaleVersion, UUID productId, int quantity, List<UUID> modifierOptionIds, UUID actorUserId) {
         Sale sale = requireMutableSale(organizationId, branchId, cashRegisterId, cashShiftId, saleId, expectedSaleVersion);
         Quote quote = quote(organizationId, productId, quantity, modifierOptionIds);
+        List<SaleItemInventoryComponent> inventorySnapshot = inventorySnapshot(organizationId, productId, quantity,
+                quote.selections().stream().map(selection -> selection.option().getId()).toList());
         SaleItem item = SaleItem.create(organizationId, saleId, quote.product().getId(), quote.product().getSku(), quote.product().getName(),
                 quote.product().getUnitPrice(), quote.modifierDelta(), quote.effectiveUnitPrice(), quantity,
                 saleItemRepository.findMaxPositionBySaleId(saleId) + 1);
@@ -161,6 +175,8 @@ public class SaleService {
         Sale saved = saleRepository.saveAndFlush(sale);
         saleItemRepository.save(item);
         saveModifierSnapshots(item, quote.selections());
+        saleItemRepository.flush();
+        saleItemInventoryComponentRepository.replace(organizationId, item.getId(), inventorySnapshot);
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("productId", productId.toString());
         metadata.put("quantity", quantity);
@@ -184,6 +200,8 @@ public class SaleService {
         if (item.getQuantity() == quantity && previousOptions.equals(requestedOptions)) {
             return detail(sale);
         }
+        List<SaleItemInventoryComponent> inventorySnapshot = inventorySnapshot(organizationId, item.getProductId(), quantity,
+                quote.selections().stream().map(selection -> selection.option().getId()).toList());
         BigDecimal proposedLineTotal = lineTotal(quote.effectiveUnitPrice(), quantity);
         recalculateTotal(sale, activeLineTotal(saleId, saleItemId).add(proposedLineTotal));
         Sale saved = saleRepository.saveAndFlush(sale);
@@ -193,6 +211,7 @@ public class SaleService {
         saleItemModifierRepository.deleteBySaleItemId(saleItemId);
         saleItemModifierRepository.flush();
         saveModifierSnapshots(item, quote.selections());
+        saleItemInventoryComponentRepository.replace(organizationId, item.getId(), inventorySnapshot);
         auditPort.record(AuditRecord.ofBranch(organizationId, branchId, "sale.item.updated", "sale", saleId,
                 AuditMetadata.of(Map.of("saleItemId", saleItemId.toString(), "changedFields", List.of("quantity", "modifierOptionIds")))));
         return detail(saved);
@@ -394,6 +413,29 @@ public class SaleService {
             throw new BusinessException(HttpStatus.BAD_REQUEST, ErrorCodes.INVALID_MODIFIER_SELECTION, "One or more modifier options are invalid");
         }
         return found.stream().collect(Collectors.toMap(ModifierOption::getId, Function.identity()));
+    }
+
+    private List<SaleItemInventoryComponent> inventorySnapshot(UUID organizationId, UUID productId, int quantity,
+            List<UUID> selectedOptionIds) {
+        var resolved = inventoryConsumptionResolver.resolve(organizationId, productId, selectedOptionIds);
+        if (!resolved.tracked()) return List.of();
+        List<SaleItemInventoryComponent> components = new ArrayList<>();
+        for (ResolvedInventoryComponent component : resolved.components()) {
+            BigDecimal total = component.quantity().multiply(BigDecimal.valueOf(quantity));
+            InventoryQuantity.validateRange(total, "quantityTotal");
+            if (total.signum() <= 0) {
+                throw new BusinessException(HttpStatus.BAD_REQUEST, ErrorCodes.INVALID_INVENTORY_QUANTITY,
+                        "Resolved total Inventory consumption must be greater than zero");
+            }
+            if (component.baseUnit() == InventoryBaseUnit.UNIT && !component.fractionalUnitAllowed()
+                    && total.stripTrailingZeros().scale() > 0) {
+                throw new BusinessException(HttpStatus.BAD_REQUEST, ErrorCodes.INVALID_INVENTORY_QUANTITY,
+                        "Total Inventory consumption is fractional for a discrete UNIT item");
+            }
+            components.add(new SaleItemInventoryComponent(component.inventoryItemId(), component.code(),
+                    component.name(), component.baseUnit().name(), component.quantity(), total));
+        }
+        return List.copyOf(components);
     }
 
     private void saveModifierSnapshots(SaleItem item, List<Selection> selections) {

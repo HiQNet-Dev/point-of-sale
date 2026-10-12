@@ -12,6 +12,9 @@ import com.hiqnet.pos.cashshift.domain.CashShift;
 import com.hiqnet.pos.cashshift.domain.CashShiftRepository;
 import com.hiqnet.pos.catalog.domain.Product;
 import com.hiqnet.pos.catalog.domain.ProductRepository;
+import com.hiqnet.pos.inventory.domain.InventoryBaseUnit;
+import com.hiqnet.pos.inventory.domain.InventoryItem;
+import com.hiqnet.pos.inventory.domain.InventoryItemRepository;
 import com.hiqnet.pos.organization.domain.Organization;
 import com.hiqnet.pos.sales.domain.Sale;
 import com.hiqnet.pos.sales.domain.SaleRepository;
@@ -55,6 +58,9 @@ class SaleAuditRollbackTest extends AbstractRbacIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private InventoryItemRepository inventoryItemRepository;
+
     @Test
     void auditFailureRollsBackSaleCreation() {
         RbacFixture fixture = fixture();
@@ -78,6 +84,14 @@ class SaleAuditRollbackTest extends AbstractRbacIntegrationTest {
         OperationalScope scope = operationalScope(fixture, "audit-add-item");
         Product product = productRepository.saveAndFlush(
                 Product.create(scope.organization(), "AUDIT-ITEM", "Audit item", new BigDecimal("3.2500")));
+        InventoryItem inventoryItem = inventoryItemRepository.saveAndFlush(InventoryItem.create(
+                scope.organization(), "audit-flour", "Audit flour", null, InventoryBaseUnit.GRAM, false));
+        UUID recipeId = UUID.randomUUID();
+        jdbcTemplate.update("insert into product_inventory_recipes (id,organization_id,product_id,status,version,created_at,updated_at) values (?,?,?,'INACTIVE',0,now(),now())",
+                recipeId, fixture.orgId(), product.getId());
+        jdbcTemplate.update("insert into product_inventory_recipe_components (id,organization_id,recipe_id,inventory_item_id,quantity_per_product) values (?,?,?,?,?)",
+                UUID.randomUUID(), fixture.orgId(), recipeId, inventoryItem.getId(), new BigDecimal("7.5"));
+        jdbcTemplate.update("update product_inventory_recipes set status='ACTIVE' where id=?", recipeId);
         Sale sale = saleRepository.saveAndFlush(Sale.open(
                 fixture.orgId(), scope.branch().getId(), scope.register().getId(), scope.shift().getId(), fixture.userId()));
         long auditsBefore = auditCount(fixture.orgId());
@@ -93,6 +107,7 @@ class SaleAuditRollbackTest extends AbstractRbacIntegrationTest {
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from sale_item_modifiers sim join sale_items si on si.id = sim.sale_item_id where si.sale_id = ?",
                 Long.class, sale.getId())).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from sale_item_inventory_components where sale_item_id in (select id from sale_items where sale_id = ?)", Long.class, sale.getId())).isZero();
         assertThat(auditCount(fixture.orgId())).isEqualTo(auditsBefore);
     }
 

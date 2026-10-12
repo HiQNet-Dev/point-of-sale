@@ -235,3 +235,5 @@ gated por `BOOTSTRAP_SECRET`; véase
 `docs/02-database/product-modifiers-model.md` y
 `docs/02-database/cash-register-model.md` y
 `docs/02-database/cash-shift-model.md`).
+
+Inventory V16–V18 owns InventoryItem definitions, branch stock/ledger, organization-owned Product recipes, modifier effects and the per-unit consumption resolver. Sales consumes that resolver through its application service and owns the V19-candidate `SaleItemInventoryComponent` history; Inventory has no Sales dependency. The snapshot freezes resolved metadata and exact per-unit/total quantities for future checkout, while stock deduction, `SALE_CONSUMPTION`, reservations and Inventory UI remain deferred (PR C2 open).
