@@ -165,7 +165,7 @@ class SaleInventorySnapshotApiTest extends AbstractRbacIntegrationTest {
         assertSnapshot(existingSaleItemId.toString(), flourId, "flour", "Flour", "GRAM", "50", "50");
 
         String inactiveRecipeProduct = product(fx, token, "INACTIVERECIPE", "Inactive recipe", "1.0000");
-        replaceRecipe(fx, token, inactiveRecipeProduct, 0, "INACTIVE", List.of(component(flourId, "10")));
+        replaceRecipe(fx, token, inactiveRecipeProduct, 0, "INACTIVE", List.of());
         String inactiveRecipeSale = sale(scope, token);
         addItem(scope, token, inactiveRecipeSale, 0, inactiveRecipeProduct, 1, List.of()).andExpect(status().isOk());
         UUID inactiveRecipeSaleItem = jdbc.queryForObject("select id from sale_items where sale_id = ?", UUID.class,
