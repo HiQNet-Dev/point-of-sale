@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { configureApiAuth } from '../../../shared/api/client'
 import type { Branch, CashRegister, CashShift } from '../../pos-session/api/posSessionApi'
@@ -132,6 +132,10 @@ interface HarnessOptions {
   products?: typeof product[]
   configuration?: ProductConfiguration
   addError?: { status: number; code: string }
+  addNetworkError?: boolean
+  updateError?: { status: number; code: string }
+  removeError?: { status: number; code: string }
+  cancelError?: { status: number; code: string }
   failFirstSaleDetail?: boolean
   configurationError?: { status: number; code: string }
   parents?: { branch?: Branch; register?: CashRegister; shift?: CashShift }
@@ -179,6 +183,7 @@ function setup(options: HarnessOptions = {}) {
       }
     }
     if (url.pathname.endsWith(`/sales/${detail.sale.id}/items`) && method === 'POST') {
+      if (options.addNetworkError) throw new TypeError('Network request failed')
       if (options.addError) {
         if (['SALE_NOT_OPEN', 'SALE_ALREADY_CANCELLED', 'SALE_ALREADY_COMPLETED'].includes(options.addError.code)) {
           const status = options.addError.code === 'SALE_ALREADY_COMPLETED' ? 'COMPLETED' : 'CANCELLED'
@@ -195,6 +200,9 @@ function setup(options: HarnessOptions = {}) {
       return json(detail)
     }
     if (url.pathname.endsWith(`/items/item-1`) && method === 'PATCH') {
+      if (options.updateError) {
+        return json({ code: options.updateError.code, message: 'Rejected' }, options.updateError.status)
+      }
       detail = {
         sale: { ...detail.sale, totalAmount: '37', version: detail.sale.version + 1 },
         items: [item({ quantity: Number(body?.quantity), lineTotal: '37' })],
@@ -203,6 +211,9 @@ function setup(options: HarnessOptions = {}) {
       return json(detail)
     }
     if (url.pathname.endsWith(`/items/item-1/remove`) && method === 'POST') {
+      if (options.removeError) {
+        return json({ code: options.removeError.code, message: 'Rejected' }, options.removeError.status)
+      }
       detail = {
         sale: { ...detail.sale, totalAmount: '0', version: detail.sale.version + 1 },
         items: [item({ status: 'REMOVED', lineTotal: '0' })],
@@ -210,6 +221,9 @@ function setup(options: HarnessOptions = {}) {
       return json(detail)
     }
     if (url.pathname.endsWith(`/sales/${detail.sale.id}/cancel`) && method === 'POST') {
+      if (options.cancelError) {
+        return json({ code: options.cancelError.code, message: 'Rejected' }, options.cancelError.status)
+      }
       detail = { sale: { ...detail.sale, status: 'CANCELLED', cancelledAt: '2026-10-11T13:00:00Z' }, items: detail.items }
       sales = sales.filter((sale) => sale.id !== detail.sale.id)
       return json(detail)
@@ -336,6 +350,77 @@ describe('POS sales workspace', () => {
     expect(await screen.findByText(/2\s*×\s*Café histórico/)).toBeTruthy()
   })
 
+  it('shows add permission failures inside the active Product dialog without retrying or changing the Sale', async () => {
+    const backend = setup({
+      initialSales: [summary],
+      addError: { status: 403, code: 'FORBIDDEN' },
+    })
+    expect(await screen.findByRole('button', { name: /Café de olla/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Café de olla/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Agregar producto' })
+    fireEvent.click(await within(dialog).findByLabelText(/Entera/))
+    const addButton = within(dialog).getByRole('button', { name: 'Agregar a la venta' })
+    act(() => {
+      fireEvent.click(addButton)
+      fireEvent.click(addButton)
+    })
+
+    const permissionAlert = await within(dialog).findByRole('alert')
+    expect(permissionAlert.textContent).toContain('No tienes permiso para modificar esta venta.')
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    expect(within(dialog).getByRole('button', { name: 'Agregar a la venta' }).hasAttribute('disabled')).toBe(false)
+    expect(backend.requests.filter((request) => request.method === 'POST'
+      && request.url.pathname.endsWith('/sales/sale-1/items'))).toHaveLength(1)
+    expect(backend.requests.filter((request) => request.method === 'GET'
+      && request.url.pathname.endsWith('/sales/sale-1'))).toHaveLength(1)
+
+    fireEvent.click(addButton)
+    await waitFor(() => expect(backend.requests.filter((request) => request.method === 'POST'
+      && request.url.pathname.endsWith('/sales/sale-1/items'))).toHaveLength(2))
+    await waitFor(() => expect(addButton.hasAttribute('disabled')).toBe(false))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Volver' }))
+    expect(await screen.findByRole('button', { name: /Café de olla/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Café de olla/ }))
+    const nextDialog = await screen.findByRole('dialog', { name: 'Agregar producto' })
+    expect(within(nextDialog).queryByRole('alert')).toBeNull()
+  })
+
+  it('releases the item mutation guard after a successful add so another Product can be added', async () => {
+    const backend = setup({ initialSales: [summary] })
+    expect(await screen.findByRole('button', { name: /Café de olla/ })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /Café de olla/ }))
+    let dialog = await screen.findByRole('dialog', { name: 'Agregar producto' })
+    fireEvent.click(await within(dialog).findByLabelText(/Entera/))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Agregar a la venta' }))
+    await waitFor(() => expect(backend.requests.filter((request) => request.method === 'POST'
+      && request.url.pathname.endsWith('/sales/sale-1/items'))).toHaveLength(1))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Agregar producto' })).toBeNull())
+
+    fireEvent.click(screen.getByRole('button', { name: /Café de olla/ }))
+    dialog = await screen.findByRole('dialog', { name: 'Agregar producto' })
+    fireEvent.click(await within(dialog).findByLabelText(/Entera/))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Agregar a la venta' }))
+    await waitFor(() => expect(backend.requests.filter((request) => request.method === 'POST'
+      && request.url.pathname.endsWith('/sales/sale-1/items'))).toHaveLength(2))
+  })
+
+  it('releases the item mutation guard after a transport error for an intentional retry', async () => {
+    const backend = setup({ initialSales: [summary], addNetworkError: true })
+    expect(await screen.findByRole('button', { name: /Café de olla/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Café de olla/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Agregar producto' })
+    fireEvent.click(await within(dialog).findByLabelText(/Entera/))
+    const addButton = within(dialog).getByRole('button', { name: 'Agregar a la venta' })
+    fireEvent.click(addButton)
+    expect(await within(dialog).findByRole('alert')).toBeTruthy()
+    await waitFor(() => expect(addButton.hasAttribute('disabled')).toBe(false))
+
+    fireEvent.click(addButton)
+    await waitFor(() => expect(backend.requests.filter((request) => request.method === 'POST'
+      && request.url.pathname.endsWith('/sales/sale-1/items'))).toHaveLength(2))
+  })
+
   it('paginates the OPEN Sale collection and permits resuming multiple sales', async () => {
     const second = { ...summary, id: 'sale-2', totalAmount: '22' }
     const backend = setup({ initialSales: [summary, second] })
@@ -401,6 +486,32 @@ describe('POS sales workspace', () => {
     expect(updateRequest?.body).toEqual({ expectedSaleVersion: 3, quantity: 2, modifierOptionIds: [optionId] })
   })
 
+  it('shows edit permission failures inside the active edit dialog without retrying or updating the Sale', async () => {
+    const backend = setup({
+      initialSales: [summary],
+      initialDetail: { sale: summary, items: [item()] },
+      updateError: { status: 403, code: 'FORBIDDEN' },
+    })
+    expect(await screen.findByText(/Café histórico/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Editar Café histórico' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Editar producto' })
+    fireEvent.change(await within(dialog).findByLabelText('Cantidad'), { target: { value: '2' } })
+    const saveButton = within(dialog).getByRole('button', { name: 'Guardar cambios' })
+    act(() => {
+      fireEvent.click(saveButton)
+      fireEvent.click(saveButton)
+    })
+
+    const permissionAlert = await within(dialog).findByRole('alert')
+    expect(permissionAlert.textContent).toContain('No tienes permiso para modificar esta venta.')
+    expect(within(dialog).getByRole('button', { name: 'Guardar cambios' }).hasAttribute('disabled')).toBe(false)
+    expect(backend.requests.filter((request) => request.method === 'PATCH'
+      && request.url.pathname.endsWith('/items/item-1'))).toHaveLength(1)
+    expect(backend.requests.filter((request) => request.method === 'GET'
+      && request.url.pathname.endsWith('/sales/sale-1'))).toHaveLength(1)
+    expect(screen.getByLabelText('Total de la venta').textContent).toContain('18.50')
+  })
+
   it('requires explicit confirmation and a valid current selection when modifier configuration changed', async () => {
     const changedConfiguration: ProductConfiguration = {
       ...configuration,
@@ -443,6 +554,40 @@ describe('POS sales workspace', () => {
     expect(await screen.findByText('Elementos retirados (1)')).toBeTruthy()
     expect(screen.getByText(/Café histórico.*Retirado/)).toBeTruthy()
     expect(screen.getByText('Tu venta está vacía. Selecciona un producto para comenzar.')).toBeTruthy()
+  })
+
+  it('shows remove permission failures inside the active confirmation dialog without retrying', async () => {
+    const backend = setup({
+      initialSales: [summary],
+      initialDetail: { sale: summary, items: [item()] },
+      removeError: { status: 403, code: 'FORBIDDEN' },
+    })
+    expect(await screen.findByText(/Café histórico/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Quitar Café histórico' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Quitar producto' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Quitar' }))
+
+    expect((await within(dialog).findByRole('alert')).textContent).toContain('No tienes permiso para modificar esta venta.')
+    expect(backend.requests.filter((request) => request.method === 'POST'
+      && request.url.pathname.endsWith('/items/item-1/remove'))).toHaveLength(1)
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+  })
+
+  it('shows cancel permission failures inside the active confirmation dialog without retrying', async () => {
+    const backend = setup({
+      initialSales: [summary],
+      initialDetail: { sale: summary, items: [item()] },
+      cancelError: { status: 403, code: 'FORBIDDEN' },
+    })
+    expect(await screen.findByText(/Café histórico/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar venta' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Cancelar venta' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar venta' }))
+
+    expect((await within(dialog).findByRole('alert')).textContent).toContain('No tienes permiso para modificar esta venta.')
+    expect(backend.requests.filter((request) => request.method === 'POST'
+      && request.url.pathname.endsWith('/sales/sale-1/cancel'))).toHaveLength(1)
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
   })
 
   it('sends search/category filters and can reach later Product pages', async () => {
@@ -515,6 +660,42 @@ describe('POS sales workspace', () => {
     expect(backend.requests.filter((request) => request.method === 'POST' && request.url.pathname.endsWith('/sales/sale-1/items'))).toHaveLength(1)
   })
 
+  it('refreshes configuration while surfacing a modifier-configuration mutation conflict in the dialog', async () => {
+    const backend = setup({
+      initialSales: [summary],
+      addError: { status: 409, code: 'PRODUCT_MODIFIER_CONFIGURATION_UNAVAILABLE' },
+    })
+    expect(await screen.findByRole('button', { name: /Café de olla/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Café de olla/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Agregar producto' })
+    fireEvent.click(await within(dialog).findByLabelText(/Entera/))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Agregar a la venta' }))
+
+    expect((await within(dialog).findByRole('alert')).textContent)
+      .toContain('La configuración cambió y ya no permite agregar este producto.')
+    await waitFor(() => expect(backend.requests.filter((request) => request.url.pathname.endsWith('/configuration'))).toHaveLength(2))
+    expect(backend.requests.filter((request) => request.method === 'POST'
+      && request.url.pathname.endsWith('/sales/sale-1/items'))).toHaveLength(1)
+  })
+
+  it('reconciles a Product that becomes inactive during the add mutation', async () => {
+    const backend = setup({
+      initialSales: [summary],
+      addError: { status: 409, code: 'PRODUCT_INACTIVE' },
+    })
+    expect(await screen.findByRole('button', { name: /Café de olla/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Café de olla/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Agregar producto' })
+    fireEvent.click(await within(dialog).findByLabelText(/Entera/))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Agregar a la venta' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Agregar producto' })).toBeNull())
+    expect(await screen.findByText('El producto dejó de estar disponible. Se actualizará el catálogo.')).toBeTruthy()
+    await waitFor(() => expect(backend.requests.filter((request) => request.url.pathname.endsWith('/pos/catalog/products'))).toHaveLength(2))
+    expect(backend.requests.filter((request) => request.method === 'POST'
+      && request.url.pathname.endsWith('/sales/sale-1/items'))).toHaveLength(1)
+  })
+
   it('does not retry a stale add and refetches Sale detail after conflict', async () => {
     const backend = setup({ initialSales: [summary], addError: { status: 409, code: 'CONCURRENT_MODIFICATION' } })
     expect(await screen.findByRole('button', { name: /Café de olla/ })).toBeTruthy()
@@ -522,7 +703,8 @@ describe('POS sales workspace', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Agregar producto' })
     fireEvent.click(await within(dialog).findByLabelText(/Entera/))
     fireEvent.click(within(dialog).getByRole('button', { name: 'Agregar a la venta' }))
-    expect(await screen.findByText(/La venta cambió en otra operación/)).toBeTruthy()
+    const conflictAlert = await within(dialog).findByRole('alert')
+    expect(conflictAlert.textContent).toContain('La venta cambió en otra operación')
     expect(backend.requests.filter((request) => request.method === 'POST'
       && request.url.pathname.endsWith('/sales/sale-1/items'))).toHaveLength(1)
     expect(backend.requests.filter((request) => request.method === 'GET'
