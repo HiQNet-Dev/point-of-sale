@@ -129,6 +129,11 @@ public class SecurityConfig {
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/modifier-groups/*/options").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/modifier-groups/*/options/*").authenticated();
                     auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*/modifier-groups/*/options/*").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/inventory-items").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/inventory-items/*").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/inventory-items/*/movements").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/inventory-items/*/opening-stock").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/inventory-items/*/adjustments").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/cash-registers").authenticated();
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/cash-registers").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/cash-registers/*").authenticated();

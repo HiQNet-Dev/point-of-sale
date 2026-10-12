@@ -21,7 +21,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  *
  * <ul>
  * <li><b>Clean install</b>: V1 → V16 applies completely and validates, leaving
- *       the expected seed state (permission catalog = 47, bootstrap singleton = 1,
+ *       the expected seed state (permission catalog = 49, bootstrap singleton = 1,
  *       catalog/modifier/cash-register/cash-shift/sales and inventory-item tables present).</li>
  *   <li><b>Upgrade path (V7)</b>: a database migrated up to V7 (the state before
  *       the Secure Admin Bootstrap slice) applies V8 through V12 correctly
@@ -40,14 +40,14 @@ class FlywayMigrationPathTest {
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
 
     @Test
-    void cleanInstallationMigratesV1ThroughV16AndValidates() {
+    void cleanInstallationMigratesV1ThroughV17AndValidates() {
         Flyway flyway = flyway("clean_foundation");
 
         MigrateResult result = flyway.migrate();
 
-        assertThat(result.migrationsExecuted).isEqualTo(16);
+        assertThat(result.migrationsExecuted).isEqualTo(17);
         flyway.validate();
-        assertThat(countRows("clean_foundation", "permissions")).isEqualTo(47);
+        assertThat(countRows("clean_foundation", "permissions")).isEqualTo(49);
         assertThat(countRows("clean_foundation", "installation_bootstrap")).isEqualTo(1);
         assertThat(tableExists("clean_foundation", "categories")).isTrue();
         assertThat(tableExists("clean_foundation", "products")).isTrue();
@@ -60,6 +60,8 @@ class FlywayMigrationPathTest {
         assertThat(tableExists("clean_foundation", "sale_items")).isTrue();
         assertThat(tableExists("clean_foundation", "sale_item_modifiers")).isTrue();
         assertThat(tableExists("clean_foundation", "payments")).isTrue();
+        assertThat(tableExists("clean_foundation", "branch_inventory")).isTrue();
+        assertThat(tableExists("clean_foundation", "inventory_movements")).isTrue();
         assertThat(tableExists("clean_foundation", "inventory_items")).isTrue();
     }
 
@@ -82,8 +84,8 @@ class FlywayMigrationPathTest {
         // A fresh Flyway run applies V8 through V15.
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
-                .schemas("upgrade_path")
                 .target(MigrationVersion.fromVersion("15"))
+                .schemas("upgrade_path")
                 .load();
         MigrateResult migratedToLatest = toLatest.migrate();
 
@@ -114,8 +116,8 @@ class FlywayMigrationPathTest {
         // A fresh Flyway run applies only V9 through V15.
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
-                .schemas("upgrade_catalog")
                 .target(MigrationVersion.fromVersion("15"))
+                .schemas("upgrade_catalog")
                 .load();
         MigrateResult migratedToLatest = toLatest.migrate();
 
@@ -158,8 +160,8 @@ class FlywayMigrationPathTest {
         // 3. Apply V9 through V15, including operational catalog permission.
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
-                .schemas(schema)
                 .target(MigrationVersion.fromVersion("15"))
+                .schemas(schema)
                 .load();
         assertThat(toLatest.migrate().migrationsExecuted).isEqualTo(7);
         toLatest.validate();
@@ -200,8 +202,8 @@ class FlywayMigrationPathTest {
         // 3. Apply V10 through V15 without rewriting the existing role.
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
-                .schemas(schema)
                 .target(MigrationVersion.fromVersion("15"))
+                .schemas(schema)
                 .load();
         assertThat(toLatest.migrate().migrationsExecuted).isEqualTo(6);
         toLatest.validate();
@@ -246,8 +248,8 @@ class FlywayMigrationPathTest {
         // 3. Apply V11 through V15 without rewriting the existing role.
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
-                .schemas(schema)
                 .target(MigrationVersion.fromVersion("15"))
+                .schemas(schema)
                 .load();
         assertThat(toLatest.migrate().migrationsExecuted).isEqualTo(5);
         toLatest.validate();
@@ -290,8 +292,8 @@ class FlywayMigrationPathTest {
         // 3. Apply V12 through V15 without rewriting the existing role.
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
-                .schemas(schema)
                 .target(MigrationVersion.fromVersion("15"))
+                .schemas(schema)
                 .load();
         assertThat(toLatest.migrate().migrationsExecuted).isEqualTo(4);
         toLatest.validate();
@@ -326,8 +328,8 @@ class FlywayMigrationPathTest {
 
         Flyway toLatest = Flyway.configure()
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
-                .schemas(schema)
                 .target(MigrationVersion.fromVersion("15"))
+                .schemas(schema)
                 .load();
         assertThat(toLatest.migrate().migrationsExecuted).isEqualTo(3);
         toLatest.validate();
@@ -437,6 +439,35 @@ class FlywayMigrationPathTest {
         assertThat(countRows(schema, "permissions")).isEqualTo(47);
         assertThat(countRows(schema, "role_permissions")).isEqualTo(45);
         assertThat(countRows(schema, "inventory_items")).isZero();
+    }
+
+    @Test
+    void upgradeFromV16AddsOnlyBranchStockPermissionsAndPreservesExistingRoleGrants() {
+        String schema = "upgrade_branch_inventory";
+        Flyway upToV16 = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema)
+                .target(MigrationVersion.fromVersion("16"))
+                .load();
+        assertThat(upToV16.migrate().migrationsExecuted).isEqualTo(16);
+        assertThat(countRows(schema, "permissions")).isEqualTo(47);
+        UUID organizationId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        execute("insert into " + schema + ".organizations (id,name,code,timezone,currency,locale,created_at,updated_at) values ('" + organizationId + "','Existing Org','existing-stock','UTC','MXN','es-MX',now(),now())");
+        execute("insert into " + schema + ".roles (id,organization_id,code,name,created_at,updated_at) values ('" + roleId + "','" + organizationId + "','existing-role','Existing role',now(),now())");
+        execute("insert into " + schema + ".role_permissions (role_id,permission_code) select '" + roleId + "',code from " + schema + ".permissions");
+        assertThat(countRows(schema, "role_permissions")).isEqualTo(47);
+
+        Flyway latest = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema)
+                .load();
+        assertThat(latest.migrate().migrationsExecuted).isEqualTo(1);
+        latest.validate();
+        assertThat(countRows(schema, "permissions")).isEqualTo(49);
+        assertThat(countRows(schema, "role_permissions")).isEqualTo(47);
+        assertThat(tableExists(schema, "branch_inventory")).isTrue();
+        assertThat(tableExists(schema, "inventory_movements")).isTrue();
     }
 
     private static boolean columnExists(String schema, String table, String column) {
