@@ -22,6 +22,7 @@ import com.hiqnet.pos.shared.error.BusinessException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -64,7 +65,7 @@ class InventoryRecipeConcurrencyTest extends AbstractRbacIntegrationTest {
     private Fixture setup() {
         var fx = fixture();
         var organization = organizations.findById(fx.orgId()).orElseThrow();
-        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String suffix = UUID.randomUUID().toString().substring(0, 8).toUpperCase(Locale.ROOT);
         Product product = products.saveAndFlush(Product.create(organization, "RACE-" + suffix, "Recipe", BigDecimal.ONE));
         ModifierGroup group = groups.saveAndFlush(ModifierGroup.create(organization, "race-" + suffix, "Group", 0, 1));
         ModifierOption option = options.saveAndFlush(ModifierOption.create(

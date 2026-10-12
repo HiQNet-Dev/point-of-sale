@@ -24,6 +24,7 @@ import com.hiqnet.pos.shared.audit.AuditPort;
 import com.hiqnet.pos.shared.audit.AuditRecord;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,7 +55,7 @@ class InventoryRecipeAuditRollbackTest extends AbstractRbacIntegrationTest {
     void failedAuditRollsBackRecipeAndModifierConfigurationRows() {
         RbacFixture fixture = fixture();
         var organization = organizations.findById(fixture.orgId()).orElseThrow();
-        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String suffix = UUID.randomUUID().toString().substring(0, 8).toUpperCase(Locale.ROOT);
         Product product = products.saveAndFlush(Product.create(organization, "RECIPE-" + suffix, "Recipe", BigDecimal.ONE));
         ModifierGroup group = groups.saveAndFlush(ModifierGroup.create(organization, "group-" + suffix, "Group", 0, 1));
         ModifierOption option = options.saveAndFlush(ModifierOption.create(

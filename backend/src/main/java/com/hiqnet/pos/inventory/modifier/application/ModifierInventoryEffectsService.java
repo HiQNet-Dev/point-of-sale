@@ -86,7 +86,7 @@ public class ModifierInventoryEffectsService {
             }
             validateUnit(item, delta);
             return toEffect(optionId, item, delta);
-        }).sorted(java.util.Comparator.comparing(ModifierInventoryEffectData::inventoryItemId)).toList();
+        }).sorted(java.util.Comparator.comparing(effect -> effect.inventoryItemId().toString())).toList();
 
         int inserted = configStore.ensure(UUID.randomUUID(), organizationId, optionId);
         ModifierOptionInventoryConfig config = configRepository

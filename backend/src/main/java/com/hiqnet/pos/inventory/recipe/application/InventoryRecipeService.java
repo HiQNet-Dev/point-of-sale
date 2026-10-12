@@ -95,7 +95,7 @@ public class InventoryRecipeService {
                     validateUnit(item, quantity);
                     return toComponent(item, quantity);
                 })
-                .sorted(java.util.Comparator.comparing(RecipeComponentData::inventoryItemId))
+                .sorted(java.util.Comparator.comparing(component -> component.inventoryItemId().toString()))
                 .toList();
 
         int inserted = recipeStore.ensure(UUID.randomUUID(), organizationId, productId);

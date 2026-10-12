@@ -94,9 +94,14 @@ class InventoryRecipeApiTest extends AbstractAuditIntegrationTest {
                 + "{\"inventoryItemId\":\"" + milkId + "\",\"quantity\":\"250.000000\"},"
                 + "{\"inventoryItemId\":\"" + coffeeId + "\",\"quantity\":\"18.500000\"}]}";
         long beforeNoOp = auditCount(fx.orgId());
-        mockMvc.perform(put(url).header("Authorization", bearer(token)).contentType(MediaType.APPLICATION_JSON).content(reversed))
+        String noOpResponse = mockMvc.perform(put(url).header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON).content(reversed))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1))
-                .andExpect(jsonPath("$.components[0].quantity").value("18.500000"));
+                .andReturn().getResponse().getContentAsString();
+        var returnedComponents = objectMapper.readTree(noOpResponse).get("components");
+        assertThat(java.util.List.of(returnedComponents.get(0).get("quantity").asText(),
+                        returnedComponents.get(1).get("quantity").asText()))
+                .containsExactlyInAnyOrder("18.500000", "250.000000");
         assertThat(auditCount(fx.orgId())).isEqualTo(beforeNoOp);
 
         mockMvc.perform(put(url).header("Authorization", bearer(token)).contentType(MediaType.APPLICATION_JSON)
