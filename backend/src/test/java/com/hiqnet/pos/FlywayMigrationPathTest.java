@@ -427,7 +427,11 @@ class FlywayMigrationPathTest {
         execute("insert into " + schema + ".role_permissions (role_id, permission_code) "
                 + "select '" + roleId + "', code from " + schema + ".permissions");
 
-        Flyway toV16 = flyway(schema);
+        Flyway toV16 = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema)
+                .target(MigrationVersion.fromVersion("16"))
+                .load();
         assertThat(toV16.migrate().migrationsExecuted).isEqualTo(1);
         toV16.validate();
         assertThat(countRows(schema, "permissions")).isEqualTo(47);
