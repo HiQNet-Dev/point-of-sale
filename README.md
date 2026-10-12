@@ -5,12 +5,12 @@ principalmente a **pequeños negocios de alimentos** (cafeterías, juguerías, r
 pequeños) y **retail ligero**.
 
 > **Estado:** HiQNet POS está en desarrollo activo y todavía **no es una release
-> comercial estable**. La versión en desarrollo es `0.2.0-SNAPSHOT`
-> (ver `VERSION`); el último milestone liberado es la release **`v0.1.0`
-> (Foundation)**, la release técnica privada del producto:
-> estructura técnica compilable, ejecutable, documentada y auditada — **no** es
-> el POS comercial completo. Las funcionalidades comerciales del POS (ventas,
-> catálogo, inventario, cajas) aún no existen.
+> comercial estable**. La versión en desarrollo es `0.3.0-SNAPSHOT`
+> (ver `VERSION`); el último milestone liberado es **`v0.2.0` (POS Core)**,
+> release técnica privada. POS Core incluye catálogo operativo, cajas, turnos,
+> ventas y checkout. Inventory v0.3 ya tiene catálogo y stock por sucursal con
+> ledger, apertura y ajustes; Recipes, checkout deduction e Inventory UI siguen
+> fuera de alcance.
 
 ## Foundation implementada (v0.1.x)
 
@@ -97,7 +97,7 @@ point-of-sale/
 ├── README.md
 ├── CONTRIBUTING.md
 ├── SECURITY.md
-└── VERSION             0.2.0-SNAPSHOT
+└── VERSION             0.3.0-SNAPSHOT
 ```
 
 ## Requisitos
@@ -175,8 +175,8 @@ CI ejecuta exactamente estos pasos en cada push a `main` y en cada PR.
 
 ```text
 v0.1.x Foundation      ✓ RELEASED (privada, 2026-10-10)
-v0.2.x POS Core        ⬜ IN DEVELOPMENT
-v0.3.x Inventory
+v0.2.x POS Core        ✓ RELEASED (privada, 2026-10-12)
+v0.3.x Inventory       ⬜ IN DEVELOPMENT
 v0.4.x Purchasing
 v0.5.x Expenses & Management
 v0.6.x Reporting
