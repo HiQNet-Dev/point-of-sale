@@ -82,6 +82,24 @@ BEGIN
     RAISE EXCEPTION 'Expected modifier snapshot was not persisted';
   END IF;
 
+  IF NOT EXISTS (
+    SELECT 1 FROM sale_item_inventory_components
+    WHERE organization_id = e2e_org_id AND inventory_item_code_snapshot = 'e2e-beans'
+      AND base_unit_snapshot = 'GRAM' AND quantity_total = 25.000000
+  ) THEN
+    RAISE EXCEPTION 'Expected tracked SaleItem Inventory snapshot was not persisted';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM inventory_movements m
+    JOIN branch_inventory b ON b.branch_id = m.branch_id AND b.inventory_item_id = m.inventory_item_id
+    WHERE m.organization_id = e2e_org_id AND m.type = 'SALE_CONSUMPTION'
+      AND m.quantity_delta = -25.000000 AND m.resulting_quantity = 975.000000
+      AND m.sale_id IS NOT NULL AND b.quantity_on_hand = 975.000000
+  ) THEN
+    RAISE EXCEPTION 'Expected SALE_CONSUMPTION movement and resulting balance were not persisted';
+  END IF;
+
   IF NOT EXISTS (SELECT 1 FROM audit_events WHERE organization_id = e2e_org_id AND action = 'cash-shift.opened') THEN
     RAISE EXCEPTION 'Shift-open audit event is missing';
   END IF;

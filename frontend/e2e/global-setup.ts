@@ -144,6 +144,26 @@ async function main() {
       sku: 'E2E-INACTIVE-CAT', name: 'E2E Active Under Inactive Category', unitPrice: '0.2000', categoryId: inactiveCategory.id,
     })
 
+    const beans = await jsonResponse(
+      await admin('POST', `/organizations/${organizationId}/inventory-items`, {
+        code: 'e2e-beans', name: 'E2E Beans', baseUnit: 'GRAM', fractionalUnitAllowed: false,
+      }),
+      'create inventory item', [201],
+    )
+    const tracked = await createProduct(admin, organizationId, {
+      sku: 'E2E-TRACKED', name: 'E2E Tracked Product', unitPrice: '12.3400', categoryId: activeCategory.id,
+    })
+    await jsonResponse(
+      await admin('PUT', `/organizations/${organizationId}/products/${tracked.id}/inventory-recipe`, {
+        expectedVersion: 0, status: 'ACTIVE', components: [{ inventoryItemId: beans.id, quantity: '25' }],
+      }), 'create tracked product recipe', [200],
+    )
+    await jsonResponse(
+      await admin('POST', `/organizations/${organizationId}/branches/${branchA.id}/inventory-items/${beans.id}/opening-stock`, {
+        expectedVersion: 0, quantity: '1000',
+      }), 'open branch A inventory stock', [200],
+    )
+
     const requiredGroup = await jsonResponse(
       await admin('POST', `/organizations/${organizationId}/modifier-groups`, {
         code: 'e2e-required', name: 'Required choice', minSelections: 1, maxSelections: 1,
@@ -211,6 +231,9 @@ async function main() {
       noMutationEmail: 'no-mutation@pos-e2e.invalid',
       simpleProductId: simple.id,
       simpleProductName: simple.name,
+      trackedProductId: tracked.id,
+      trackedProductName: tracked.name,
+      trackedItemId: beans.id,
       zeroProductId: zero.id,
       zeroProductName: zero.name,
       requiredProductId: required.id,

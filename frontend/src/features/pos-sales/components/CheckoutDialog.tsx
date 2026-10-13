@@ -47,6 +47,7 @@ function checkoutErrorMessage(error: unknown): string {
     case 'SALE_ALREADY_CANCELLED':
     case 'SALE_NOT_OPEN': return 'La venta ya no está abierta.'
     case 'SALE_HAS_NO_ACTIVE_ITEMS': return 'La venta ya no tiene productos activos.'
+    case 'INSUFFICIENT_INVENTORY': return 'No hay inventario suficiente para completar la venta. Ajusta las existencias o modifica los productos de la venta.'
     case 'BRANCH_INACTIVE': return 'La sucursal está inactiva. Se actualizará el contexto operacional.'
     case 'CASH_REGISTER_INACTIVE': return 'La caja está inactiva. Se actualizará el contexto operacional.'
     case 'CASH_SHIFT_NOT_OPEN': return 'El turno ya no está abierto. Se actualizará el contexto operacional.'
@@ -62,7 +63,7 @@ function checkoutErrorMessage(error: unknown): string {
 }
 
 function isRecoverableCheckoutError(error: unknown): boolean {
-  return !['INVALID_PAYMENT', 'INVALID_CASH_TENDERED_AMOUNT', 'TOO_MANY_PAYMENTS', 'MULTIPLE_CASH_PAYMENTS_NOT_ALLOWED']
+  return !['INVALID_PAYMENT', 'INVALID_CASH_TENDERED_AMOUNT', 'TOO_MANY_PAYMENTS', 'MULTIPLE_CASH_PAYMENTS_NOT_ALLOWED', 'INSUFFICIENT_INVENTORY']
     .includes(errorCode(error) ?? '')
 }
 

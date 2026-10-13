@@ -292,4 +292,20 @@ describe('atomic checkout dialog', () => {
     ))
     expect(checkout.checkoutRequests).toHaveLength(1)
   })
+
+  it('keeps the sale open with an inline shortage message on INSUFFICIENT_INVENTORY', async () => {
+    const checkout = setup({ error: { status: 409, code: 'INSUFFICIENT_INVENTORY' } })
+    await chooseMethod(0, 'Tarjeta')
+    fireEvent.change(screen.getByRole('textbox', { name: 'Monto aplicado' }), { target: { value: '100' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Completar venta' }))
+    await waitFor(() => expect(checkout.checkoutRequests).toHaveLength(1))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain(
+      'No hay inventario suficiente para completar la venta. Ajusta las existencias o modifica los productos de la venta.',
+    )
+    expect(checkout.completed).not.toHaveBeenCalled()
+    expect(checkout.reconciled).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Completar venta' }).hasAttribute('disabled')).toBe(false)
+  })
 })

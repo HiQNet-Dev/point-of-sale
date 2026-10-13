@@ -9,12 +9,15 @@ const cashierPassword = process.env.E2E_CASHIER_PASSWORD ?? ''
 type Fixtures = {
   organizationCode: string
   organizationId: string
+  branchAId: string
   branchBId: string
   cashierEmail: string
   noCatalogEmail: string
   noMutationEmail: string
   simpleProductName: string
   zeroProductName: string
+  trackedProductName: string
+  trackedItemId: string
   requiredProductName: string
   requiredOptionName: string
   multipleProductName: string
@@ -300,6 +303,43 @@ test('cashier can recover POS, configure products and complete sales without pay
   expect(checkoutBodies.at(-1)?.payments).toEqual([])
   expect(saleCreates).toHaveLength(6)
   expect(paymentReads).toBe(0)
+
+  // A tracked product consumes authoritative Inventory from its snapshot on checkout (STRICT policy).
+  await newSale(page, saleCreates)
+  await addProduct(page, fixtures.trackedProductName)
+  await page.getByRole('button', { name: 'Agregar a la venta' }).click()
+  await page.getByRole('button', { name: 'Cobrar' }).click()
+  await page.getByRole('combobox', { name: 'Método de pago' }).click()
+  await page.getByRole('option', { name: 'Tarjeta' }).click()
+  await page.getByRole('button', { name: /Usar restante/ }).click()
+  await completeCheckout(page)
+  expect(saleCreates).toHaveLength(7)
+
+  const adminAuth = await request.post(`${apiBase}/auth/login`, {
+    data: {
+      organizationCode: fixtures.organizationCode,
+      email: process.env.E2E_ADMIN_EMAIL ?? 'admin@pos-e2e.invalid',
+      password: process.env.E2E_ADMIN_PASSWORD ?? '',
+    },
+  })
+  expect(adminAuth.status()).toBe(200)
+  const adminBearer = { Authorization: `Bearer ${(await adminAuth.json() as { accessToken: string }).accessToken}` }
+  const stock = await request.get(
+    `${apiBase}/organizations/${fixtures.organizationId}/branches/${fixtures.branchAId}/inventory-items/${fixtures.trackedItemId}`,
+    { headers: adminBearer },
+  )
+  expect(stock.status()).toBe(200)
+  expect((await stock.json() as { quantityOnHand: string }).quantityOnHand).toBe('975.000000')
+  const movements = await request.get(
+    `${apiBase}/organizations/${fixtures.organizationId}/branches/${fixtures.branchAId}/inventory-items/${fixtures.trackedItemId}/movements`,
+    { headers: adminBearer },
+  )
+  expect(movements.status()).toBe(200)
+  const movementItems = (await movements.json() as {
+    items: Array<{ type: string; quantityDelta: string; saleId: string | null }>
+  }).items
+  expect(movementItems.some((movement) =>
+    movement.type === 'SALE_CONSUMPTION' && movement.quantityDelta === '-25.000000' && Boolean(movement.saleId))).toBe(true)
 
   // Responsive smoke against the running POS, not a mocked DOM.
   for (const viewport of [{ width: 360, height: 800 }, { width: 768, height: 1024 }, { width: 1920, height: 1080 }]) {

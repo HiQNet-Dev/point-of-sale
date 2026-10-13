@@ -21,7 +21,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * contexts that reuse a Testcontainers DB across the suite):
  *
  * <ul>
- * <li><b>Clean install</b>: V1 → V20 applies completely and validates, leaving
+ * <li><b>Clean install</b>: V1 → V21 applies completely and validates, leaving
  *       the expected seed state (permission catalog = 51, bootstrap singleton = 1,
  *       catalog/modifier/cash-register/cash-shift/sales and inventory-item tables present).</li>
  *   <li><b>Upgrade path (V7)</b>: a database migrated up to V7 (the state before
@@ -41,12 +41,12 @@ class FlywayMigrationPathTest {
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
 
     @Test
-    void cleanInstallationMigratesV1ThroughV20AndValidates() {
+    void cleanInstallationMigratesV1ThroughV21AndValidates() {
         Flyway flyway = flyway("clean_foundation");
 
         MigrateResult result = flyway.migrate();
 
-        assertThat(result.migrationsExecuted).isEqualTo(20);
+        assertThat(result.migrationsExecuted).isEqualTo(21);
         flyway.validate();
         assertThat(countRows("clean_foundation", "permissions")).isEqualTo(51);
         assertThat(countRows("clean_foundation", "installation_bootstrap")).isEqualTo(1);
@@ -71,6 +71,7 @@ class FlywayMigrationPathTest {
         assertThat(tableExists("clean_foundation", "sale_item_inventory_components")).isTrue();
         assertThat(columnExists("clean_foundation", "organizations", "inventory_negative_stock_policy"))
                 .isTrue();
+        assertThat(columnExists("clean_foundation", "inventory_movements", "sale_id")).isTrue();
     }
 
     @Test
@@ -537,7 +538,7 @@ class FlywayMigrationPathTest {
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas(schema)
                 .load();
-        assertThat(latest.migrate().migrationsExecuted).isEqualTo(2);
+        assertThat(latest.migrate().migrationsExecuted).isEqualTo(3);
         latest.validate();
         assertThat(countRows(schema, "permissions")).isEqualTo(51);
         assertThat(countRows(schema, "role_permissions")).isEqualTo(49);
@@ -545,6 +546,7 @@ class FlywayMigrationPathTest {
         assertThat(countRows(schema, "sale_item_inventory_components")).isZero();
         assertThat(columnExists(schema, "organizations", "inventory_negative_stock_policy"))
                 .isTrue();
+        assertThat(columnExists(schema, "inventory_movements", "sale_id")).isTrue();
     }
 
     @Test
@@ -595,6 +597,82 @@ class FlywayMigrationPathTest {
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> execute("insert into " + schema + ".organizations (id,name,code,timezone,currency,locale,inventory_negative_stock_policy,created_at,updated_at) values ('"
                         + UUID.randomUUID() + "','Null Policy','null-policy','UTC','MXN','es-MX',null,now(),now())"))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void upgradeFromV20AddsSaleConsumptionLinkageWithoutChangingGrants() {
+        String schema = "upgrade_sale_consumption";
+        // 1. Migrate to V20: the exact pre-consumption state.
+        Flyway upToV20 = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema)
+                .target(MigrationVersion.fromVersion("20"))
+                .load();
+        assertThat(upToV20.migrate().migrationsExecuted).isEqualTo(20);
+        assertThat(columnExists(schema, "inventory_movements", "sale_id")).isFalse();
+
+        // 2. Existing deployment: an organization plus a role granted EVERY permission (51).
+        UUID organizationId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        execute("insert into " + schema + ".organizations (id,name,code,timezone,currency,locale,created_at,updated_at) values ('"
+                + organizationId + "','Existing Org','existing-consumption','UTC','MXN','es-MX',now(),now())");
+        execute("insert into " + schema + ".roles (id,organization_id,code,name,created_at,updated_at) values ('"
+                + roleId + "','" + organizationId + "','existing-role','Existing role',now(),now())");
+        execute("insert into " + schema + ".role_permissions (role_id,permission_code) select '" + roleId + "',code from " + schema + ".permissions");
+        assertThat(countRows(schema, "role_permissions")).isEqualTo(51);
+
+        // 3. Apply V21.
+        Flyway toV21 = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema)
+                .target(MigrationVersion.fromVersion("21"))
+                .load();
+        assertThat(toV21.migrate().migrationsExecuted).isEqualTo(1);
+        toV21.validate();
+
+        // 4. V21 adds the sale linkage without touching permissions or existing grants.
+        assertThat(countRows(schema, "permissions")).isEqualTo(51);
+        assertThat(countRows(schema, "role_permissions")).isEqualTo(51);
+        assertThat(columnExists(schema, "inventory_movements", "sale_id")).isTrue();
+
+        // 5. Movement coupling: OPENING stays unlinked; SALE_CONSUMPTION must be
+        //    negative, linked, and unique per sale+item.
+        UUID userId = UUID.randomUUID();
+        UUID branchId = UUID.randomUUID();
+        UUID registerId = UUID.randomUUID();
+        UUID shiftId = UUID.randomUUID();
+        UUID itemId = UUID.randomUUID();
+        UUID saleId = UUID.randomUUID();
+        execute("insert into " + schema + ".users (id,organization_id,email,password_hash,created_at,updated_at) values ('"
+                + userId + "','" + organizationId + "','consumption@example.test','unused',now(),now())");
+        execute("insert into " + schema + ".branches (id,organization_id,name,code,created_at,updated_at) values ('"
+                + branchId + "','" + organizationId + "','Branch','consumption-branch',now(),now())");
+        execute("insert into " + schema + ".cash_registers (id,organization_id,branch_id,code,name,created_at,updated_at) values ('"
+                + registerId + "','" + organizationId + "','" + branchId + "','reg','Register',now(),now())");
+        execute("insert into " + schema + ".cash_shifts (id,organization_id,branch_id,cash_register_id,opened_by_user_id,status,opening_amount,opened_at,created_at,updated_at) values ('"
+                + shiftId + "','" + organizationId + "','" + branchId + "','" + registerId + "','" + userId + "','OPEN',0,now(),now(),now())");
+        execute("insert into " + schema + ".inventory_items (id,organization_id,code,name,base_unit,fractional_unit_allowed,created_at,updated_at) values ('"
+                + itemId + "','" + organizationId + "','consumption-item','Consumption item','GRAM',false,now(),now())");
+        execute("insert into " + schema + ".sales (id,organization_id,branch_id,cash_register_id,cash_shift_id,created_by_user_id,status,total_amount,created_at,updated_at) values ('"
+                + saleId + "','" + organizationId + "','" + branchId + "','" + registerId + "','" + shiftId + "','" + userId + "','OPEN',1,now(),now())");
+
+        String movement = "insert into " + schema + ".inventory_movements "
+                + "(id,organization_id,branch_id,inventory_item_id,type,quantity_delta,resulting_quantity,reason,actor_user_id,sale_id,occurred_at) values ";
+        execute(movement + "('" + UUID.randomUUID() + "','" + organizationId + "','" + branchId + "','" + itemId
+                + "','OPENING',5,5,null,'" + userId + "',null,now())");
+        assertThat(countRows(schema, "inventory_movements")).isEqualTo(1);
+
+        assertThatThrownBy(() -> execute(movement + "('" + UUID.randomUUID() + "','" + organizationId + "','" + branchId + "','" + itemId
+                + "','SALE_CONSUMPTION',-1,4,null,'" + userId + "',null,now())"))
+                .isInstanceOf(IllegalStateException.class);
+        execute(movement + "('" + UUID.randomUUID() + "','" + organizationId + "','" + branchId + "','" + itemId
+                + "','SALE_CONSUMPTION',-1,4,null,'" + userId + "','" + saleId + "',now())");
+        assertThatThrownBy(() -> execute(movement + "('" + UUID.randomUUID() + "','" + organizationId + "','" + branchId + "','" + itemId
+                + "','SALE_CONSUMPTION',-1,3,null,'" + userId + "','" + saleId + "',now())"))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> execute(movement + "('" + UUID.randomUUID() + "','" + organizationId + "','" + branchId + "','" + itemId
+                + "','ADJUSTMENT',-2,2,'correction','" + userId + "','" + saleId + "',now())"))
                 .isInstanceOf(IllegalStateException.class);
     }
 

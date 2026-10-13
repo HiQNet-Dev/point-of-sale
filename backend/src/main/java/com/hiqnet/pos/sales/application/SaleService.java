@@ -19,7 +19,9 @@ import com.hiqnet.pos.catalog.domain.ProductRepository;
 import com.hiqnet.pos.inventory.consumption.InventoryConsumptionResolver;
 import com.hiqnet.pos.inventory.consumption.ResolvedInventoryComponent;
 import com.hiqnet.pos.inventory.domain.InventoryBaseUnit;
+import com.hiqnet.pos.inventory.stock.application.InventoryConsumptionRequirement;
 import com.hiqnet.pos.inventory.stock.application.InventoryQuantity;
+import com.hiqnet.pos.inventory.stock.application.InventorySaleConsumptionService;
 import com.hiqnet.pos.organization.domain.Organization;
 import com.hiqnet.pos.organization.domain.OrganizationRepository;
 import com.hiqnet.pos.payment.domain.Payment;
@@ -76,6 +78,7 @@ public class SaleService {
     private final SaleItemModifierRepository saleItemModifierRepository;
     private final SaleItemInventoryComponentRepository saleItemInventoryComponentRepository;
     private final InventoryConsumptionResolver inventoryConsumptionResolver;
+    private final InventorySaleConsumptionService inventorySaleConsumptionService;
     private final ProductRepository productRepository;
     private final ProductModifierGroupRepository productModifierGroupRepository;
     private final ModifierGroupRepository modifierGroupRepository;
@@ -94,6 +97,7 @@ public class SaleService {
             SaleItemModifierRepository saleItemModifierRepository,
             SaleItemInventoryComponentRepository saleItemInventoryComponentRepository,
             InventoryConsumptionResolver inventoryConsumptionResolver,
+            InventorySaleConsumptionService inventorySaleConsumptionService,
             ProductRepository productRepository,
             ProductModifierGroupRepository productModifierGroupRepository,
             ModifierGroupRepository modifierGroupRepository,
@@ -110,6 +114,7 @@ public class SaleService {
         this.saleItemModifierRepository = saleItemModifierRepository;
         this.saleItemInventoryComponentRepository = saleItemInventoryComponentRepository;
         this.inventoryConsumptionResolver = inventoryConsumptionResolver;
+        this.inventorySaleConsumptionService = inventorySaleConsumptionService;
         this.productRepository = productRepository;
         this.productModifierGroupRepository = productModifierGroupRepository;
         this.modifierGroupRepository = modifierGroupRepository;
@@ -248,7 +253,7 @@ public class SaleService {
     @Transactional
     public SaleDetail checkout(UUID organizationId, UUID branchId, UUID cashRegisterId, UUID cashShiftId, UUID saleId,
             long expectedVersion, List<com.hiqnet.pos.sales.api.CheckoutRequest.PaymentInstruction> instructions, UUID actorUserId) {
-        requireActiveOperationalParents(organizationId, branchId, cashRegisterId);
+        Organization organization = requireActiveOperationalParents(organizationId, branchId, cashRegisterId);
         CashShift shift = requireShiftForUpdate(organizationId, branchId, cashRegisterId, cashShiftId);
         if (shift.getStatus() != CashShiftStatus.OPEN) {
             throw new BusinessException(HttpStatus.CONFLICT, ErrorCodes.CASH_SHIFT_NOT_OPEN, "The cash shift is not open");
@@ -290,6 +295,11 @@ public class SaleService {
         if (applied.compareTo(sale.getTotalAmount()) != 0) {
             throw new BusinessException(HttpStatus.CONFLICT, ErrorCodes.PAYMENT_TOTAL_MISMATCH, "Payment total must exactly match the sale total");
         }
+        // Consume branch Inventory from the authoritative line snapshots. CashShift
+        // is already locked, so these balances lock before the Sale aggregate claim
+        // below, and STRICT shortages fail before any Sale or payment write persists.
+        inventorySaleConsumptionService.consume(organizationId, branchId, saleId, actorUserId,
+                organization.getInventoryNegativeStockPolicy(), consumptionRequirements(activeItems));
         // Claim the aggregate before payment child inserts so concurrent commands
         // lose through the documented optimistic Sale conflict, not a child FK/unique race.
         sale.complete(actorUserId, clock.instant());
@@ -481,13 +491,46 @@ public class SaleService {
         }
     }
 
-    private void requireActiveOperationalParents(UUID organizationId, UUID branchId, UUID cashRegisterId) {
+    private Organization requireActiveOperationalParents(UUID organizationId, UUID branchId, UUID cashRegisterId) {
         Organization organization = requireOrganization(organizationId);
         if (!organization.isActive()) throw new BusinessException(HttpStatus.CONFLICT, ErrorCodes.ORGANIZATION_INACTIVE, "The organization is inactive");
         Branch branch = requireBranch(organizationId, branchId);
         if (branch.getStatus() != BranchStatus.ACTIVE) throw new BusinessException(HttpStatus.CONFLICT, ErrorCodes.BRANCH_INACTIVE, "The branch is inactive");
         CashRegister register = requireRegister(organizationId, branchId, cashRegisterId);
         if (!register.isActive()) throw new BusinessException(HttpStatus.CONFLICT, ErrorCodes.CASH_REGISTER_INACTIVE, "The cash register is inactive");
+        return organization;
+    }
+
+    /**
+     * Aggregates the authoritative per-line Inventory snapshots of the ACTIVE
+     * lines into one required quantity per Inventory item. Snapshots are the only
+     * source: current recipes, modifier effects and item status are never read.
+     * A snapshot-free item (untracked product, pre-C3 line) contributes nothing.
+     */
+    private List<InventoryConsumptionRequirement> consumptionRequirements(List<SaleItem> activeItems) {
+        List<UUID> saleItemIds = activeItems.stream().map(SaleItem::getId).toList();
+        List<SaleItemInventoryComponent> components = saleItemInventoryComponentRepository.findBySaleItemIds(saleItemIds);
+        if (components.isEmpty()) return List.of();
+        Map<UUID, InventoryConsumptionRequirement> byItem = new LinkedHashMap<>();
+        for (SaleItemInventoryComponent component : components) {
+            InventoryConsumptionRequirement current = byItem.get(component.inventoryItemId());
+            if (current == null) {
+                byItem.put(component.inventoryItemId(), new InventoryConsumptionRequirement(
+                        component.inventoryItemId(), component.inventoryItemCodeSnapshot(),
+                        component.baseUnitSnapshot(), component.quantityTotal()));
+                continue;
+            }
+            if (!current.baseUnitSnapshot().equals(component.baseUnitSnapshot())) {
+                throw new BusinessException(HttpStatus.CONFLICT, ErrorCodes.INVENTORY_SNAPSHOT_INCONSISTENT,
+                        "Inventory snapshots for one item disagree on their base unit");
+            }
+            BigDecimal total = current.requiredQuantity().add(component.quantityTotal());
+            InventoryQuantity.validateRange(total, "required quantity");
+            byItem.put(component.inventoryItemId(), new InventoryConsumptionRequirement(
+                    component.inventoryItemId(), current.inventoryItemCodeSnapshot(),
+                    current.baseUnitSnapshot(), total));
+        }
+        return List.copyOf(byItem.values());
     }
 
     private Organization requireOrganization(UUID organizationId) { return organizationRepository.findById(organizationId)
