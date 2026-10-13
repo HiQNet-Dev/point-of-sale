@@ -1,0 +1,23 @@
+# Root Docker build context exclusions (defensive).
+#
+# The Compose stack builds from ./backend and ./frontend, so these files are
+# never in the build context; this file keeps a future root-context build from
+# accidentally sending repository internals (notably local worktrees and
+# secrets) to the daemon.
+.git/
+.github/
+.worktrees/
+.serena/
+node_modules/
+**/node_modules/
+target/
+**/target/
+dist/
+**/dist/
+coverage/
+**/coverage/
+.env
+.env.*
+!.env.example
+*.log
+logs/

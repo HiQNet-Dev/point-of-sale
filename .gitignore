@@ -12,6 +12,9 @@ target/
 .env.*
 !.env.example
 
+# Local-only backend secrets/configuration
+/backend/src/main/resources/application-dev-local.yml
+
 # --- Logs ---
 logs/
 *.log
@@ -23,6 +26,9 @@ logs/
 *.swp
 *.swo
 .serena/
+
+# --- Git worktrees (local only) ---
+.worktrees/
 
 # --- OS files ---
 .DS_Store
