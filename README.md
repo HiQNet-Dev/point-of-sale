@@ -10,8 +10,9 @@ pequeños) y **retail ligero**.
 > release técnica privada. POS Core incluye catálogo operativo, cajas, turnos,
 > ventas y checkout. Inventory v0.3 ya tiene catálogo y stock por sucursal con
 > ledger, apertura y ajustes, recipes y efectos de modificadores, UI de
-> administración y consumo de inventario en checkout; la UI de política de stock
-> negativo y el E2E integrado de inventario siguen pendientes.
+> administración (incluida la política de stock negativo a nivel de organización)
+> y consumo de inventario en checkout; el E2E integrado de inventario sigue
+> pendiente.
 
 ## Foundation implementada (v0.1.x)
 

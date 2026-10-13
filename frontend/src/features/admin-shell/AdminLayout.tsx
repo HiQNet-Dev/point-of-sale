@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { label: 'Existencias por sucursal', to: '/admin/inventory/stock' },
   { label: 'Recetas', to: '/admin/inventory/recipes' },
   { label: 'Efectos de modificadores', to: '/admin/inventory/modifier-effects' },
+  { label: 'Configuración', to: '/admin/inventory/settings' },
 ]
 
 const DRAWER_WIDTH = 240

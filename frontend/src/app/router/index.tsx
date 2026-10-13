@@ -5,6 +5,7 @@ import { ProtectedRoute } from '../../features/auth/components/ProtectedRoute'
 import { LoginPage } from '../../features/auth/pages/LoginPage'
 import { SessionHomePage } from '../../features/auth/pages/SessionHomePage'
 import { InventoryItemsPage } from '../../features/inventory-items/pages/InventoryItemsPage'
+import { InventorySettingsPage } from '../../features/inventory-settings/pages/InventorySettingsPage'
 import { ModifierEffectsPage } from '../../features/inventory-modifier-effects/pages/ModifierEffectsPage'
 import { RecipesPage } from '../../features/inventory-recipes/pages/RecipesPage'
 import { BranchStockDetailPage } from '../../features/inventory-stock/pages/BranchStockDetailPage'
@@ -54,6 +55,7 @@ export const router = createBrowserRouter([
       { path: 'inventory/stock/:itemId', element: <BranchStockDetailPage /> },
       { path: 'inventory/recipes', element: <RecipesPage /> },
       { path: 'inventory/modifier-effects', element: <ModifierEffectsPage /> },
+      { path: 'inventory/settings', element: <InventorySettingsPage /> },
     ],
   },
   {
