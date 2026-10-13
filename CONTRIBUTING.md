@@ -31,7 +31,9 @@ Gracias por contribuir. Reglas cortas, mantenemos el repo limpio:
 
 4. Abre un Pull Request hacia `main`. CI debe pasar antes del merge
    (backend: compile/test/package; frontend: lint/typecheck/test/build;
-   docker-compose validado).
+   docker-compose validado; E2E según el área modificada). CI solo ejecuta los
+   jobs de las áreas tocadas; el detalle del pipeline está en
+   `docs/05-development/ci.md`.
 
 5. Nunca hagas push directo a `main` (excepto casos justificados aprobados).
 

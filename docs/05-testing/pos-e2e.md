@@ -86,14 +86,17 @@ persistence evidence, run `psql` against that same dedicated DB with
 
 ## CI and troubleshooting
 
-CI runs three sequential, independent `POS integrated E2E (Chromium + PostgreSQL)`
-matrix executions, each with a fresh isolated PostgreSQL service and one-shot
-bootstrap. This supplies three clean-state repetitions without retries or
-historical fixture reuse. Each run migrates through Spring Boot startup, waits by
-polling health/HTTP endpoints (bounded timeout),
-starts Vite with an explicit backend API URL, runs Playwright, then runs the
-read-only SQL assertions. CI-generated bootstrap/JWT/user passwords are random, masked with GitHub Actions
-`add-mask`, and appended to the Actions environment without printing their values.
+Cada ejecución E2E usa un servicio PostgreSQL 17 aislado y un bootstrap one-shot.
+En pull requests se ejecuta una sola repetición salvo que cambie el harness E2E o
+la configuración de CI; en `main`, en la validación manual (`workflow_dispatch`) y
+en la ejecución nocturna (`schedule`) se ejecutan tres repeticiones secuenciales
+para detectar flakiness, siempre sin retries ni reutilización de fixtures. Cada
+ejecución arranca Spring Boot, espera por polling de health/HTTP (con timeout
+acotado), inicia Vite con la URL explícita del backend, corre Playwright y luego
+las aserciones SQL de solo lectura. Los passwords generados por CI
+(bootstrap/JWT/usuarios) son aleatorios, se enmascaran con `add-mask` de GitHub
+Actions y se agregan al entorno sin imprimir su valor. Detalle del pipeline en
+`docs/05-development/ci.md`.
 
 A setup/API failure is a harness/contract setup failure until the response and
 backend log establish otherwise. A browser assertion failure against a successful
