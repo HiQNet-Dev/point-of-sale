@@ -131,7 +131,6 @@ cashier@hiqnet.local / staff-dev-only
 Modo híbrido (backend en Docker + Vite local) y todo el detalle — service URLs,
 variables de entorno, datos de desarrollo, reset/reseed, HMR, troubleshooting —
 en `docs/05-development/local-development.md`.
-```
 
 Variables de entorno (raíz `.env`, ejemplo seguro en `.env.example`):
 

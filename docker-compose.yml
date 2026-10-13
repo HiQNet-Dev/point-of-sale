@@ -20,7 +20,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-hiqnet_dev}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hiqnet_dev_only}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Bind to loopback only: the dev database must not be reachable from the LAN.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - hiqnet-pos-dev-pgdata:/var/lib/postgresql/data
     healthcheck:

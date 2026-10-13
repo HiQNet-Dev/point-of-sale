@@ -9,7 +9,7 @@ spring:
 
 app:
   cors:
-    allowed-origins: http://localhost:5173
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   security:
     # Swagger UI / OpenAPI docs reachable only in local development.
     # Never enabled in production via application-prod.yml.
