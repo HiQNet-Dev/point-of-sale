@@ -184,7 +184,7 @@ If-Match todavía.
 Un rol `INACTIVE` **no concede** permissions; los assignments permanecen y al
 volver `ACTIVE` vuelven a conceder (intencional; documentado).
 
-## Inventory Item catalog (V16 candidate)
+## Inventory Item catalog (V16)
 
 `inventory.item.read` and `inventory.item.write` are independent organization-scope
 permissions. V16 adds both to the system catalog without granting either to existing
@@ -224,7 +224,7 @@ existentes; bootstrap nuevo recibe el catálogo completo.
   escrituras de Cash Register siguen exigiendo la branch ACTIVE.
 - **Recovery/backdoor** para el administrador destruido: no (operativo/futuro).
 
-## Inventory recipe permissions (V18 candidate / PR C1)
+## Inventory recipe permissions (V18)
 
 `inventory.recipe.read` y `inventory.recipe.write` son organization-scoped y cubren la administración de recetas de Product y efectos de Inventory de ModifierOption. V18 añade únicamente estos dos permisos: el catálogo pasa de 49 a 51; los grants de roles existentes permanecen en 49 y no reciben acceso automáticamente. Bootstrap nuevo concede el catálogo completo (51). No se agregan claims JWT ni permisos branch-scoped.
 

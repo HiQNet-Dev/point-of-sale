@@ -3,10 +3,11 @@
 **Documento vivo.** `Organization`, `Branch`, `User` (identidad +
 administración), `RefreshSession`, RBAC, memberships, auditoría, bootstrap, el
 catálogo POS, Sales Foundation y Payments + Atomic Checkout están implementados
-(V1–V15). `InventoryItem` organization-owned es candidato en V16 / PR abierto;
-Branch stock, movements, recipes y Sales integration siguen futuros.
+(V1–V15). `InventoryItem` organization-owned (V16), Branch stock y movements
+(V17), recipes y modifier effects (V18) y snapshots + consumo de checkout
+(V19–V21) están implementados.
 
-Versión actual: `0.2.0-SNAPSHOT`.
+Versión actual: `0.3.0-SNAPSHOT`.
 
 ## Jerarquía principal
 
@@ -17,7 +18,7 @@ Organization (organización / empresa)  ✔ implementado
  ├── Role / RolePermission / UserOrganizationRole   ✔ implementado (V5)
  ├── AuditEvent (historial append-only)  ✔ implementado (V7)
  ├── Category / Product (catálogo)     ✔ implementado (V9)
- ├── InventoryItem (definición)         ← candidato V16 / PR abierto, organization-owned
+ ├── InventoryItem (definición)         ✔ implementado (V16), organization-owned
  ├── ModifierGroup / ModifierOption (modifiers)  ✔ implementado (V10)
  │    └── ProductModifierGroup (producto ↔ grupo, ordenado)  ✔ implementado (V10)
  └── Branch (sucursal)                 ✔ implementado
@@ -26,7 +27,7 @@ Organization (organización / empresa)  ✔ implementado
       │    └── CashShift (turno de caja)  ✔ implementado (V12)
       │         └── Sale → SaleItem → SaleItemModifier  ✔ Sales Foundation (V13; OPEN→CANCELLED/COMPLETED)
       │              └── Payment[]  ✔ Atomic Checkout (V14; immutable CASH/CARD)
-      └── BranchInventory / movements   ← futuro; existencias físicas por Branch
+      └── BranchInventory / movements   ✔ implementado (V17); existencias físicas por Branch
 ```
 
 ## Entidades previstas (futuro)
@@ -45,7 +46,7 @@ Organization (organización / empresa)  ✔ implementado
 | BranchMembershipRole | organización | **implementada (`V6`)** — roles branch-scoped de una membership; reutiliza las definiciones de `roles`; FKs compuestas impiden cross-tenant |
 | AuditEvent | organización | **implementada (`V7`)** — historial append-only de mutaciones administrativas; trigger DB impide UPDATE/DELETE; actor USER/SYSTEM con FKs compuestas same-org; metadata JSONB acotada (≤16 KiB); ver `docs/02-database/audit-model.md` |
 | Category | organización | **implementada (`V9`)** — agrupador de catálogo; `code` slug único por org e inmutable; `status ACTIVE/INACTIVE`; sin DELETE; ver `docs/02-database/catalog-model.md` |
-| InventoryItem | organización | **candidato (`V16`, PR abierto)** — code slug inmutable y único por organización; baseUnit `UNIT`/`GRAM`/`MILLILITER`; sin stock ni cantidades; ver `docs/02-database/inventory-item-model.md` |
+| InventoryItem | organización | **implementada (`V16`)** — code slug inmutable y único por organización; baseUnit `UNIT`/`GRAM`/`MILLILITER`; sin stock ni cantidades; ver `docs/02-database/inventory-item-model.md` |
 | Product | organización | **implementada (`V9`)** — `sku` canónico (MAYÚSCULAS) inmutable y único por org, `barcode` opcional único cuando está presente, `unit_price NUMERIC(19,4)` (moneda heredada de la org), `category_id` opcional same-org; sin DELETE; ver `docs/02-database/catalog-model.md` |
 | ModifierGroup | organización | **implementada (`V10`)** — grupo de modifiers reutilizable; `code` slug único por org e inmutable; bounds `min_selections`/`max_selections`; `required`/`singleChoice`/`multipleChoice` **derivados** (no persistidos); `status ACTIVE/INACTIVE`; sin DELETE; ver `docs/02-database/product-modifiers-model.md` |
 | ModifierOption | organización | **implementada (`V10`)** — opción de un grupo; `code` slug inmutable único dentro del grupo; `price_delta NUMERIC(19,4)` **con signo**; `display_order`; `status ACTIVE/INACTIVE`; sin DELETE |
@@ -100,6 +101,6 @@ operación pasa por `organization_id` (`findByIdAndOrganizationId`).
   BranchRole propio).
 - Organization 1—N AuditEvent ✔ (`V7`); Branch 0—N AuditEvent (opcional);
   User 0—N AuditEvent (como actor).
-- Branch 1—N Stock (futuro).
-- Product 1—N Variant; Recipe N—M Ingredient (con cantidades) (futuro).
-- Sale 1—N Payment; Sale 1—N SaleLine; Sale N—1 Branch / Sale N—1 CashRegister (`V11`) (futuro).
+- Branch 1—N BranchInventory (stock operativo) ✔ (`V17`).
+- Product 1—N Variant (futuro); Product 1—N InventoryRecipe (componentes con cantidades) ✔ (`V18`).
+- Sale 1—N Payment ✔ (`V14`); Sale 1—N SaleItem ✔ (`V13`); Sale N—1 Branch / Sale N—1 CashRegister ✔ (`V13`).

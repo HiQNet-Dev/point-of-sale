@@ -1,6 +1,6 @@
 # Branch inventory stock — V17
 
-**Estado:** candidate / PR abierto. V17 agrega únicamente balances lazy por sucursal y un ledger append-only para `OPENING` y `ADJUSTMENT`.
+**Estado:** implementado en `V17`. V17 agrega únicamente balances lazy por sucursal y un ledger append-only para `OPENING` y `ADJUSTMENT`.
 
 ## Ownership y tablas
 
@@ -37,7 +37,7 @@ Permisos `inventory.stock.read` y `inventory.stock.adjust` son branch-scoped med
 
 No existen PATCH de saldo, DELETE, reservas, Purchasing, Transfers, recipes, costing ni integración Sales.
 
-## Recipe and modifier configuration — V18 candidate / PR C1
+## Recipe and modifier configuration — V18
 
 V18 añade `product_inventory_recipes` y `product_inventory_recipe_components`, más `modifier_option_inventory_configs` y `modifier_option_inventory_effects`. Son definiciones propiedad de Organization y no incluyen `branch_id`, saldo ni referencias a `SaleItem`. FKs compuestas fuerzan que Product, ModifierOption e InventoryItem pertenezcan a la misma Organization; constraints fijan una receta por Product, una config por ModifierOption y un componente/efecto por InventoryItem dentro del aggregate.
 
@@ -45,4 +45,4 @@ Recetas activas no pueden estar vacías; cada cantidad de componente es positiva
 
 El resolver combina la receta activa y los ModifierOptions seleccionados ya validados por el caller, suma exacta por InventoryItem, elimina totales cero y rechaza configuraciones con componentes inactivos, saldo teórico negativo o cantidades inválidas. No consulta Branch stock. Product sin receta y receta INACTIVE son untracked. Las APIs de receta y efectos son organization-scoped mediante `inventory.recipe.read/write`; V18 no auto-grants estos permisos a roles existentes.
 
-The configuration is implemented in V18. PR C2 adds a Sales-owned historical per-line consumption snapshot using the Inventory resolver; V19 does not backfill existing SaleItems. Checkout stock deduction, `SALE_CONSUMPTION`, reservations, stock-based availability, Purchasing, Transfers, Costing and UI remain deferred.
+The configuration is implemented in V18. V19 adds a Sales-owned historical per-line consumption snapshot using the Inventory resolver; V19 does not backfill existing SaleItems. Atomic checkout stock deduction and `SALE_CONSUMPTION` movements are implemented in V21; reservations, stock-based availability, Purchasing, Transfers and Costing remain deferred.
