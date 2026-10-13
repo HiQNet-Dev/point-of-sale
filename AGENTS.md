@@ -1,32 +1,36 @@
-# AGENTS.md — HiQNet POS repository rules for agents
+# AGENTS.md — Reglas del repositorio HiQNet POS para agentes
 
-Repo-local rules for automated agents working on this repository. They
-complement the human workflow in `docs/05-development/git-workflow.md` and
+Reglas repo-local para agentes automatizados que trabajan en este repositorio.
+Complementan el flujo humano en `docs/05-development/git-workflow.md` y
 `CONTRIBUTING.md`.
 
 ## Branching
 
-- Always branch from the current `origin/main`; never work directly on `main`.
-- Use short-lived branches with an approach prefix
-  (`feat/backend/*`, `feat/frontend/*`, `feat/fullstack/*`, `fix/*`,
-  `chore/dev/*`, `chore/ci/*`, `docs/*`, `test/*`).
-- Never create long-lived parallel branches such as `backend`, `frontend`,
-  `develop`, `docker` or `integration`; `main` is the single canonical branch
-  and must always stay integrated (backend + frontend + Flyway + Docker + docs +
-  green CI).
+- `main` es la rama estable/release: no se desarrolla directamente en `main`.
+- `dev` es la rama permanente de integración/preproducción de la próxima release.
+  Las features normales nacen de `dev` y se integran en `dev`.
+- Ramas short-lived con prefijo de enfoque (`feat/backend/*`, `feat/frontend/*`,
+  `feat/fullstack/*`, `fix/*`, `test/*`, `chore/*`, `docs/*`, `refactor/*`) creadas
+  desde `origin/dev`; PR hacia `dev`.
+- Release: `dev` → `main` solo tras la Release Audit y con CI verde.
+- Hotfix: `hotfix/*` nace de `main`, vuelve a `main` y luego se sincroniza a `dev`.
+- No crear ramas principales paralelas (`backend`, `frontend`, `develop`, `docker`,
+  `integration`).
 
 ## Worktrees
 
-- Keep **at most one active feature worktree** at a time, unless there is an
-  explicitly documented reason (e.g. two open PRs).
-- After a PR is merged: remove its worktree, delete the local branch, and
-  `git fetch` to update `main`.
-- Never commit `.worktrees/` (it is local and git-ignored).
+- Trabaja directamente en el checkout principal con `git switch` y ramas
+  short-lived.
+- No uses worktrees por defecto. Solo crea uno cuando necesites mantener dos
+  checkouts simultáneos y documenta la razón en el PR.
+- Nunca commitees `.worktrees/` (es local y está en `.gitignore`).
 
 ## Pull requests
 
-- One coherent purpose per PR (do not mix Docker, UI features, schema
-  migrations and unrelated cleanup).
-- Do not commit, push to `main`, force-push, or rewrite published history
-  unless explicitly requested.
-- Never commit secrets or real `.env` files.
+- Un PR, un propósito coherente (no mezclar Docker, features de UI, migraciones de
+  schema y limpieza aleatoria).
+- Los PR apuntan a `dev`; los `hotfix/*` apuntan a `main`.
+- No commitear ni hacer push directo a `main` o `dev` (salvo tareas explícitas de
+  release o sincronización controlada), ni force-push, ni reescribir historia
+  publicada.
+- Nunca commitear secretos ni `.env` reales.
