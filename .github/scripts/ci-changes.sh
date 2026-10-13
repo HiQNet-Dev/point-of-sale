@@ -2,13 +2,14 @@
 #
 # Detección de áreas modificadas para condicionar los jobs de CI.
 #
-# Decide qué jobs deben ejecutarse y cuántas repeticiones E2E corresponden según
-# los archivos cambiados. Emite los resultados a $GITHUB_OUTPUT.
+# Decide qué jobs deben ejecutarse según los archivos cambiados y publica los
+# resultados en $GITHUB_OUTPUT. Cada job se ejecuta una sola vez (sin bucles ni
+# repeticiones E2E).
 #
 # Reglas:
-#   - schedule / workflow_dispatch -> validación completa (todas las áreas + E2E x3).
-#   - cambio en el harness E2E o en la propia CI -> E2E x3 (estabilidad del harness).
-#   - cambio de backend o de frontend de producción -> E2E x1.
+#   - schedule / workflow_dispatch -> validación completa.
+#   - cambio de backend o de frontend de producción -> incluye un E2E.
+#   - cambio del harness E2E o de la propia CI -> incluye un E2E.
 #   - solo docs / tests unitarios -> sin E2E.
 #
 # Se apoya únicamente en `git` (sin actions de terceros).
@@ -79,11 +80,10 @@ if [[ "$full" == "true" || "$backend" == "true" || "$ci" == "true" ]]; then back
 if [[ "$full" == "true" || "$frontend" == "true" || "$ci" == "true" ]]; then frontend_run="true"; fi
 if [[ "$full" == "true" || "$docker" == "true" || "$ci" == "true" ]]; then compose_run="true"; fi
 
-e2e_matrix="[]"
-if [[ "$full" == "true" || "$e2e" == "true" || "$ci" == "true" ]]; then
-  e2e_matrix='["1","2","3"]'
-elif [[ "$backend" == "true" || "$frontend_prod" == "true" ]]; then
-  e2e_matrix='["1"]'
+# E2E: una sola ejecución cuando cambia comportamiento o el harness/CI.
+e2e_run="false"
+if [[ "$full" == "true" || "$e2e" == "true" || "$ci" == "true" || "$backend" == "true" || "$frontend_prod" == "true" ]]; then
+  e2e_run="true"
 fi
 
 emit backend "$backend"
@@ -96,4 +96,4 @@ emit full "$full"
 emit backend_run "$backend_run"
 emit frontend_run "$frontend_run"
 emit compose_run "$compose_run"
-emit e2e_matrix "$e2e_matrix"
+emit e2e_run "$e2e_run"

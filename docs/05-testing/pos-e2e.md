@@ -87,10 +87,11 @@ persistence evidence, run `psql` against that same dedicated DB with
 ## CI and troubleshooting
 
 Cada ejecución E2E usa un servicio PostgreSQL 17 aislado y un bootstrap one-shot.
-En pull requests se ejecuta una sola repetición salvo que cambie el harness E2E o
-la configuración de CI; en `main`, en la validación manual (`workflow_dispatch`) y
-en la ejecución nocturna (`schedule`) se ejecutan tres repeticiones secuenciales
-para detectar flakiness, siempre sin retries ni reutilización de fixtures. Cada
+El pipeline ejecuta una sola repetición de E2E (sin bucles): en pull requests
+solo cuando cambia el backend, el frontend de producción, el harness E2E o la
+configuración de CI; en `main` y en la validación manual (`workflow_dispatch`)
+como parte de la validación completa. Es una ejecución limpia, sin retries ni
+reutilización de fixtures. Cada
 ejecución arranca Spring Boot, espera por polling de health/HTTP (con timeout
 acotado), inicia Vite con la URL explícita del backend, corre Playwright y luego
 las aserciones SQL de solo lectura. Los passwords generados por CI

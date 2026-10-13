@@ -5,9 +5,6 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  schedule:
-    # Ejecución nocturna para detectar flakiness: E2E x3 (06:00 UTC).
-    - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
       target_sha:
@@ -19,7 +16,7 @@ permissions:
   contents: read
 
 # Cancela runs obsoletos cuando llega un commit nuevo al mismo PR o a la misma
-# rama/evento, sin cancelar entre sí runs independientes (main, schedule, dispatch).
+# rama/evento, sin cancelar entre sí runs independientes (main o dispatch).
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -34,7 +31,7 @@ jobs:
       backend_run: ${{ steps.detect.outputs.backend_run }}
       frontend_run: ${{ steps.detect.outputs.frontend_run }}
       compose_run: ${{ steps.detect.outputs.compose_run }}
-      e2e_matrix: ${{ steps.detect.outputs.e2e_matrix }}
+      e2e_run: ${{ steps.detect.outputs.e2e_run }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -202,19 +199,13 @@ jobs:
       - name: Validate compose file
         run: docker compose config
 
-  # E2E: 1 repetición en PR normal; 3 cuando cambia el harness E2E o la CI, y en
-  # la validación completa (main no cambia el conteo; schedule/dispatch usa x3).
+  # Integración E2E real. Una sola ejecución cuando el cambio lo justifica.
   e2e:
-    name: "POS integrated E2E (Chromium + PostgreSQL) run ${{ matrix.run }}"
+    name: POS integrated E2E (Chromium + PostgreSQL)
     needs: changes
-    if: needs.changes.outputs.e2e_matrix != '[]'
+    if: needs.changes.outputs.e2e_run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        run: ${{ fromJSON(needs.changes.outputs.e2e_matrix) }}
     services:
       postgres:
         image: postgres:17
@@ -355,7 +346,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: pos-e2e-failure-artifacts-${{ matrix.run }}
+          name: pos-e2e-failure-artifacts
           path: |
             /tmp/hiqnet-pos-playwright/results
             /tmp/hiqnet-pos-playwright/report

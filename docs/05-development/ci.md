@@ -2,20 +2,19 @@
 
 Documentación de cómo GitHub Actions valida el repositorio. El objetivo es dar
 feedback rápido en los pull request sin perder cobertura: la misma batería de
-tests sigue existiendo, solo cambia **cuándo** se ejecutan las repeticiones
-redundantes.
+tests sigue existiendo, solo cambia **qué** se ejecuta según el área modificada.
+Cada job se ejecuta **una sola vez** (sin bucles ni repeticiones).
 
 ## Modelo de ejecución
 
 | Contexto | Validación |
 | --- | --- |
-| Pull request | Detección de cambios → solo los jobs de las áreas modificadas + como máximo **1** E2E normal |
+| Pull request | Detección de cambios → solo los jobs de las áreas modificadas + **1** E2E si aplica |
 | Push a `main` | Validación completa (Backend + Frontend + Compose + **1** E2E) |
-| Ejecución nocturna (`schedule`) | Validación completa + **E2E x3** para detectar flakiness |
-| Manual (`workflow_dispatch`) | Validación completa + **E2E x3** (auditorías de release, refactors grandes, investigación de flakes) |
+| Manual (`workflow_dispatch`) | Validación completa con un `target_sha` explícito |
 
 No se eliminan ni se marcan como `skip` pruebas: la suite completa sigue
-existiendo y ejecutándose donde aporta valor.
+existiendo y ejecutándose cuando corresponde.
 
 ## Detección de cambios
 
@@ -35,13 +34,9 @@ los demás jobs:
 Reglas de decisión:
 
 - `docs` / solo `*.test.ts(x)` → no ejecuta E2E.
-- cambio de `backend` o de frontend de producción → E2E **x1**.
-- cambio del harness E2E o de `.github/**` → E2E **x3** (estabilidad del harness y del propio pipeline).
-- `schedule` / `workflow_dispatch` → validación completa con E2E **x3**.
+- `backend`, frontend de producción, harness E2E o `.github/**` → ejecuta **1** E2E.
+- `schedule` / `workflow_dispatch` → validación completa.
 - sin base de diff válida (por ejemplo, primer push) → se cae a validación completa.
-
-El conteo de repeticiones se pasa al matrix del job E2E como JSON
-(`["1"]`, `["1","2","3"]` o `[]`), de modo que un PR normal no repite E2E.
 
 ## Concurrency
 
@@ -55,8 +50,8 @@ concurrency:
 ```
 
 Así, un commit nuevo en el mismo PR cancela el run obsoleto, sin cancelar entre
-sí runs independientes de `main`, `schedule` o `workflow_dispatch` (el grupo
-incluye el evento).
+sí runs independientes de `main` o `workflow_dispatch` (el grupo incluye el
+evento).
 
 ## Caches
 
@@ -64,8 +59,7 @@ incluye el evento).
 - **pnpm**: `actions/setup-node@v4` con `cache: pnpm` y
   `cache-dependency-path: frontend/pnpm-lock.yaml`.
 - **Playwright**: no se cachean los browsers. La instalación de Chromium ronda
-  los 20-25 s y solo ocurre en el job E2E; reducir el número de ejecuciones E2E
-  aporta más que optimizar su instalación, y evita caches frágiles.
+  los 20-25 s y solo ocurre en el job E2E; no compensa una cache frágil.
 
 La versión de pnpm la fija `packageManager` en `frontend/package.json`
 (`pnpm/action-setup@v4`); no se declara una versión distinta en el workflow.
@@ -81,9 +75,8 @@ rama, lo que evita depender de checks condicionales que a veces no existen.
 ## Validación manual
 
 Desde la pestaña Actions, `workflow_dispatch` permite validar un `target_sha`
-explícito (40 caracteres, desde `main`) con la batería completa y E2E x3. Se usa
-para auditorías de release, refactors grandes, confianza pre-release e
-investigación de flakiness. También puede lanzarse desde la CLI:
+explícito (40 caracteres, desde `main`) con la batería completa. También puede
+lanzarse desde la CLI:
 
 ```bash
 gh workflow run ci.yml --ref main -f target_sha=<commit-sha>
@@ -95,4 +88,3 @@ gh workflow run ci.yml --ref main -f target_sha=<commit-sha>
   (`hiqnet_pos_e2e`), nunca el volumen de desarrollo.
 - Los artefactos de fallo (traces, screenshots, video, logs) se suben solo con
   `if: failure()`, con 7 días de retención.
-- La ejecución nocturna corre a las 06:00 UTC.
