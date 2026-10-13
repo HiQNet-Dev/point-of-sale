@@ -68,10 +68,13 @@ class SaleCheckoutInventoryConsumptionApiTest extends AbstractRbacIntegrationTes
         addItem(scope, token, shortSale, 0, productId, 2, List.of()).andExpect(status().isOk());
         long shortVersion = saleVersion(shortSale);
         long movementsBefore = countMovements();
-        checkout(scope, token, shortSale, shortVersion, "[]")
+        String shortageBody = checkout(scope, token, shortSale, shortVersion, "[]")
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("INSUFFICIENT_INVENTORY"))
-                .andExpect(jsonPath("$.details").isNotEmpty());
+                .andExpect(jsonPath("$.details").isNotEmpty())
+                .andReturn().getResponse().getContentAsString();
+        // Both insufficient items must be reported, not just the first failure.
+        assertThat(shortageBody).contains("code=coffee").contains("code=cup");
         assertThat(jdbc.queryForObject("select status from sales where id = ?", String.class,
                 UUID.fromString(shortSale))).isEqualTo("OPEN");
         assertThat(countMovements()).isEqualTo(movementsBefore);
@@ -174,6 +177,161 @@ class SaleCheckoutInventoryConsumptionApiTest extends AbstractRbacIntegrationTes
         assertThat(jdbc.queryForObject(
                 "select count(*) from inventory_movements where branch_id = ? and inventory_item_id = ? and type = 'SALE_CONSUMPTION'",
                 Long.class, branchId, UUID.fromString(itemId))).isEqualTo(1L);
+    }
+
+    @Test
+    void strictExactZeroBalanceSucceeds() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        Scope scope = scope(fx, token, "consume-exact-zero");
+        String productId = product(fx, token, "EXACT", "Exact", "0.0000");
+        String itemId = item(fx, token, "exact-item", "Exact item", "GRAM", false);
+        replaceRecipe(fx, token, productId, 0, "ACTIVE", List.of(component(itemId, "30")));
+        seedBalance(fx, scope.branchId(), itemId, "30");
+
+        String saleId = sale(scope, token);
+        addItem(scope, token, saleId, 0, productId, 1, List.of()).andExpect(status().isOk());
+        checkout(scope, token, saleId, saleVersion(saleId), "[]").andExpect(status().isOk())
+                .andExpect(jsonPath("$.sale.status").value("COMPLETED"));
+
+        assertThat(quantity(scope.branchId(), itemId)).isEqualByComparingTo("0");
+        assertThat(movementDelta(fx, scope.branchId(), itemId)).isEqualByComparingTo("-30");
+        assertThat(movementResulting(fx, scope.branchId(), itemId)).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void strictMissingBalanceFailsAndLeavesNoBalanceRow() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        Scope scope = scope(fx, token, "consume-missing-strict");
+        String productId = product(fx, token, "MISS", "Missing", "0.0000");
+        String itemId = item(fx, token, "missing-item", "Missing item", "GRAM", false);
+        replaceRecipe(fx, token, productId, 0, "ACTIVE", List.of(component(itemId, "5")));
+
+        String saleId = sale(scope, token);
+        addItem(scope, token, saleId, 0, productId, 1, List.of()).andExpect(status().isOk());
+        String body = checkout(scope, token, saleId, saleVersion(saleId), "[]")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("INSUFFICIENT_INVENTORY"))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(body).contains("available=0");
+        assertThat(jdbc.queryForObject("select status from sales where id = ?", String.class,
+                UUID.fromString(saleId))).isEqualTo("OPEN");
+        // The ensured zero row must roll back with the failed transaction.
+        assertThat(jdbc.queryForObject("select count(*) from branch_inventory where branch_id = ?", Long.class,
+                scope.branchId())).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from inventory_movements where branch_id = ?", Long.class,
+                scope.branchId())).isZero();
+    }
+
+    @Test
+    void allowNegativeMissingBalanceGoesNegative() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        Scope scope = scope(fx, token, "consume-missing-allow");
+        jdbc.update("update organizations set inventory_negative_stock_policy = 'ALLOW_NEGATIVE' where id = ?", fx.orgId());
+        String productId = product(fx, token, "MISSALLOW", "Miss allow", "0.0000");
+        String itemId = item(fx, token, "missing-allow-item", "Missing allow item", "GRAM", false);
+        replaceRecipe(fx, token, productId, 0, "ACTIVE", List.of(component(itemId, "5")));
+
+        String saleId = sale(scope, token);
+        addItem(scope, token, saleId, 0, productId, 1, List.of()).andExpect(status().isOk());
+        checkout(scope, token, saleId, saleVersion(saleId), "[]").andExpect(status().isOk())
+                .andExpect(jsonPath("$.sale.status").value("COMPLETED"));
+
+        assertThat(quantity(scope.branchId(), itemId)).isEqualByComparingTo("-5");
+        assertThat(movementDelta(fx, scope.branchId(), itemId)).isEqualByComparingTo("-5");
+        assertThat(movementResulting(fx, scope.branchId(), itemId)).isEqualByComparingTo("-5");
+    }
+
+    @Test
+    void sameSaleDoubleCheckoutConsumesStockExactlyOnce() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        Scope scope = scope(fx, token, "consume-double-sale");
+        String productId = product(fx, token, "DOUBLE", "Double", "0.0000");
+        String itemId = item(fx, token, "double-item", "Double item", "GRAM", false);
+        replaceRecipe(fx, token, productId, 0, "ACTIVE", List.of(component(itemId, "1")));
+        seedBalance(fx, scope.branchId(), itemId, "10");
+
+        String saleId = sale(scope, token);
+        addItem(scope, token, saleId, 0, productId, 1, List.of()).andExpect(status().isOk());
+        long version = saleVersion(saleId);
+
+        List<Integer> statuses = runParallel(List.of(
+                () -> checkoutStatus(scope, token, saleId, version),
+                () -> checkoutStatus(scope, token, saleId, version)));
+
+        assertThat(statuses.stream().filter(status -> status == 200).count()).isEqualTo(1);
+        assertThat(statuses.stream().filter(status -> status == 409).count()).isEqualTo(1);
+        assertThat(quantity(scope.branchId(), itemId)).isEqualByComparingTo("9");
+        assertThat(consumptionMovements(saleId)).hasSize(1);
+    }
+
+    @Test
+    void allowNegativeConcurrentCheckoutsSerializeWithoutLostUpdate() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        jdbc.update("update organizations set inventory_negative_stock_policy = 'ALLOW_NEGATIVE' where id = ?", fx.orgId());
+        UUID branchId = createBranch(fx, "consume-allow-race");
+        String registerA = register(fx, token, branchId, "allow-a");
+        String registerB = register(fx, token, branchId, "allow-b");
+        String shiftA = shift(fx, token, branchId, registerA);
+        String shiftB = shift(fx, token, branchId, registerB);
+        String productId = product(fx, token, "ALLOWRACE", "Allow race", "0.0000");
+        String itemId = item(fx, token, "allow-race-item", "Allow race item", "GRAM", false);
+        replaceRecipe(fx, token, productId, 0, "ACTIVE", List.of(component(itemId, "4")));
+        seedBalance(fx, branchId, itemId, "5");
+
+        String saleA = sale(new Scope(fx, branchId, registerA, shiftA), token);
+        String saleB = sale(new Scope(fx, branchId, registerB, shiftB), token);
+        addItem(new Scope(fx, branchId, registerA, shiftA), token, saleA, 0, productId, 1, List.of()).andExpect(status().isOk());
+        addItem(new Scope(fx, branchId, registerB, shiftB), token, saleB, 0, productId, 1, List.of()).andExpect(status().isOk());
+
+        List<Integer> statuses = runParallel(List.of(
+                () -> checkoutStatus(new Scope(fx, branchId, registerA, shiftA), token, saleA, saleVersion(saleA)),
+                () -> checkoutStatus(new Scope(fx, branchId, registerB, shiftB), token, saleB, saleVersion(saleB))));
+
+        assertThat(statuses).allMatch(status -> status == 200);
+        // 5 - 4 - 4 = -3, with no lost update under ALLOW_NEGATIVE.
+        assertThat(quantity(branchId, itemId)).isEqualByComparingTo("-3");
+        assertThat(jdbc.queryForObject(
+                "select count(*) from inventory_movements where branch_id = ? and inventory_item_id = ? and type = 'SALE_CONSUMPTION'",
+                Long.class, branchId, UUID.fromString(itemId))).isEqualTo(2L);
+    }
+
+    @Test
+    void movementPersistenceFailureRollsBackSalePaymentBalanceAndAudit() throws Exception {
+        RbacFixture fx = fixture();
+        String token = adminToken(fx);
+        Scope scope = scope(fx, token, "consume-movement-rollback");
+        String productId = product(fx, token, "ROLLBACK", "Rollback", "10.0000");
+        String itemId = item(fx, token, "rollback-item", "Rollback item", "GRAM", false);
+        replaceRecipe(fx, token, productId, 0, "ACTIVE", List.of(component(itemId, "1")));
+        seedBalance(fx, scope.branchId(), itemId, "10");
+
+        String saleId = sale(scope, token);
+        addItem(scope, token, saleId, 0, productId, 1, List.of()).andExpect(status().isOk());
+        // Pre-seed a consumption movement for this sale+item so the real batch insert
+        // violates the per-sale/idempotency unique index mid-transaction.
+        jdbc.update("insert into inventory_movements "
+                        + "(id,organization_id,branch_id,inventory_item_id,type,quantity_delta,resulting_quantity,reason,actor_user_id,sale_id,occurred_at) "
+                        + "values (?,?,?,?, 'SALE_CONSUMPTION', -1, 9, null, ?, ?, now())",
+                UUID.randomUUID(), fx.orgId(), scope.branchId(), UUID.fromString(itemId), fx.userId(), UUID.fromString(saleId));
+        long movementsBefore = countMovements();
+        long auditsBefore = auditActionCount(fx, "sale.completed");
+
+        int status = checkout(scope, token, saleId, saleVersion(saleId),
+                "[{\"method\":\"CARD\",\"amount\":\"10.0000\"}]").andReturn().getResponse().getStatus();
+        assertThat(status).isGreaterThanOrEqualTo(400);
+
+        assertThat(jdbc.queryForObject("select status from sales where id = ?", String.class,
+                UUID.fromString(saleId))).isEqualTo("OPEN");
+        assertThat(jdbc.queryForObject("select count(*) from payments where sale_id = ?", Long.class,
+                UUID.fromString(saleId))).isZero();
+        assertThat(quantity(scope.branchId(), itemId)).isEqualByComparingTo("10");
+        assertThat(countMovements()).isEqualTo(movementsBefore);
+        assertThat(auditActionCount(fx, "sale.completed")).isEqualTo(auditsBefore);
     }
 
     // --- helpers -----------------------------------------------------------------
@@ -281,6 +439,16 @@ class SaleCheckoutInventoryConsumptionApiTest extends AbstractRbacIntegrationTes
     private BigDecimal movementDelta(RbacFixture fx, UUID branchId, String itemId) {
         return jdbc.queryForObject("select quantity_delta from inventory_movements where branch_id = ? and inventory_item_id = ?",
                 BigDecimal.class, branchId, UUID.fromString(itemId));
+    }
+
+    private BigDecimal movementResulting(RbacFixture fx, UUID branchId, String itemId) {
+        return jdbc.queryForObject("select resulting_quantity from inventory_movements where branch_id = ? and inventory_item_id = ?",
+                BigDecimal.class, branchId, UUID.fromString(itemId));
+    }
+
+    private long auditActionCount(RbacFixture fx, String action) {
+        return jdbc.queryForObject("select count(*) from audit_events where organization_id = ? and action = ?",
+                Long.class, fx.orgId(), action);
     }
 
     private List<UUID> consumptionMovements(String saleId) {

@@ -674,6 +674,33 @@ class FlywayMigrationPathTest {
         assertThatThrownBy(() -> execute(movement + "('" + UUID.randomUUID() + "','" + organizationId + "','" + branchId + "','" + itemId
                 + "','ADJUSTMENT',-2,2,'correction','" + userId + "','" + saleId + "',now())"))
                 .isInstanceOf(IllegalStateException.class);
+
+        // OPENING must never carry a sale; SALE_CONSUMPTION must be strictly negative.
+        assertThatThrownBy(() -> execute(movement + "('" + UUID.randomUUID() + "','" + organizationId + "','" + branchId + "','" + itemId
+                + "','OPENING',1,1,null,'" + userId + "','" + saleId + "',now())"))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> execute(movement + "('" + UUID.randomUUID() + "','" + organizationId + "','" + branchId + "','" + itemId
+                + "','SALE_CONSUMPTION',0,0,null,'" + userId + "','" + saleId + "',now())"))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> execute(movement + "('" + UUID.randomUUID() + "','" + organizationId + "','" + branchId + "','" + itemId
+                + "','SALE_CONSUMPTION',1,1,null,'" + userId + "','" + saleId + "',now())"))
+                .isInstanceOf(IllegalStateException.class);
+
+        // Idempotency is per sale+item: the same item on another sale is allowed.
+        UUID saleId2 = UUID.randomUUID();
+        execute("insert into " + schema + ".sales (id,organization_id,branch_id,cash_register_id,cash_shift_id,created_by_user_id,status,total_amount,created_at,updated_at) values ('"
+                + saleId2 + "','" + organizationId + "','" + branchId + "','" + registerId + "','" + shiftId + "','" + userId + "','OPEN',1,now(),now())");
+        execute(movement + "('" + UUID.randomUUID() + "','" + organizationId + "','" + branchId + "','" + itemId
+                + "','SALE_CONSUMPTION',-1,2,null,'" + userId + "','" + saleId2 + "',now())");
+        assertThat(countRows(schema, "inventory_movements")).isEqualTo(3);
+
+        // Branch coupling: a movement whose branch differs from the sale's branch fails.
+        UUID branchId2 = UUID.randomUUID();
+        execute("insert into " + schema + ".branches (id,organization_id,name,code,created_at,updated_at) values ('"
+                + branchId2 + "','" + organizationId + "','Branch 2','consumption-branch-2',now(),now())");
+        assertThatThrownBy(() -> execute(movement + "('" + UUID.randomUUID() + "','" + organizationId + "','" + branchId2 + "','" + itemId
+                + "','SALE_CONSUMPTION',-1,1,null,'" + userId + "','" + saleId + "',now())"))
+                .isInstanceOf(IllegalStateException.class);
     }
 
     private static String valueOfString(String schema, String table, String column, UUID id) {
