@@ -56,7 +56,8 @@ public class GlobalExceptionHandler {
                 ex.getStatus().value(),
                 ex.getCode(),
                 ex.getMessage(),
-                request.getRequestURI()));
+                request.getRequestURI(),
+                ex.getDetails()));
     }
 
     /**

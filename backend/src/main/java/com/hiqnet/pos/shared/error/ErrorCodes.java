@@ -69,6 +69,8 @@ public final class ErrorCodes {
     public static final String NEGATIVE_EFFECTIVE_PRICE = "NEGATIVE_EFFECTIVE_PRICE";
     public static final String SALE_ALREADY_COMPLETED = "SALE_ALREADY_COMPLETED";
     public static final String SALE_HAS_NO_ACTIVE_ITEMS = "SALE_HAS_NO_ACTIVE_ITEMS";
+    public static final String INSUFFICIENT_INVENTORY = "INSUFFICIENT_INVENTORY";
+    public static final String INVENTORY_SNAPSHOT_INCONSISTENT = "INVENTORY_SNAPSHOT_INCONSISTENT";
     public static final String PAYMENT_TOTAL_MISMATCH = "PAYMENT_TOTAL_MISMATCH";
     public static final String INVALID_PAYMENT = "INVALID_PAYMENT";
     public static final String INVALID_CASH_TENDERED_AMOUNT = "INVALID_CASH_TENDERED_AMOUNT";

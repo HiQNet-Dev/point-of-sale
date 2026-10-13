@@ -1,6 +1,7 @@
 package com.hiqnet.pos.inventory.stock.domain;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -18,6 +19,9 @@ public interface InventoryMovementRepository {
             BigDecimal resultingQuantity,
             String reason,
             UUID actorUserId);
+
+    /** Batch append used by checkout so one sale consumes with a single round trip. */
+    void insertBatch(List<InventoryMovementInsert> movements);
 
     boolean existsForBranchItem(UUID organizationId, UUID branchId, UUID inventoryItemId);
 

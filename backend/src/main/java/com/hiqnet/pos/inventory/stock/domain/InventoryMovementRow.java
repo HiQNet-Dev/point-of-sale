@@ -11,4 +11,5 @@ public record InventoryMovementRow(
         BigDecimal resultingQuantity,
         String reason,
         UUID actorUserId,
+        UUID saleId,
         Instant occurredAt) {}

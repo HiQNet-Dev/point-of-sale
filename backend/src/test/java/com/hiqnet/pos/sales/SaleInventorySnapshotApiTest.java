@@ -279,7 +279,7 @@ class SaleInventorySnapshotApiTest extends AbstractRbacIntegrationTest {
     }
 
     @Test
-    void cashierWithOnlySalesPermissionsCanAddTrackedItemsAndCheckoutDoesNotMutateStock() throws Exception {
+    void cashierWithOnlySalesPermissionsConsumesStockOnCheckoutWithoutInventoryPermissions() throws Exception {
         RbacFixture fx = fixture();
         String admin = adminToken(fx);
         Scope scope = scope(fx, "snapshot-cashier");
@@ -307,10 +307,22 @@ class SaleInventorySnapshotApiTest extends AbstractRbacIntegrationTest {
                         .content("{\"expectedSaleVersion\":1,\"payments\":[]}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.sale.status").value("COMPLETED"));
         assertThat(snapshot(saleItemId)).hasSize(1);
-        assertThat(jdbc.queryForObject("select count(*) from inventory_movements", Long.class)).isEqualTo(movementsBefore);
-        assertThat(jdbc.queryForObject("select count(*) from branch_inventory", Long.class)).isEqualTo(balancesBefore);
+        // Snapshots are authoritative: the 25 consumed matches the aggregate, with no
+        // inventory permission required and no extra balance row created.
         assertThat(jdbc.queryForObject("select quantity_on_hand from branch_inventory where branch_id = ? and inventory_item_id = ?",
-                BigDecimal.class, scope.branchId(), UUID.fromString(beansId))).isEqualByComparingTo("100");
+                BigDecimal.class, scope.branchId(), UUID.fromString(beansId))).isEqualByComparingTo("75");
+        assertThat(jdbc.queryForObject("select count(*) from branch_inventory", Long.class)).isEqualTo(balancesBefore);
+        assertThat(jdbc.queryForObject("select count(*) from inventory_movements", Long.class)).isEqualTo(movementsBefore + 1);
+        Map<String, Object> movement = jdbc.queryForMap(
+                "select type, quantity_delta, resulting_quantity, reason, sale_id, actor_user_id from inventory_movements "
+                        + "where branch_id = ? and inventory_item_id = ?",
+                scope.branchId(), UUID.fromString(beansId));
+        assertThat(movement.get("type")).isEqualTo("SALE_CONSUMPTION");
+        assertThat((BigDecimal) movement.get("quantity_delta")).isEqualByComparingTo("-25");
+        assertThat((BigDecimal) movement.get("resulting_quantity")).isEqualByComparingTo("75");
+        assertThat(movement.get("reason")).isNull();
+        assertThat(movement.get("sale_id")).isEqualTo(UUID.fromString(saleId));
+        assertThat(movement.get("actor_user_id")).isEqualTo(cashierUser.getId());
     }
 
     private String item(RbacFixture fx, String token, String code, String name, String unit, boolean fractional)
