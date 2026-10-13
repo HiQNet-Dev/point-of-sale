@@ -58,4 +58,12 @@ describe('AdminLayout', () => {
     )
     expect(screen.queryByRole('link', { name: /stock negativo|política de stock/i })).toBeNull()
   })
+
+  it('links the organization inventory settings section', () => {
+    renderLayout()
+
+    expect(screen.getByRole('link', { name: 'Configuración' }).getAttribute('href')).toBe(
+      '/admin/inventory/settings',
+    )
+  })
 })
