@@ -94,7 +94,7 @@ point-of-sale/
 │   └── 05-development/
 ├── deploy/             Estrategia de despliegue (documentación)
 ├── .github/workflows/  CI (backend + frontend + docker-compose)
-├── docker-compose.yml  PostgreSQL local de desarrollo
+├── docker-compose.yml  Stack local de desarrollo (PostgreSQL + backend + frontend)
 ├── README.md
 ├── CONTRIBUTING.md
 ├── SECURITY.md
@@ -103,35 +103,36 @@ point-of-sale/
 
 ## Requisitos
 
-- Java 21 (Temurin/OpenJDK) — `java -version`
-- Docker + Docker Compose — `docker --version`
-- Node.js 24 LTS — `node --version`
-- pnpm 11 — `pnpm --version` (o activa Corepack: `corepack enable`)
+- **Docker + Docker Compose** — modo full-stack (no requiere Java/Maven/PostgreSQL en el host).
+- **Node.js 24 LTS** + **pnpm 11** (`corepack enable`) — solo para el modo híbrido de frontend.
+
+El backend corre con el Maven Wrapper dentro de Docker; no hace falta instalar
+Java ni Maven en el host. Ver `docs/05-development/local-development.md`.
 
 ## Instalación y desarrollo local
 
 ```bash
 git clone https://github.com/HiQNet-Dev/point-of-sale.git
 cd point-of-sale
-
-# 1. Levantar PostgreSQL (solo desarrollo; credenciales locales no productivas)
-docker compose up -d
-docker compose ps          # esperar a que el healthcheck pase
-
-# 2. Backend (usa el wrapper; descarga Maven en la primera ejecución)
-cd backend
-./mvnw spring-boot:run     # Windows: .\mvnw.cmd
-# Health check: http://localhost:8080/actuator/health → {"status":"UP"}
-# (perfil dev por defecto; SPRING_PROFILES_ACTIVE=prod exige variables de entorno)
-
-# 3. Frontend
-cd ../frontend
-pnpm install
-pnpm dev                   # http://localhost:5173
+cp .env.example .env                            # valores development; sin secretos reales
+docker compose up --build                       # PostgreSQL + backend + frontend
+docker compose --profile tools run --rm seed    # cargar los fixtures de desarrollo
 ```
 
-Variables de entorno del backend (nombres seguros de ejemplo en `.env.example` y
-`frontend/.env.example`):
+Abrir <http://localhost:5173> e iniciar sesión con los fixtures **solo
+desarrollo** (credenciales ficticias, nunca para datos reales):
+
+```text
+admin@hiqnet.local   / admin-dev-only
+manager@hiqnet.local / staff-dev-only
+cashier@hiqnet.local / staff-dev-only
+```
+
+Modo híbrido (backend en Docker + Vite local) y todo el detalle — service URLs,
+variables de entorno, datos de desarrollo, reset/reseed, HMR, troubleshooting —
+en `docs/05-development/local-development.md`.
+
+Variables de entorno (raíz `.env`, ejemplo seguro en `.env.example`):
 
 | Variable | Uso | Default dev |
 | --- | --- | --- |
@@ -149,10 +150,11 @@ Variables de entorno del backend (nombres seguros de ejemplo en `.env.example` y
 CORS vacío salvo configuración explícita y `ddl-auto=validate` — Flyway es la
 única autoridad de schema. Verificado por `FoundationProdProfileTest`.
 
-**Primer arranque**: con `BOOTSTRAP_SECRET` configurado hacer
-`POST /api/v1/bootstrap` (header `X-Bootstrap-Token`), luego quitar el secret,
-reiniciar y entrar por `POST /api/v1/auth/login`. Detalle y operación:
-`docs/04-security/secure-bootstrap.md`.
+**Primer arranque**: en desarrollo los fixtures se cargan con `pnpm dev:seed`
+(o `docker compose --profile tools run --rm seed`), que provisiona la
+organización y el administrador mediante `POST /api/v1/bootstrap`. Detalle y
+operación: `docs/04-security/secure-bootstrap.md` y
+`docs/05-development/local-development.md`.
 
 Frontend: `VITE_API_BASE_URL` (default `"/api/v1"`, same-origin).
 
@@ -198,7 +200,8 @@ El directorio `docs/` es la fuente de verdad viva del proyecto:
 - `docs/02-database/` — modelo de dominio conceptual, convenciones Flyway.
 - `docs/03-api/` — convenciones de API.
 - `docs/04-security/` — modelo de seguridad.
-- `docs/05-development/` — guías de código, git workflow, release process.
+- `docs/05-development/` — guías de código, git workflow, release process y
+  entorno de desarrollo local (`local-development.md`).
 
 ## Cómo contribuir
 

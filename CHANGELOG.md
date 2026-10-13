@@ -4,6 +4,10 @@ All notable changes to HiQNet POS are documented in this file.
 
 ## [Unreleased]
 
+### Development environment
+
+- Added a reproducible Docker-based local development environment. `docker compose up --build` runs PostgreSQL 17, the Spring Boot backend (Maven Wrapper; no host Java/Maven) and the Vite frontend dev server with HMR, and `docker compose up -d db backend` keeps the fast frontend loop on the host. Added a deterministic, development-only fixture loader (`pnpm dev:seed`) provisioned through the real Secure Admin Bootstrap + administrative APIs, a guarded deterministic reset (`pnpm dev:reset`) that refuses non-development targets, a root `.env.example` and `docs/05-development/local-development.md`. The E2E harness, Testcontainers, the permission catalog (51), `SecurityConfig`, JWT, migrations (V1–V21) and `VERSION` are unchanged.
+
 ### Inventory — v0.3 development
 
 - Implemented the v0.3 Product Recipe and Modifier Option inventory-effect administration frontend (UI-B) at `/admin/inventory/recipes` and `/admin/inventory/modifier-effects`, reachable from the Inventory navigation. Recipes are organization-owned (no branch context) and replaced atomically with `expectedVersion` and `409 CONCURRENT_MODIFICATION` handling; an absent recipe (`INVENTORY_RECIPE_NOT_FOUND`) is an editable empty state, an ACTIVE recipe requires at least one component, components are unique per item and quantities are exact decimal strings (discrete `UNIT` items reject fractions). Modifier effects carry signed, non-zero `quantityDelta` values with duplicate prevention and support an empty list. Existing inactive item references stay visible. It reuses the existing inventory-recipe and inventory-effects APIs; the backend, migrations, permission catalog (51), `SecurityConfig`, JWT and `VERSION` are unchanged, and no client-side permission gating is added (the backend 403 remains the security boundary). The negative-stock policy UI, Purchasing, Transfers, Returns, Reservations and costing remain deferred.

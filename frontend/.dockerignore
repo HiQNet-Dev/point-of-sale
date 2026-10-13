@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+*.log
+
+# Local environment files (the API URL is injected via Compose instead).
+.env
+.env.*
+!.env.example

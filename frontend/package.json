@@ -16,6 +16,8 @@
     "test": "vitest run",
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed",
+    "dev:seed": "node scripts/dev/seed.mjs",
+    "dev:reset": "node scripts/dev/reset.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -4,10 +4,14 @@ Estrategia de despliegue — **documentación por ahora**, sin implementación.
 
 ## Estado actual
 
-- El único servicio contenerizado es la **PostgreSQL local de desarrollo**
-  (`../docker-compose.yml`).
-- Backend y frontend corren en el host durante el desarrollo (`./mvnw spring-boot:run`
-  y `pnpm dev`).
+- `docker-compose.yml` levanta el stack local de desarrollo completo
+  (PostgreSQL + backend Spring Boot + frontend Vite con HMR). Ver
+  `../docs/05-development/local-development.md`.
+- Los **fixtures de desarrollo** se cargan con `pnpm dev:seed` y se reinician de
+  forma determinista con `pnpm dev:reset` (solo desarrollo; nunca contra datos
+  reales).
+- `deploy/` describe la **estrategia de despliegue a producción**, todavía
+  documentación sin implementación.
 - **No hay despliegue a producción configurado** y CI no despliega nada.
 
 ## Intención futura

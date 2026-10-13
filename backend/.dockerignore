@@ -1,0 +1,6 @@
+# Keep the backend build context small.
+target/
+*.log
+
+# Local-only secrets/configuration (never baked into the image).
+src/main/resources/application-dev-local.yml

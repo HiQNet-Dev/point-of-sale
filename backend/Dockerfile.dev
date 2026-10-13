@@ -1,0 +1,27 @@
+# Development image for the HiQNet POS backend.
+#
+# Runs Spring Boot with the Maven Wrapper (dev profile) so no host Java or Maven
+# is required. This is NOT a production image; production packaging is described
+# in deploy/README.md.
+FROM eclipse-temurin:21-jdk
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Cache the wrapper download and (best effort) the dependencies. The named
+# ~/.m2 volume in docker-compose.yml keeps them warm across runs.
+COPY .mvn/ .mvn/
+COPY mvnw pom.xml ./
+RUN chmod +x mvnw && ./mvnw -B -ntp -DskipTests dependency:go-offline || true
+
+COPY src/ src/
+
+ENV SPRING_PROFILES_ACTIVE=dev
+EXPOSE 8080
+
+# spring-boot:run compiles from source on each start; restart the container to
+# pick up backend changes. The frontend container owns the live-reload loop.
+CMD ["./mvnw", "-B", "-ntp", "spring-boot:run"]

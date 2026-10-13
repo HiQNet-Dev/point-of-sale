@@ -1,19 +1,29 @@
-# Local development environment for HiQNet POS.
-# Explicitly non-productive values. Do NOT reuse the credentials below
-# anywhere outside local development. Override with a root .env file
-# (see .env.example).
+# HiQNet POS — local development stack.
+#
+# Development only. Every credential below is an explicitly non-productive
+# default for localhost; override them in a root `.env` file (see
+# `.env.example`). Never reuse these values outside local development and never
+# point this stack at real customer data.
+#
+# Common flows (see docs/05-development/local-development.md):
+#   docker compose up --build           # full stack: db + backend + frontend
+#   docker compose up -d db backend     # DB + backend only (local Vite on host)
+#   docker compose up -d db             # DB only (local backend + Vite on host)
+#
+# CI only validates this file (`docker compose config`); the Playwright E2E jobs
+# run against their own disposable PostgreSQL service, never this stack.
 services:
-  postgres:
+  db:
     image: postgres:17-alpine
-    container_name: hiqnet-pos-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-hiqnet_pos}
       POSTGRES_USER: ${POSTGRES_USER:-hiqnet_dev}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hiqnet_dev_only}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Bind to loopback only: the dev database must not be reachable from the LAN.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - hiqnet-pos-pgdata:/var/lib/postgresql/data
+      - hiqnet-pos-dev-pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hiqnet_dev} -d ${POSTGRES_DB:-hiqnet_pos}"]
       interval: 5s
@@ -21,5 +31,83 @@ services:
       retries: 10
     restart: unless-stopped
 
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      SERVER_PORT: "8080"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-hiqnet_pos}
+      DB_USER: ${POSTGRES_USER:-hiqnet_dev}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-hiqnet_dev_only}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      # Development-only defaults; override in .env. The app still fails fast
+      # when AUTH_JWT_SECRET is empty outside development.
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-aGlxbmV0LXBvcy1kZXYtb25seS1qd3Qtc2lnbmluZy1zZWNyZXQtMDE=}
+      BOOTSTRAP_SECRET: ${BOOTSTRAP_SECRET:-aGlxbmV0LXBvcy1kZXYtb25seS1ib290c3RyYXAtc2VjcmV0LTAx}
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    volumes:
+      - hiqnet-pos-dev-m2:/root/.m2
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      # Browser-facing URL: the SPA runs in the host browser, not inside the
+      # Compose network, so it must reach the backend through the published port.
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080/api/v1}
+      # Set to "true" on Windows/Docker Desktop if Vite misses file changes.
+      VITE_USE_POLLING: ${VITE_USE_POLLING:-false}
+    ports:
+      - "${VITE_PORT:-5173}:5173"
+    volumes:
+      # Bind the source for HMR; keep container node_modules out of the host tree.
+      - ./frontend:/app
+      - hiqnet-pos-dev-node-modules:/app/node_modules
+    command: sh -c "pnpm install --frozen-lockfile && pnpm dev --host 0.0.0.0 --port 5173"
+    restart: unless-stopped
+
+  # One-shot deterministic dev fixture loader. Not started by `up`; run it
+  # explicitly:  docker compose --profile tools run --rm seed
+  seed:
+    profiles: ["tools"]
+    image: node:24-alpine
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      APP_ENV: development
+      DEV_API_URL: http://backend:8080/api/v1
+      BOOTSTRAP_SECRET: ${BOOTSTRAP_SECRET:-aGlxbmV0LXBvcy1kZXYtb25seS1ib290c3RyYXAtc2VjcmV0LTAx}
+      DEV_ORGANIZATION_CODE: ${DEV_ORGANIZATION_CODE:-pos-dev}
+      DEV_ADMIN_EMAIL: ${DEV_ADMIN_EMAIL:-admin@hiqnet.local}
+      DEV_ADMIN_PASSWORD: ${DEV_ADMIN_PASSWORD:-admin-dev-only}
+      DEV_MANAGER_EMAIL: ${DEV_MANAGER_EMAIL:-manager@hiqnet.local}
+      DEV_CASHIER_EMAIL: ${DEV_CASHIER_EMAIL:-cashier@hiqnet.local}
+      DEV_STAFF_PASSWORD: ${DEV_STAFF_PASSWORD:-staff-dev-only}
+    volumes:
+      - ./frontend/scripts:/scripts:ro
+    command: node /scripts/dev/seed.mjs
+
 volumes:
-  hiqnet-pos-pgdata:
+  hiqnet-pos-dev-pgdata:
+  hiqnet-pos-dev-m2:
+  hiqnet-pos-dev-node-modules:
