@@ -46,6 +46,7 @@ function effectItem(effect: ModifierEffects['effects'][number]): SelectedInvento
 }
 
 export function ModifierEffectEditor({ organizationId, option, dirtyRef }: ModifierEffectEditorProps) {
+  const [banner, setBanner] = useState('')
   const effectsQuery = useQuery({
     queryKey: inventoryModifierEffectsKeys.effects(organizationId, option.id),
     queryFn: () => getModifierEffects(organizationId, option.id),
@@ -70,13 +71,19 @@ export function ModifierEffectEditor({ organizationId, option, dirtyRef }: Modif
   }
 
   return (
-    <ModifierEffectForm
-      key={config ? `v:${config.version}` : 'absent'}
-      organizationId={organizationId}
-      option={option}
-      config={config}
-      dirtyRef={dirtyRef}
-    />
+    <Stack spacing={2}>
+      {banner && (
+        <Alert severity="info" role="status" onClose={() => setBanner('')}>{banner}</Alert>
+      )}
+      <ModifierEffectForm
+        key={config ? `v:${config.version}` : 'absent'}
+        organizationId={organizationId}
+        option={option}
+        config={config}
+        dirtyRef={dirtyRef}
+        onBanner={setBanner}
+      />
+    </Stack>
   )
 }
 
@@ -85,9 +92,10 @@ interface ModifierEffectFormProps {
   option: ModifierOption
   config: ModifierEffects | null
   dirtyRef?: RefObject<boolean>
+  onBanner: (message: string) => void
 }
 
-function ModifierEffectForm({ organizationId, option, config, dirtyRef }: ModifierEffectFormProps) {
+function ModifierEffectForm({ organizationId, option, config, dirtyRef, onBanner }: ModifierEffectFormProps) {
   const queryClient = useQueryClient()
   const keyRef = useRef(0)
 
@@ -100,7 +108,6 @@ function ModifierEffectForm({ organizationId, option, config, dirtyRef }: Modifi
         }))
       : [],
   )
-  const [banner, setBanner] = useState('')
   const [formError, setFormError] = useState('')
 
   const baseline = config
@@ -124,13 +131,13 @@ function ModifierEffectForm({ organizationId, option, config, dirtyRef }: Modifi
       }),
     onSuccess: (saved) => {
       queryClient.setQueryData(inventoryModifierEffectsKeys.effects(organizationId, option.id), saved)
-      setBanner('Efectos guardados.')
+      onBanner('Efectos guardados.')
       void queryClient.invalidateQueries({
         queryKey: inventoryModifierEffectsKeys.effects(organizationId, option.id),
       })
     },
     onError: (error) => {
-      setBanner(inventoryModifierEffectsErrorMessage(error))
+      onBanner(inventoryModifierEffectsErrorMessage(error))
       if (errorCode(error) === 'CONCURRENT_MODIFICATION') {
         void queryClient.invalidateQueries({
           queryKey: inventoryModifierEffectsKeys.effects(organizationId, option.id),
@@ -187,7 +194,7 @@ function ModifierEffectForm({ organizationId, option, config, dirtyRef }: Modifi
         : [],
     )
     setFormError('')
-    setBanner('')
+    onBanner('')
   }
 
   return (
@@ -201,7 +208,6 @@ function ModifierEffectForm({ organizationId, option, config, dirtyRef }: Modifi
           </Typography>
         </Box>
 
-        {banner && <Alert severity="info" role="status" onClose={() => setBanner('')}>{banner}</Alert>}
         {formError && <Alert severity="error" role="alert">{formError}</Alert>}
 
         <Alert severity="info">

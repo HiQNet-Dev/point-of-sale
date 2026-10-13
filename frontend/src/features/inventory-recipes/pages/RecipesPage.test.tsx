@@ -45,6 +45,7 @@ interface BackendOptions {
   putStatus?: number
   putCode?: string
   itemStatus?: 'ACTIVE' | 'INACTIVE'
+  productStatus?: 'ACTIVE' | 'INACTIVE'
 }
 
 function createBackend(options: BackendOptions = {}) {
@@ -65,7 +66,7 @@ function createBackend(options: BackendOptions = {}) {
       }
       return json(options.recipe ?? null)
     }
-    if (url.pathname.endsWith('/products')) return json(page([product]))
+    if (url.pathname.endsWith('/products')) return json(page([{ ...product, status: options.productStatus ?? 'ACTIVE' }]))
     if (url.pathname.endsWith('/categories')) return json(page([]))
     if (url.pathname.endsWith('/inventory-items')) {
       return json(page([{ ...item, status: options.itemStatus ?? 'ACTIVE' }]))
@@ -131,6 +132,7 @@ describe('RecipesPage', () => {
       status: 'ACTIVE',
       components: [{ inventoryItemId: 'item-1', quantity: '20' }],
     })
+    expect(await screen.findByText('Receta guardada.')).toBeTruthy()
   })
 
   it('blocks saving an ACTIVE recipe with no components', async () => {
@@ -210,5 +212,43 @@ describe('RecipesPage', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain('No tienes permiso para administrar recetas de inventario.')
+  })
+
+  it('opens and configures a recipe for an INACTIVE product', async () => {
+    const backend = createBackend({ productStatus: 'INACTIVE', recipeStatus: 404, recipeCode: 'INVENTORY_RECIPE_NOT_FOUND' })
+    renderPage(backend)
+    expect(await screen.findByText('Harina 1kg')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Configurar receta' }))
+
+    expect(await screen.findByText('Este producto aún no tiene una receta de inventario.')).toBeTruthy()
+  })
+
+  it('preserves an inactive component when saving edits to another component', async () => {
+    const backend = createBackend({
+      recipe: {
+        id: 'r-1', organizationId: ORG, productId: 'p-1', status: 'INACTIVE', version: 2,
+        createdAt: 'x', updatedAt: 'x',
+        components: [
+          { inventoryItemId: 'item-1', code: 'CAF-1', name: 'Café en grano', baseUnit: 'GRAM', fractionalUnitAllowed: true, status: 'INACTIVE', quantity: '1000.000000' },
+          { inventoryItemId: 'item-2', code: 'HAR-2', name: 'Harina 2kg', baseUnit: 'GRAM', fractionalUnitAllowed: true, status: 'ACTIVE', quantity: '5.000000' },
+        ],
+      },
+    })
+    renderPage(backend)
+    await selectProduct()
+
+    const quantities = await screen.findAllByLabelText('Cantidad')
+    fireEvent.change(quantities[1], { target: { value: '6' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar receta' }))
+
+    await waitFor(() => expect(backend.puts.length).toBe(1))
+    expect(backend.puts[0]).toEqual({
+      expectedVersion: 2,
+      status: 'INACTIVE',
+      components: [
+        { inventoryItemId: 'item-1', quantity: '1000' },
+        { inventoryItemId: 'item-2', quantity: '6' },
+      ],
+    })
   })
 })

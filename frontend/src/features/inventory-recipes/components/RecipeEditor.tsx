@@ -52,6 +52,7 @@ function componentItem(component: ProductRecipe['components'][number]): Selected
 }
 
 export function RecipeEditor({ organizationId, product, dirtyRef }: RecipeEditorProps) {
+  const [banner, setBanner] = useState('')
   const recipeQuery = useQuery({
     queryKey: inventoryRecipesKeys.recipe(organizationId, product.id),
     queryFn: () => getProductRecipe(organizationId, product.id),
@@ -76,13 +77,19 @@ export function RecipeEditor({ organizationId, product, dirtyRef }: RecipeEditor
   }
 
   return (
-    <RecipeForm
-      key={recipe ? `v:${recipe.version}` : 'absent'}
-      organizationId={organizationId}
-      product={product}
-      recipe={recipe}
-      dirtyRef={dirtyRef}
-    />
+    <Stack spacing={2}>
+      {banner && (
+        <Alert severity="info" role="status" onClose={() => setBanner('')}>{banner}</Alert>
+      )}
+      <RecipeForm
+        key={recipe ? `v:${recipe.version}` : 'absent'}
+        organizationId={organizationId}
+        product={product}
+        recipe={recipe}
+        dirtyRef={dirtyRef}
+        onBanner={setBanner}
+      />
+    </Stack>
   )
 }
 
@@ -91,9 +98,10 @@ interface RecipeFormProps {
   product: Product
   recipe: ProductRecipe | null
   dirtyRef?: RefObject<boolean>
+  onBanner: (message: string) => void
 }
 
-function RecipeForm({ organizationId, product, recipe, dirtyRef }: RecipeFormProps) {
+function RecipeForm({ organizationId, product, recipe, dirtyRef, onBanner }: RecipeFormProps) {
   const queryClient = useQueryClient()
   const keyRef = useRef(0)
 
@@ -107,7 +115,6 @@ function RecipeForm({ organizationId, product, recipe, dirtyRef }: RecipeFormPro
         }))
       : [],
   )
-  const [banner, setBanner] = useState('')
   const [formError, setFormError] = useState('')
 
   const baseline = recipe
@@ -140,13 +147,13 @@ function RecipeForm({ organizationId, product, recipe, dirtyRef }: RecipeFormPro
       }),
     onSuccess: (saved) => {
       queryClient.setQueryData(inventoryRecipesKeys.recipe(organizationId, product.id), saved)
-      setBanner('Receta guardada.')
+      onBanner('Receta guardada.')
       void queryClient.invalidateQueries({
         queryKey: inventoryRecipesKeys.recipe(organizationId, product.id),
       })
     },
     onError: (error) => {
-      setBanner(inventoryRecipeErrorMessage(error))
+      onBanner(inventoryRecipeErrorMessage(error))
       if (errorCode(error) === 'CONCURRENT_MODIFICATION') {
         void queryClient.invalidateQueries({
           queryKey: inventoryRecipesKeys.recipe(organizationId, product.id),
@@ -208,7 +215,7 @@ function RecipeForm({ organizationId, product, recipe, dirtyRef }: RecipeFormPro
         : [],
     )
     setFormError('')
-    setBanner('')
+    onBanner('')
   }
 
   return (
@@ -222,7 +229,6 @@ function RecipeForm({ organizationId, product, recipe, dirtyRef }: RecipeFormPro
           </Typography>
         </Box>
 
-        {banner && <Alert severity="info" role="status" onClose={() => setBanner('')}>{banner}</Alert>}
         {formError && <Alert severity="error" role="alert">{formError}</Alert>}
 
         <Typography variant="body2" color="text.secondary">

@@ -110,6 +110,7 @@ describe('ModifierEffectsPage', () => {
 
     await waitFor(() => expect(backend.puts.length).toBe(1))
     expect(backend.puts[0]).toEqual({ expectedVersion: 0, effects: [] })
+    expect(await screen.findByText('Efectos guardados.')).toBeTruthy()
   })
 
   it('preserves positive and negative deltas as exact strings', async () => {
@@ -214,5 +215,32 @@ describe('ModifierEffectsPage', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain('No tienes permiso para administrar efectos de inventario.')
+  })
+
+  it('preserves an inactive effect when saving edits to another effect', async () => {
+    const backend = createBackend({
+      config: {
+        id: 'e-1', organizationId: ORG, modifierOptionId: 'o-1', version: 2, createdAt: 'x', updatedAt: 'x',
+        effects: [
+          { inventoryItemId: 'item-old', code: 'CAF-1', name: 'Café en grano', baseUnit: 'GRAM', fractionalUnitAllowed: true, status: 'INACTIVE', quantityDelta: '-100.000000' },
+          { inventoryItemId: 'item-milk', code: 'LEC-1', name: 'Leche normal', baseUnit: 'MILLILITER', fractionalUnitAllowed: true, status: 'ACTIVE', quantityDelta: '5.000000' },
+        ],
+      },
+    })
+    renderPage(backend)
+    await selectGroupAndOption()
+
+    const deltas = await screen.findAllByLabelText('Cambio de consumo')
+    fireEvent.change(deltas[1], { target: { value: '6' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar efectos' }))
+
+    await waitFor(() => expect(backend.puts.length).toBe(1))
+    expect(backend.puts[0]).toEqual({
+      expectedVersion: 2,
+      effects: [
+        { inventoryItemId: 'item-old', quantityDelta: '-100' },
+        { inventoryItemId: 'item-milk', quantityDelta: '6' },
+      ],
+    })
   })
 })
