@@ -48,4 +48,14 @@ describe('AdminLayout', () => {
     expect(screen.getByText('admin@example.com')).toBeTruthy()
     expect(screen.getByText('items-outlet')).toBeTruthy()
   })
+
+  it('links the inventory recipe and modifier effect sections without unfinished entries', () => {
+    renderLayout()
+
+    expect(screen.getByRole('link', { name: 'Recetas' }).getAttribute('href')).toBe('/admin/inventory/recipes')
+    expect(screen.getByRole('link', { name: 'Efectos de modificadores' }).getAttribute('href')).toBe(
+      '/admin/inventory/modifier-effects',
+    )
+    expect(screen.queryByRole('link', { name: /stock negativo|política de stock/i })).toBeNull()
+  })
 })

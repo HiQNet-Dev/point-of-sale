@@ -14,6 +14,13 @@ export const BASE_UNIT_LABELS: Record<InventoryBaseUnit, string> = {
   MILLILITER: 'Mililitro',
 }
 
+/** Compact unit suffix used next to exact quantity inputs (no unit conversion). */
+export const QUANTITY_UNIT_SYMBOLS: Record<InventoryBaseUnit, string> = {
+  UNIT: 'unidad',
+  GRAM: 'g',
+  MILLILITER: 'ml',
+}
+
 export const ITEM_STATUS_LABELS: Record<InventoryItemStatus, string> = {
   ACTIVE: 'Activo',
   INACTIVE: 'Inactivo',
