@@ -23,7 +23,7 @@ implementado** hasta que llegue su milestone (ver
 | `sales` | Venta operacional | sales, sale_items, modifier snapshots, pricing server-authoritative, OPEN→CANCELLED/COMPLETED | **implementado** |
 | `payment` | Pagos inmutables de checkout | CASH/CARD, split tender, tendered/change, historical reads | **implementado** |
 | `cash` | Turnos de caja y arqueos | shifts, arqueos (cash registers viven en `cashregister`) | **no implementado** |
-| `inventory` | Definiciones y consumo teórico de inventario; existencias operativas por sucursal | `InventoryItem` organization-owned (V16); Branch balances and immutable movements (V17); Product recipes and ModifierOption effects organization-owned (V18 candidate / PR open) | **Inventory foundation in progress** |
+| `inventory` | Definiciones y consumo teórico de inventario; existencias operativas por sucursal | `InventoryItem` organization-owned (V16); Branch balances and immutable movements (V17); Product recipes and ModifierOption effects organization-owned (V18) | **Inventory foundation in progress** |
 | `purchasing` | Compras | suppliers, órdenes, recepción | **no implementado** |
 | `expenses` | Gastos del negocio | expenses, categorías | **no implementado** |
 | `reporting` | Reportes | ventas, inventario, caja | **no implementado** |
@@ -236,4 +236,4 @@ gated por `BOOTSTRAP_SECRET`; véase
 `docs/02-database/cash-register-model.md` y
 `docs/02-database/cash-shift-model.md`).
 
-Inventory V16–V18 owns InventoryItem definitions, branch stock/ledger, organization-owned Product recipes, modifier effects and the per-unit consumption resolver. Sales consumes that resolver through its application service and owns the V19-candidate `SaleItemInventoryComponent` history; Inventory has no Sales dependency. The snapshot freezes resolved metadata and exact per-unit/total quantities for future checkout, while stock deduction, `SALE_CONSUMPTION`, reservations and Inventory UI remain deferred (PR C2 open).
+Inventory V16–V21 owns InventoryItem definitions, branch stock/ledger, organization-owned Product recipes, modifier effects, the per-unit consumption resolver and the organization-scoped negative stock policy. Sales consumes that resolver through its application service and owns the V19 `SaleItemInventoryComponent` history; Inventory has no Sales dependency. The snapshot freezes resolved metadata and exact per-unit/total quantities, and atomic checkout consumption (V21) deducts tracked stock from those snapshots and writes `SALE_CONSUMPTION` movements; reservations remain deferred.

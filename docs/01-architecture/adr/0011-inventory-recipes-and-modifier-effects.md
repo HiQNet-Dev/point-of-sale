@@ -1,6 +1,6 @@
 # ADR-0011: Organization-owned Inventory recipes and modifier effects
 
-- **Status:** Candidate — PR open
+- **Status:** Accepted
 - **Date:** 2026-10-12
 
 ## Context

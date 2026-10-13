@@ -42,4 +42,4 @@ Crear emite `inventory.item.created`; cambios efectivos emiten `inventory.item.u
 
 ## Fuera de esta fundación
 
-`V16` does not create balances or quantities. `V17` adds branch-scoped balances, an append-only ledger, opening and manual adjustments. V18 adds organization-owned Product recipes, modifier effects and the per-unit resolver; PR C2 snapshots resolved values on SaleItems. Checkout stock deduction, Purchasing, Transfers, Costing and Inventory UI remain deferred.
+`V16` does not create balances or quantities. `V17` adds branch-scoped balances, an append-only ledger, opening and manual adjustments. V18 adds organization-owned Product recipes, modifier effects and the per-unit resolver; V19 snapshots resolved values on SaleItems. Atomic checkout stock deduction (`V21`) is implemented; Purchasing, Transfers and Costing remain deferred.

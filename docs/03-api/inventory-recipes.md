@@ -1,4 +1,4 @@
-# Inventory recipe and modifier effects API — V18 candidate / PR C1
+# Inventory recipe and modifier effects API — V18
 
 These organization-scoped endpoints configure theoretical Inventory consumption. They do not read stock, expose branch IDs, alter Sales, or deduct/reserve quantities.
 

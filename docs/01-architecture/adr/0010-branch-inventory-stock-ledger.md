@@ -1,6 +1,6 @@
 # ADR-0010: Branch inventory balance and immutable ledger
 
-- **Status:** Candidate — PR open
+- **Status:** Accepted
 - **Date:** 2026-10-11
 
 ## Context
