@@ -31,9 +31,14 @@ export function SessionHomePage() {
               <Typography variant="body1" sx={{ fontWeight: 600 }}>{me.email}</Typography>
             </Box>
 
-            <Button component={Link} to="/pos" variant="contained">
-              Abrir punto de venta
-            </Button>
+            <Stack spacing={1.5}>
+              <Button component={Link} to="/pos" variant="contained">
+                Abrir punto de venta
+              </Button>
+              <Button component={Link} to="/admin" variant="outlined">
+                Administración
+              </Button>
+            </Stack>
 
             <Divider />
 
