@@ -49,6 +49,12 @@ interface BackendOptions {
   getCode?: string
   patchStatus?: number
   patchCode?: string
+  /** Falla de red (fetch rechazado) al leer la Organization. */
+  getNetworkError?: boolean
+  /** Falla de red (fetch rechazado) al guardar la política. */
+  patchNetworkError?: boolean
+  /** Deja el PATCH en vuelo indefinidamente para inspeccionar el estado pendiente. */
+  patchHangs?: boolean
   /** Estado que otro actor escribió antes de un PATCH en conflicto (devuelto por el refetch). */
   external?: { policy: InventoryNegativeStockPolicy; version: number }
 }
@@ -63,6 +69,9 @@ function createBackend(options: BackendOptions = {}) {
     const method = init?.method ?? 'GET'
     if (url.pathname.endsWith(`/organizations/${ORG}`) && method === 'GET') {
       getRequests.push(url)
+      if (options.getNetworkError) {
+        throw new TypeError('Failed to fetch')
+      }
       if (options.getStatus) {
         return json({ code: options.getCode ?? 'ERROR', message: 'x' }, options.getStatus)
       }
@@ -71,6 +80,12 @@ function createBackend(options: BackendOptions = {}) {
     if (url.pathname.endsWith(`/organizations/${ORG}`) && method === 'PATCH') {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>
       patchBodies.push(body)
+      if (options.patchHangs) {
+        return new Promise<Response>(() => {})
+      }
+      if (options.patchNetworkError) {
+        throw new TypeError('Failed to fetch')
+      }
       if (options.patchStatus) {
         if (options.external) current = organization(options.external.policy, options.external.version)
         return json({ code: options.patchCode ?? 'ERROR', message: 'x' }, options.patchStatus)
@@ -237,6 +252,41 @@ describe('InventorySettingsPage', () => {
 
     expect(await screen.findByText('La organización no está disponible.')).toBeTruthy()
     expect(screen.queryByRole('radio')).toBeNull()
+  })
+
+  it('maps a network failure while reading the organization to a human message', async () => {
+    const backend = createBackend({ getNetworkError: true })
+    renderPage(backend)
+
+    expect(await screen.findByText('No se pudo contactar al servidor.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Guardar configuración' })).toBeNull()
+    expect(screen.queryByRole('radio')).toBeNull()
+  })
+
+  it('shows a controlled network error and no false success when the save cannot reach the server', async () => {
+    const backend = createBackend({ policy: 'STRICT', patchNetworkError: true })
+    renderPage(backend)
+    await screen.findByRole('radio', { name: /No permitir stock negativo/ })
+
+    fireEvent.click(radio(/Permitir stock negativo/))
+    fireEvent.click(saveButton())
+
+    expect(await screen.findByText('No se pudo contactar al servidor.')).toBeTruthy()
+    expect(screen.queryByText('Configuración guardada.')).toBeNull()
+  })
+
+  it('disables the save action and the controls while the update is in flight', async () => {
+    const backend = createBackend({ policy: 'STRICT', patchHangs: true })
+    renderPage(backend)
+    await screen.findByRole('radio', { name: /No permitir stock negativo/ })
+
+    fireEvent.click(radio(/Permitir stock negativo/))
+    fireEvent.click(saveButton())
+
+    await waitFor(() => expect(saveButton().disabled).toBe(true))
+    expect(radio(/Permitir stock negativo/).disabled).toBe(true)
+    expect(radio(/No permitir stock negativo/).disabled).toBe(true)
+    expect(backend.patchBodies).toHaveLength(1)
   })
 
   it('keeps the success feedback visible after the organization version changes', async () => {
