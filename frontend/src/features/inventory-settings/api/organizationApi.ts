@@ -2,7 +2,7 @@ import { requestJson } from '../../../shared/api/client'
 
 export type InventoryNegativeStockPolicy = 'STRICT' | 'ALLOW_NEGATIVE'
 
-/** Organization response shape used by the inventory settings screen. */
+/** Forma de la respuesta Organization usada por la pantalla de configuración de inventario. */
 export interface Organization {
   id: string
   name: string
@@ -31,9 +31,9 @@ export interface UpdateOrganizationPolicyInput {
 }
 
 /**
- * Partial Organization update: only the negative-stock policy and the version
- * guard are sent, so name/code/timezone/currency/locale/status are never
- * overwritten with stale values.
+ * Actualización parcial de Organization: solo se envían la política de stock
+ * negativo y el guard de versión, así que name/code/timezone/currency/locale/status
+ * nunca se sobrescriben con valores stale.
  */
 export function updateOrganizationPolicy(
   organizationId: string,

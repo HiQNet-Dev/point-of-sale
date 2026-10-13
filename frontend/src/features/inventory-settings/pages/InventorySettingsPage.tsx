@@ -31,9 +31,9 @@ export function InventorySettingsPage() {
   const organizationId = me?.organizationId ?? ''
   const queryClient = useQueryClient()
 
-  // Draft is the user's pending choice; null means "follow the persisted value".
-  // Deriving the shown value from the query keeps the selection in sync on load,
-  // after a save, and after a 409 refetch without setState-in-effect.
+  // El draft es la elección pendiente del usuario; null significa "seguir el valor persistido".
+  // Derivar el valor mostrado desde la query mantiene la selección sincronizada al cargar,
+  // tras guardar y tras un refetch por 409, sin setState-in-effect.
   const [draft, setDraft] = useState<InventoryNegativeStockPolicy | null>(null)
   const [successMessage, setSuccessMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
@@ -65,7 +65,7 @@ export function InventorySettingsPage() {
       setSuccessMessage('')
       setErrorMessage(inventorySettingsErrorMessage(error))
       if (errorCode(error) === 'CONCURRENT_MODIFICATION') {
-        // Drop the stale draft and refetch so the latest server policy is shown.
+        // Descarta el draft stale y refetch para mostrar la última política del servidor.
         setDraft(null)
         void queryClient.invalidateQueries({ queryKey: organizationKeys.detail(organizationId) })
       }

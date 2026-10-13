@@ -49,7 +49,7 @@ interface BackendOptions {
   getCode?: string
   patchStatus?: number
   patchCode?: string
-  /** State another actor wrote before a conflicting PATCH (returned by refetch). */
+  /** Estado que otro actor escribió antes de un PATCH en conflicto (devuelto por el refetch). */
   external?: { policy: InventoryNegativeStockPolicy; version: number }
 }
 
