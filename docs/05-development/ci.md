@@ -83,7 +83,11 @@ rama, lo que evita depender de checks condicionales que a veces no existen.
 Desde la pestaña Actions, `workflow_dispatch` permite validar un `target_sha`
 explícito (40 caracteres, desde `main`) con la batería completa y E2E x3. Se usa
 para auditorías de release, refactors grandes, confianza pre-release e
-investigación de flakiness.
+investigación de flakiness. También puede lanzarse desde la CLI:
+
+```bash
+gh workflow run ci.yml --ref main -f target_sha=<commit-sha>
+```
 
 ## Notas
 
