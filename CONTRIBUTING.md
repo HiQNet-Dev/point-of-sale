@@ -4,12 +4,20 @@ Gracias por contribuir. Reglas cortas, mantenemos el repo limpio:
 
 ## Flujo de trabajo
 
-1. Crea una rama desde `main` con prefijo descriptivo:
+1. Crea una rama **short-lived** desde el `origin/main` actual, con prefijo por
+   enfoque:
 
-   - `feat/*` — nueva funcionalidad
-   - `fix/*` — corrección de errores
-   - `refactor/*` — refactor sin cambio de comportamiento
+   - `feat/backend/*`, `feat/frontend/*`, `feat/fullstack/*` — funcionalidad
+   - `fix/backend/*`, `fix/frontend/*` — corrección de errores
+   - `chore/dev/*`, `chore/ci/*`, `chore/*` — tooling, CI, mantenimiento
    - `docs/*` — documentación
+   - `test/*` — pruebas
+   - `refactor/*` — refactor sin cambio de comportamiento
+
+   **No** se crean ramas principales paralelas (`backend`, `frontend`,
+   `develop`, `docker`, `integration`): `main` es la única rama canónica y los
+   enfoques se separan con prefijos. Detalle en
+   `docs/05-development/git-workflow.md`.
 
 2. Trabaja en cambios pequeños y enfocados. Un PR, un propósito.
 
@@ -33,6 +41,8 @@ Gracias por contribuir. Reglas cortas, mantenemos el repo limpio:
 - Preferentemente un solo commit por cambio (usa `rebase`/`squash` — escribe con
   `git status` y `git diff` para revisar antes de subir).
 - Sin secretos en el diff (`.env`, tokens, credenciales van a `.gitignore`).
+- Como máximo **un worktree de feature activo**; tras el merge elimínalo junto
+  con su branch local (ver `docs/05-development/git-workflow.md`).
 - Pruebas para reglas críticas. Backend: `./mvnw clean verify`. Frontend:
   `pnpm lint && pnpm typecheck && pnpm test && pnpm build`.
 
