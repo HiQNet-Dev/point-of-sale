@@ -5,6 +5,8 @@ import { ProtectedRoute } from '../../features/auth/components/ProtectedRoute'
 import { LoginPage } from '../../features/auth/pages/LoginPage'
 import { SessionHomePage } from '../../features/auth/pages/SessionHomePage'
 import { InventoryItemsPage } from '../../features/inventory-items/pages/InventoryItemsPage'
+import { ModifierEffectsPage } from '../../features/inventory-modifier-effects/pages/ModifierEffectsPage'
+import { RecipesPage } from '../../features/inventory-recipes/pages/RecipesPage'
 import { BranchStockDetailPage } from '../../features/inventory-stock/pages/BranchStockDetailPage'
 import { BranchStockPage } from '../../features/inventory-stock/pages/BranchStockPage'
 import { PosSessionPage } from '../../features/pos-session/pages/PosSessionPage'
@@ -50,6 +52,8 @@ export const router = createBrowserRouter([
       { path: 'inventory/items', element: <InventoryItemsPage /> },
       { path: 'inventory/stock', element: <BranchStockPage /> },
       { path: 'inventory/stock/:itemId', element: <BranchStockDetailPage /> },
+      { path: 'inventory/recipes', element: <RecipesPage /> },
+      { path: 'inventory/modifier-effects', element: <ModifierEffectsPage /> },
     ],
   },
   {

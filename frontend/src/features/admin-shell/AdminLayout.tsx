@@ -15,6 +15,8 @@ import { useAuthSession } from '../auth/model/useAuthSession'
 const NAV_ITEMS = [
   { label: 'Artículos', to: '/admin/inventory/items' },
   { label: 'Existencias por sucursal', to: '/admin/inventory/stock' },
+  { label: 'Recetas', to: '/admin/inventory/recipes' },
+  { label: 'Efectos de modificadores', to: '/admin/inventory/modifier-effects' },
 ]
 
 const DRAWER_WIDTH = 240
