@@ -1,6 +1,6 @@
 # ADR-0013: Organization-scoped Negative Stock Policy
 
-- **Status:** Candidate — PR C3a open
+- **Status:** Accepted
 - **Date:** 2026-10-12
 
 ## Context

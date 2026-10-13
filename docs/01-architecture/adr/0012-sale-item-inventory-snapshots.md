@@ -1,6 +1,6 @@
 # ADR-0012: Historical Inventory consumption snapshots on SaleItems
 
-- **Status:** Candidate — PR C2 open
+- **Status:** Accepted
 - **Date:** 2026-10-12
 
 ## Context

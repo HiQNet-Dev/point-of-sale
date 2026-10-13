@@ -1,6 +1,6 @@
 # ADR-0014: Atomic Checkout Inventory Consumption
 
-- **Status:** Candidate — PR C3b open
+- **Status:** Accepted
 - **Date:** 2026-10-12
 
 ## Context
