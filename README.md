@@ -9,8 +9,9 @@ pequeños) y **retail ligero**.
 > (ver `VERSION`); el último milestone liberado es **`v0.2.0` (POS Core)**,
 > release técnica privada. POS Core incluye catálogo operativo, cajas, turnos,
 > ventas y checkout. Inventory v0.3 ya tiene catálogo y stock por sucursal con
-> ledger, apertura y ajustes; Recipes, checkout deduction e Inventory UI siguen
-> fuera de alcance.
+> ledger, apertura y ajustes, recipes y efectos de modificadores, UI de
+> administración y consumo de inventario en checkout; la UI de política de stock
+> negativo y el E2E integrado de inventario siguen pendientes.
 
 ## Foundation implementada (v0.1.x)
 
@@ -176,7 +177,7 @@ CI ejecuta exactamente estos pasos en cada push a `main` y en cada PR.
 ```text
 v0.1.x Foundation      ✓ RELEASED (privada, 2026-10-10)
 v0.2.x POS Core        ✓ RELEASED (privada, 2026-10-12)
-v0.3.x Inventory       ⬜ IN DEVELOPMENT (Recipes + Modifier Effects candidate / PR open)
+v0.3.x Inventory       ⬜ IN DEVELOPMENT (Items/Stock/Recipe/Effects UI implemented; negative-stock UI pending)
 v0.4.x Purchasing
 v0.5.x Expenses & Management
 v0.6.x Reporting
