@@ -4,6 +4,11 @@ import { configDefaults, defineConfig } from 'vitest/config'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // Read VITE_* variables from the repository root `.env` — the same file
+  // Compose and the seed/reset scripts use — so the documented host flow
+  // (`cp .env.example .env` then `pnpm dev`) needs no extra frontend/.env.
+  // Existing process.env VITE_* values (Compose, CI) still take precedence.
+  envDir: '..',
   server: {
     // Listen on all interfaces so the dev server is reachable from the host
     // when it runs inside the Docker Compose frontend container.

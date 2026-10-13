@@ -98,7 +98,10 @@ These never use the development Compose stack or its volume.
 ## Environment variables
 
 All local values live in a root `.env` (copy of `.env.example`, gitignored).
-Compose interpolates it for containers; the seed/reset scripts load it too.
+Compose interpolates it for containers; the seed/reset scripts load it too; and
+the host Vite dev server reads it (`envDir` points at the repository root), so
+`pnpm dev` picks up `VITE_API_BASE_URL` / `VITE_USE_POLLING` from the same file
+without a separate `frontend/.env`.
 
 | Variable | Purpose | Development default |
 | --- | --- | --- |
