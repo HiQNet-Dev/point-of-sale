@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { AuthSessionContext } from '../../auth/model/authSessionContext'
@@ -141,6 +141,7 @@ describe('BranchStockPage', () => {
     await chooseBranch(/Norte · NTE/)
     expect(await screen.findByText('Azúcar')).toBeTruthy()
     expect(screen.getByText('125.5')).toBeTruthy()
+    await waitFor(() => expect(screen.queryByText('Harina 1kg')).toBeNull())
     expect(backend.stockRequests.some((url) => url.pathname.includes(`/branches/${branchB.id}/`))).toBe(true)
   })
 
@@ -160,4 +161,3 @@ describe('BranchStockPage', () => {
     expect(await screen.findByText('No tienes permiso para esta operación de existencias.')).toBeTruthy()
   })
 })
-

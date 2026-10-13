@@ -60,7 +60,6 @@ export function BranchStockPage() {
     queryKey: inventoryStockKeys.list(organizationId, branchId, query),
     queryFn: () => listBranchStock(organizationId, branchId, query),
     enabled: Boolean(organizationId) && Boolean(branchId),
-    placeholderData: (previous) => previous,
   })
 
   const branches = branchesQuery.data?.items ?? []

@@ -9,7 +9,7 @@ export type InventoryMovementType = (typeof MOVEMENT_TYPES)[number]
 export const MOVEMENT_TYPE_LABELS: Record<InventoryMovementType, string> = {
   OPENING: 'Apertura',
   ADJUSTMENT: 'Ajuste',
-  SALE_CONSUMPTION: 'Consumo por venta',
+  SALE_CONSUMPTION: 'Venta',
 }
 
 export interface BranchStock {

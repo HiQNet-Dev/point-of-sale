@@ -63,13 +63,13 @@ describe('StockMutationDialog', () => {
     const fetchMock = vi.fn(async () => json(mutationResult()))
     const { onClose, onSaved } = renderDialog('opening', fetchMock)
 
-    fireEvent.change(screen.getByLabelText(/Cantidad de apertura/), { target: { value: '10.5' } })
+    fireEvent.change(screen.getByLabelText(/Cantidad de apertura/), { target: { value: '10.500000' } })
     fireEvent.click(screen.getByRole('button', { name: 'Registrar apertura' }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect(String(url)).toContain('/organizations/org-1/branches/b-1/inventory-items/item-1/opening-stock')
-    expect(JSON.parse(String(init.body))).toEqual({ expectedVersion: 0, quantity: '10.5' })
+    expect(JSON.parse(String(init.body))).toEqual({ expectedVersion: 0, quantity: '10.500000' })
     expect(onSaved).toHaveBeenCalled()
     expect(onClose).toHaveBeenCalled()
   })
@@ -128,5 +128,3 @@ describe('StockMutationDialog', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 })
-
-

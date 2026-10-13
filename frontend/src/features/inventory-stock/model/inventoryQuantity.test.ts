@@ -33,6 +33,7 @@ describe('inventory quantity strings', () => {
     expect(formatQuantity('1.500000')).toBe('1.5')
     expect(formatQuantity('0.000000')).toBe('0')
     expect(formatQuantity('-0.000000')).toBe('0')
+    expect(formatQuantity('-0.500000')).toBe('-0.5')
     expect(formatQuantity('-2.500000')).toBe('-2.5')
     expect(formatQuantity('1000')).toBe('1000')
   })
@@ -47,6 +48,7 @@ describe('inventory quantity strings', () => {
 
     expect(formatScaledQuantity(1_500_000n)).toBe('1.5')
     expect(formatScaledQuantity(-2_250_000n)).toBe('-2.25')
+    expect(formatScaledQuantity(-500_000n)).toBe('-0.5')
     expect(formatScaledQuantity(0n)).toBe('0')
     expect(formatScaledQuantity(1_000_000n)).toBe('1')
   })

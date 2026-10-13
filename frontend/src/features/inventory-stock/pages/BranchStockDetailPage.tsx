@@ -16,6 +16,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useAuthSession } from '../../auth/model/useAuthSession'
+import { listMyBranches } from '../../pos-session/api/posSessionApi'
 import { BASE_UNIT_LABELS, ITEM_STATUS_LABELS } from '../../inventory-items/api/inventoryItemsApi'
 import { getBranchStock, listInventoryMovements, MOVEMENT_TYPE_LABELS } from '../api/inventoryStockApi'
 import { inventoryStockKeys } from '../model/inventoryStockKeys'
@@ -55,6 +56,15 @@ export function BranchStockDetailPage() {
     placeholderData: (previous) => previous,
   })
 
+  const branchesQuery = useQuery({
+    queryKey: ['self', 'branches', organizationId],
+    queryFn: () => listMyBranches({ page: 0, size: 100 }),
+    enabled: Boolean(organizationId),
+  })
+
+  const branch = branchesQuery.data?.items.find((candidate) => candidate.id === branchId)
+  const branchText = branch ? `${branch.name} · ${branch.code}` : branchId
+
   function refresh() {
     void queryClient.invalidateQueries({ queryKey: inventoryStockKeys.all })
   }
@@ -80,6 +90,9 @@ export function BranchStockDetailPage() {
         <Button component={Link} to={`/admin/inventory/stock?branch=${encodeURIComponent(branchId)}`} size="small">
           Volver a existencias
         </Button>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+          Sucursal: {branchText}
+        </Typography>
       </Box>
 
       {stockQuery.isError && (
@@ -152,7 +165,7 @@ export function BranchStockDetailPage() {
                       {movements.map((movement) => (
                         <TableRow key={movement.id}>
                           <TableCell>{formatOccurredAt(movement.occurredAt)}</TableCell>
-                          <TableCell>{MOVEMENT_TYPE_LABELS[movement.type]}</TableCell>
+                          <TableCell>{MOVEMENT_TYPE_LABELS[movement.type] ?? movement.type}</TableCell>
                           <TableCell align="right">{formatQuantity(movement.quantityDelta)}</TableCell>
                           <TableCell align="right">{formatQuantity(movement.resultingQuantity)}</TableCell>
                           <TableCell>{movement.reason ?? '—'}</TableCell>
