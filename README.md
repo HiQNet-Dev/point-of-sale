@@ -238,6 +238,9 @@ El directorio `docs/` es la fuente de verdad viva del proyecto:
 
 ## Cómo contribuir
 
+¿Es tu primera vez colaborando? Consulta la guía de onboarding:
+[`docs/05-development/collaborator-onboarding.md`](docs/05-development/collaborator-onboarding.md).
+
 Ver `CONTRIBUTING.md`: ramas `feat/*`, `fix/*`, `refactor/*`, `docs/*`,
 Conventional Commits, CI obligatoria antes de merge.
 

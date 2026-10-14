@@ -1,5 +1,9 @@
 # Cómo contribuir a HiQNet POS
 
+¿Es tu primera vez? Empieza por la guía visual de onboarding:
+[`docs/05-development/collaborator-onboarding.md`](docs/05-development/collaborator-onboarding.md).
+Este documento sigue siendo la referencia de las reglas formales de contribución.
+
 Gracias por contribuir. Reglas cortas, mantenemos el repo limpio:
 
 ## Flujo de trabajo
