@@ -26,6 +26,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * Organization-scoped role administration. No DELETE: deactivation is
@@ -34,6 +35,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
  */
 @RestController
 @RequestMapping("/api/v1/organizations/{organizationId}/roles")
+@Tag(name = "RBAC", description = "Roles, permisos y sus asignaciones (autorización basada en permisos).")
 public class RoleController {
 
     private static final int MAX_PAGE_SIZE = 100;

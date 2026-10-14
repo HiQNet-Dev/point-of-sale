@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.security.SecurityScheme;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
         in = SecuritySchemeIn.HEADER,
         paramName = "X-Bootstrap-Token",
         description = "One-shot deployment secret (Base64, >= 256 bits). Only for the first provisioning; never document a real value.")
+@Tag(name = "Bootstrap", description = "Aprovisionamiento inicial one-shot de la instalación (fuera del flujo administrativo normal).")
 public class BootstrapController {
 
     private final BootstrapService bootstrapService;

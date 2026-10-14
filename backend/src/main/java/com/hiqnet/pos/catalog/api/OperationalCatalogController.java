@@ -8,6 +8,7 @@ import com.hiqnet.pos.shared.api.PageResponse;
 import com.hiqnet.pos.shared.error.BusinessException;
 import com.hiqnet.pos.shared.error.ErrorCodes;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -26,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @Validated
 @RequestMapping("/api/v1/organizations/{organizationId}/branches/{branchId}/pos/catalog")
+@Tag(name = "POS Catalog", description = "Lecturas operacionales del catálogo para el punto de venta.")
 public class OperationalCatalogController {
 
     private static final int MAX_PAGE_SIZE = 100;
