@@ -63,6 +63,21 @@ class OpenApiEnabledIntegrationTest {
     }
 
     @Test
+    void openApiAppliesGlobalBearerAndOptsOutPublicOperations() throws Exception {
+        JsonNode docs = apiDocs();
+        // Global requirement: every operation requires bearerAuth unless it opts out.
+        assertThat(docs.path("security").isArray()).isTrue();
+        assertThat(docs.path("security")).isNotEmpty();
+        assertThat(docs.path("security").get(0).has("bearerAuth")).isTrue();
+        // The public auth endpoints opt out explicitly (empty security).
+        for (String op : new String[] {"login", "refresh", "logout"}) {
+            JsonNode security = docs.path("paths").path("/api/v1/auth/" + op).path("post").path("security");
+            assertThat(security.isArray()).as("security of " + op).isTrue();
+            assertThat(security).as("public endpoint " + op + " must not require auth").isEmpty();
+        }
+    }
+
+    @Test
     void openApiSpecContainsRepresentativeOperations() throws Exception {
         JsonNode paths = apiDocs().path("paths");
         assertThat(paths.has("/api/v1/auth/login")).isTrue();

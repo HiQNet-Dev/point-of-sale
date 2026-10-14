@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
@@ -61,6 +62,7 @@ public class AuthController {
         @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR / MALFORMED_REQUEST", content = @Content),
         @ApiResponse(responseCode = "401", description = "INVALID_CREDENTIALS (generic for any credential failure)", content = @Content)
     })
+    @SecurityRequirements
     public TokenResponse login(@Valid @RequestBody LoginRequest request) {
         return authService.login(request.organizationCode(), request.email(), request.password());
     }
@@ -72,6 +74,7 @@ public class AuthController {
         @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR / MALFORMED_REQUEST", content = @Content),
         @ApiResponse(responseCode = "401", description = "INVALID_REFRESH_TOKEN", content = @Content)
     })
+    @SecurityRequirements
     public TokenResponse refresh(@Valid @RequestBody RefreshRequest request) {
         return authService.refresh(request.refreshToken());
     }
@@ -83,6 +86,7 @@ public class AuthController {
         @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR / MALFORMED_REQUEST", content = @Content)
     })
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @SecurityRequirements
     public void logout(@Valid @RequestBody RefreshRequest request) {
         authService.logout(request.refreshToken());
     }

@@ -2,6 +2,7 @@ package com.hiqnet.pos.shared.config;
 
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.servers.Server;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
@@ -43,6 +44,10 @@ public class OpenApiConfig {
                                 Ver `docs/03-api/README.md` para la guía de consumo desde el Frontend."""))
                 .servers(List.of(new Server()
                         .url("http://localhost:8080")
-                        .description("Backend local de desarrollo")));
+                        .description("Backend local de desarrollo")))
+                // Requisito de seguridad global: toda operación exige bearerAuth,
+                // salvo las públicas (login/refresh/logout), que lo anulan con
+                // @SecurityRequirements. El esquema lo declara AuthConfig.
+                .addSecurityItem(new SecurityRequirement().addList("bearerAuth"));
     }
 }
