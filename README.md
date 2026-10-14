@@ -169,6 +169,22 @@ operación: `docs/04-security/secure-bootstrap.md` y
 
 Frontend: `VITE_API_BASE_URL` (default `"/api/v1"`, same-origin).
 
+## API y Swagger (OpenAPI)
+
+La API REST vive bajo `/api/v1`. Con el backend en marcha (perfil `dev`), la
+especificación OpenAPI se **genera** desde el código y está disponible solo en
+desarrollo:
+
+| Recurso | URL |
+| --- | --- |
+| Swagger UI | <http://localhost:8080/swagger-ui/index.html> |
+| OpenAPI JSON | <http://localhost:8080/v3/api-docs> |
+
+- Habilitado por `app.security.permit-opendoc=true` (perfil `dev`); **cerrado en
+  producción** por deny-by-default.
+- Guía de consumo: `docs/03-api/README.md` (autenticación, errores, paginación,
+  contexto Organization/Branch e integración desde Frontend).
+
 ## Comandos de verificación
 
 ```bash
@@ -213,7 +229,9 @@ El directorio `docs/` es la fuente de verdad viva del proyecto:
 - `docs/00-product/` — visión de producto, alcance v1, roadmap.
 - `docs/01-architecture/` — arquitectura (modular monolith), módulos, ADRs.
 - `docs/02-database/` — modelo de dominio conceptual, convenciones Flyway.
-- `docs/03-api/` — convenciones de API.
+- `docs/03-api/` — convenciones de API y guía de consumo (OpenAPI/Swagger,
+  autenticación, errores, paginación, contexto Organization/Branch e
+  integración desde Frontend).
 - `docs/04-security/` — modelo de seguridad.
 - `docs/05-development/` — guías de código, git workflow, release process y
   entorno de desarrollo local (`local-development.md`).
