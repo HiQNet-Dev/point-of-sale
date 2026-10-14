@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
     inputs:
       target_sha:
@@ -31,7 +31,6 @@ jobs:
       backend_run: ${{ steps.detect.outputs.backend_run }}
       frontend_run: ${{ steps.detect.outputs.frontend_run }}
       compose_run: ${{ steps.detect.outputs.compose_run }}
-      e2e_run: ${{ steps.detect.outputs.e2e_run }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -199,11 +198,13 @@ jobs:
       - name: Validate compose file
         run: docker compose config
 
-  # Integración E2E real. Una sola ejecución cuando el cambio lo justifica.
+  # Integración E2E real: solo en el CI robusto de `main` (push a main) y en la
+  # validación manual. El CI general (PRs y ramas de trabajo) no la ejecuta.
   e2e:
     name: POS integrated E2E (Chromium + PostgreSQL)
-    needs: changes
-    if: needs.changes.outputs.e2e_run == 'true'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:

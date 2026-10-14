@@ -6,7 +6,7 @@ All notable changes to HiQNet POS are documented in this file.
 
 ### CI
 
-- Optimizado GitHub Actions para ejecutar las validaciones según el área modificada (`backend`, `frontend`, harness E2E, `docker`, docs) y cancelar los runs obsoletos del mismo pull request. Cada job se ejecuta una sola vez: un pull request normal corre como máximo un E2E (o ninguno si solo cambian docs o tests unitarios) y `main` mantiene la validación completa con un E2E, sin bucles ni repeticiones. Se añade detección de cambios nativa (solo `git`, sin actions de terceros), se conservan los caches de Maven y pnpm, y se agrega un único `CI Gate` recomendado como required status check. No se elimina ni se marca ninguna prueba como `skip`. Backend, frontend, migraciones (V1–V21), permisos (51) y `VERSION` no cambian.
+- Dividido el CI en dos niveles. El **CI general** (pull requests y pushes a `dev` y ramas de trabajo) valida código limpio e integración de código (backend, frontend y compose según el área modificada) y ya **no ejecuta** la integración E2E; el **CI de `main`** es más robusto y añade el E2E integrado (Playwright + PostgreSQL) en cada push a `main` y en la validación manual. Se añade detección de cambios nativa (solo `git`, sin actions de terceros), se cancelan los runs obsoletos del mismo pull request vía concurrency, se conservan los caches de Maven y pnpm, y se agrega un único `CI Gate` recomendado como required status check. No se elimina ni se marca ninguna prueba como `skip`. Backend, frontend, migraciones (V1–V21), permisos (51) y `VERSION` no cambian.
 
 ### Development environment
 
