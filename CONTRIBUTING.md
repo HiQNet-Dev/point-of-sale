@@ -4,7 +4,7 @@ Gracias por contribuir. Reglas cortas, mantenemos el repo limpio:
 
 ## Flujo de trabajo
 
-1. Crea una rama **short-lived** desde el `origin/main` actual, con prefijo por
+1. Crea una rama **short-lived** desde el `origin/dev` actual, con prefijo por
    enfoque:
 
    - `feat/backend/*`, `feat/frontend/*`, `feat/fullstack/*` — funcionalidad
@@ -13,11 +13,11 @@ Gracias por contribuir. Reglas cortas, mantenemos el repo limpio:
    - `docs/*` — documentación
    - `test/*` — pruebas
    - `refactor/*` — refactor sin cambio de comportamiento
+   - `hotfix/*` — corrección urgente de la versión estable (nace de `main`)
 
    **No** se crean ramas principales paralelas (`backend`, `frontend`,
-   `develop`, `docker`, `integration`): `main` es la única rama canónica y los
-   enfoques se separan con prefijos. Detalle en
-   `docs/05-development/git-workflow.md`.
+   `develop`, `docker`, `integration`). `dev` es la rama de integración y `main`
+   la estable/release. El detalle está en `docs/05-development/git-workflow.md`.
 
 2. Trabaja en cambios pequeños y enfocados. Un PR, un propósito.
 
@@ -29,11 +29,15 @@ Gracias por contribuir. Reglas cortas, mantenemos el repo limpio:
    chore: update dependencies
    ```
 
-4. Abre un Pull Request hacia `main`. CI debe pasar antes del merge
-   (backend: compile/test/package; frontend: lint/typecheck/test/build;
-   docker-compose validado).
+4. Abre un Pull Request hacia `dev` (los `hotfix/*` hacia `main`). CI debe pasar
+   antes del merge (backend: compile/test/package; frontend:
+   lint/typecheck/test/build; docker-compose validado). El CI general valida
+   código limpio e integración solo en las áreas tocadas y **no** corre el E2E;
+   `main` corre el CI más robusto con E2E. Detalle en
+   `docs/05-development/ci.md`.
 
-5. Nunca hagas push directo a `main` (excepto casos justificados aprobados).
+5. Nunca hagas push directo a `main` ni a `dev` (excepto tareas explícitas de
+   release o sincronización controlada).
 
 ## Antes de un PR
 
@@ -41,8 +45,9 @@ Gracias por contribuir. Reglas cortas, mantenemos el repo limpio:
 - Preferentemente un solo commit por cambio (usa `rebase`/`squash` — escribe con
   `git status` y `git diff` para revisar antes de subir).
 - Sin secretos en el diff (`.env`, tokens, credenciales van a `.gitignore`).
-- Como máximo **un worktree de feature activo**; tras el merge elimínalo junto
-  con su branch local (ver `docs/05-development/git-workflow.md`).
+- Trabaja en el checkout principal con ramas short-lived; **no uses worktrees por
+  defecto** (solo con justificación documentada). Tras el merge elimina la rama
+  local (y el worktree, si lo hubo).
 - Pruebas para reglas críticas. Backend: `./mvnw clean verify`. Frontend:
   `pnpm lint && pnpm typecheck && pnpm test && pnpm build`.
 
@@ -59,5 +64,7 @@ dominio financiero/transaccional):
 
 ## Estado del repositorio
 
-`main` es la rama estable. El primer commit de fundación fue directo a `main`
-porque el repositorio estaba vacío; a partir de ahora el desarrollo normal usa PRs.
+`main` es la rama estable/release. `dev` es la rama de integración y
+preproducción de la próxima release. El primer commit de fundación fue directo a
+`main` porque el repositorio estaba vacío; a partir de ahora el desarrollo normal
+nace de `dev` y usa PRs.

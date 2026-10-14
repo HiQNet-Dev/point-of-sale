@@ -3,7 +3,7 @@
 **Orientación, no contrato.** Los hitos y fechas pueden cambiar según aprendizajes.
 Ningún milestone posterior al actual está garantizado en contenido ni fecha.
 
-Versión en desarrollo: `0.3.0-SNAPSHOT`. Último milestone liberado: `v0.2.0` POS Core.
+Release publicada: `v0.3.0` Inventory. Próximo milestone: `v0.4.x` Purchasing.
 
 ## Hitos
 
@@ -11,7 +11,7 @@ Versión en desarrollo: `0.3.0-SNAPSHOT`. Último milestone liberado: `v0.2.0` P
 | --- | --- | --- |
 | **v0.1.x Foundation** | Estructura backend + frontend, config, seguridad base, documentación, **Organization + Branch (implementado)**, **Authentication (implementado)**, **Users administration (implementado)**, **Roles/Permissions/RBAC (implementado)**, **Branch Memberships (implementado)**, **Audit Foundation (implementado)**, **Secure Admin Bootstrap (implementado)**, **Foundation Hardening**, **estado legal propietario** | **RELEASED — `v0.1.0` (2026-10-10, release técnica privada)** |
 | v0.2.x POS Core | Catálogo, Modifiers, Operational POS Catalog, Cash Registers/Shifts, Sales, Payments + Atomic Checkout, persisted cart, checkout UI, integrated E2E verified 3/3 | **RELEASED — `v0.2.0` (2026-10-12, release técnica privada)** |
-| v0.3.x Inventory | Inventory Item Catalog, Branch Balance, immutable Ledger, Opening Stock, Manual Adjustments, Product Recipes and Modifier Inventory Effects implemented; Inventory Item and Branch Stock administration UI implemented (UI-A); Product Recipe and Modifier Effect administration UI implemented (UI-B); SaleItem Consumption Snapshot implemented (C2); Organization negative stock policy (`V20`) implemented (C3a); Atomic Checkout Stock Deduction from snapshots (`V21`) implemented (C3b); UI de configuración de inventario de la organización para la política de stock negativo (UI-C) implementada; el E2E integrado de inventario (E2E-D), la auditoría de release de v0.3 y returns/reversal siguen diferidos | **IN DEVELOPMENT** |
+| **v0.3.x Inventory** | Inventory Item Catalog, branch balances, immutable `OPENING`/`ADJUSTMENT` ledger y movement history (`V16`/`V17`); Product Recipes y ModifierOption inventory effects (`V18`); SaleItem consumption snapshots (C2); Organization negative stock policy (`STRICT`/`ALLOW_NEGATIVE`, `V20`); atomic checkout inventory consumption (`SALE_CONSUMPTION`, `V21`); Inventory administration UI (UI-A/UI-B/UI-C) y E2E integrado de Inventory (E2E-D); returns/reversal siguen diferidos | **RELEASED — `v0.3.0` (2026-10-14, release técnica privada)** |
 | v0.4.x Purchasing | Proveedores, órdenes de compra, recepción | Futuro / pendiente |
 | v0.5.x Expenses & Management | Gastos, mermas/pérdidas, auditoría | Futuro / pendiente |
 | v0.6.x Reporting | Reportes de ventas, inventario y caja | Futuro / pendiente |
@@ -34,8 +34,9 @@ Versión en desarrollo: `0.3.0-SNAPSHOT`. Último milestone liberado: `v0.2.0` P
   verificación E2E integrada real está verificada (3/3 en CI). No incluye
   procesamiento real de tarjetas, historial de pagos, tickets, inventario ni precios branch-specific.
 
-- El **tag `v0.2.0`** existe (release técnica privada de POS Core,
-  2026-10-12); `v1.0.0` sigue siendo la primera release comercial estable. La
-  línea principal de desarrollo ya inició v0.3 Inventory.
-- Alcance detallado en `docs/00-product/scope-v1.md` (todo futuro).
+- Los tags `v0.1.0` (Foundation), `v0.2.0` (POS Core) y `v0.3.0` (Inventory)
+  existen como releases técnicas privadas; `v1.0.0` sigue siendo la primera
+  release comercial estable. La siguiente versión en desarrollo se definirá al
+  abrir el ciclo posterior a v0.3.0.
+- Alcance futuro de v1 en `docs/00-product/scope-v1.md`; el estado implementado se registra en este roadmap.
 - Versiones y proceso en `docs/05-development/release-process.md`.

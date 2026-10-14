@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
     inputs:
       target_sha:
@@ -15,10 +15,43 @@ on:
 permissions:
   contents: read
 
+# Cancela runs obsoletos cuando llega un commit nuevo al mismo PR o a la misma
+# rama/evento, sin cancelar entre sí runs independientes (main o dispatch).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # Decide qué jobs hacen falta según las áreas modificadas.
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      backend_run: ${{ steps.detect.outputs.backend_run }}
+      frontend_run: ${{ steps.detect.outputs.frontend_run }}
+      compose_run: ${{ steps.detect.outputs.compose_run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect changed areas
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: bash .github/scripts/ci-changes.sh
+
   backend:
     name: Backend (compile, test, package)
+    needs: changes
+    if: needs.changes.outputs.backend_run == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Validate requested SHA input
         env:
@@ -61,7 +94,10 @@ jobs:
 
   frontend:
     name: Frontend (install, lint, typecheck, test, build)
+    needs: changes
+    if: needs.changes.outputs.frontend_run == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Validate requested SHA input
         env:
@@ -125,7 +161,10 @@ jobs:
 
   compose:
     name: Validate docker-compose
+    needs: changes
+    if: needs.changes.outputs.compose_run == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Validate requested SHA input
         env:
@@ -159,14 +198,15 @@ jobs:
       - name: Validate compose file
         run: docker compose config
 
+  # Integración E2E real: solo en el CI robusto de `main` (push a main) y en la
+  # validación manual. El CI general (PRs y ramas de trabajo) no la ejecuta.
   e2e:
-    name: "POS integrated E2E (Chromium + PostgreSQL) run ${{ matrix.run }}"
+    name: POS integrated E2E (Chromium + PostgreSQL)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        run: [1, 2, 3]
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17
@@ -307,9 +347,25 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: pos-e2e-failure-artifacts-${{ matrix.run }}
+          name: pos-e2e-failure-artifacts
           path: |
             /tmp/hiqnet-pos-playwright/results
             /tmp/hiqnet-pos-playwright/report
           if-no-files-found: ignore
           retention-days: 7
+
+  # Gate estable: único required status check recomendado. Falla si algún job
+  # requerido falló o se canceló; trata "skipped" como aceptable.
+  ci-gate:
+    name: CI Gate
+    if: always()
+    needs: [changes, backend, frontend, compose, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify required jobs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS"
+          echo "$NEEDS" | jq -e 'to_entries | all(.[]; (.value.result == "success") or (.value.result == "skipped"))'
