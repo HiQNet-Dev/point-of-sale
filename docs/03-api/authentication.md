@@ -98,8 +98,10 @@ y `docs/04-security/rbac.md`.
 1. `POST /api/v1/auth/login` con `organizationCode`, `email` y `password` (usa
    una cuenta de desarrollo; ver `docs/05-development/local-development.md`) y
    copia `accessToken` de la respuesta.
-2. Pulsa **Authorize** (arriba a la derecha), pega el token y confirma. Swagger
-   enviará `Authorization: Bearer <token>` en cada llamada.
+2. Pulsa **Authorize** (arriba a la derecha), pega el token y confirma. Pega
+   **únicamente** el `accessToken`; **no** escribas el prefijo `Bearer` (Swagger
+   lo añade por ti). Swagger enviará `Authorization: Bearer <token>` en cada
+   llamada.
 3. Llama a un endpoint protegido (p. ej. `GET /api/v1/auth/me`) y revisa el `200`
    con la identidad y el contexto operativo.
 

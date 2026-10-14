@@ -266,6 +266,9 @@ Pulsar "Authorize" en Swagger  →  Bearer <accessToken>
 Llamar a endpoints protegidos
 ```
 
+> En el diálogo **Authorize** pega **solo** el `accessToken`, sin el prefijo
+> `Bearer` (Swagger lo agrega).
+
 Para salir del esquema: **Authorize → Logout**. Probar errores en la UI:
 
 ```text

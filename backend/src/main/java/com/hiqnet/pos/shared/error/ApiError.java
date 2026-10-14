@@ -22,9 +22,7 @@ public record ApiError(
         @Schema(description = "Mensaje legible y genérico; no es verdad de negocio.", example = "A branch with this code already exists")
                 String message,
         @Schema(description = "Ruta solicitada.", example = "/api/v1/organizations/.../branches") String path,
-        @Schema(
-                        description = "Detalles opcionales (p. ej. errores de validación de campos). Puede ser un array vacío.",
-                        example = "[]")
+        @Schema(description = "Detalles opcionales (p. ej. errores de validación de campos). Puede ser un array vacío.")
                 List<String> details) {
 
     public static ApiError of(int status, String code, String message, String path) {
