@@ -5,14 +5,14 @@ principalmente a **pequeños negocios de alimentos** (cafeterías, juguerías, r
 pequeños) y **retail ligero**.
 
 > **Estado:** HiQNet POS está en desarrollo activo y todavía **no es una release
-> comercial estable**. La versión en desarrollo es `0.3.0-SNAPSHOT`
-> (ver `VERSION`); el último milestone liberado es **`v0.2.0` (POS Core)**,
-> release técnica privada. POS Core incluye catálogo operativo, cajas, turnos,
-> ventas y checkout. Inventory v0.3 ya tiene catálogo y stock por sucursal con
-> ledger, apertura y ajustes, recipes y efectos de modificadores, UI de
-administración (incluida la política de stock negativo a nivel de organización),
-consumo de inventario en checkout y E2E integrado de inventario (E2E-D). La
-auditoría de release de v0.3 permanece pendiente.
+> comercial estable**. La release técnica privada más reciente es **`v0.3.0`
+> (Inventory)**, versión actual `0.3.0` (ver `VERSION`); el milestone previo es
+> **`v0.2.0` (POS Core)**. Inventory incluye catálogo de artículos y stock por
+> sucursal con ledger, apertura y ajustes, recipes y efectos de modificadores, UI
+> de administración (incluida la política de stock negativo a nivel de
+> organización), consumo de inventario en checkout y E2E integrado de inventario
+> (E2E-D). No representa el POS comercial completo: Purchasing, Expenses, Reports,
+> returns/reversal y hardware siguen pendientes.
 
 ## Foundation implementada (v0.1.x)
 
@@ -21,7 +21,7 @@ La fundación actual ya es operativa como backend administrativo seguro:
 - **Organization / Branch / Users** — administración completa scoped por organización.
 - **Authentication** — login, refresh rotativo (30d, familia 30d), logout en
   familia, `logout-all`, `/me`; JWT identity-only, PostgreSQL autoritativa.
-- **Roles / Permissions / RBAC** — catálogo de 19 permisos sembrado por Flyway,
+- **Roles / Permissions / RBAC** — catálogo de 51 permisos sembrado por Flyway,
   roles por organización, assignments, `@PreAuthorize` database-authoritative.
 - **Branch Memberships** — usuarios por sucursal con roles branch-scoped y
   `hasBranchPermission` (org-wide UNION membership ACTIVE de esa branch).
@@ -33,6 +33,16 @@ La fundación actual ya es operativa como backend administrativo seguro:
 Detalle: `docs/01-architecture/modules.md`, `docs/04-security/security-model.md`
 y `docs/04-security/secure-bootstrap.md`. El roadmap completo en
 `docs/00-product/roadmap.md`.
+
+## Inventory publicado (v0.3.0)
+
+- Inventory Item Catalog organization-owned y stock por sucursal con balances perezosos.
+- Ledger inmutable de apertura (`OPENING`) y ajustes (`ADJUSTMENT`) más historial de movimientos por sucursal.
+- Product Recipes y efectos de inventario de las opciones de modificador, con concurrency `expectedVersion`.
+- Política de stock negativo por organización (`STRICT` / `ALLOW_NEGATIVE`) y consumo atómico de inventario en checkout (`SALE_CONSUMPTION`).
+- UI de administración de inventario (items, stock por sucursal, recipes, modifier effects y settings) y E2E integrado de Inventory (E2E-D).
+
+Esta release no incluye Purchasing, Expenses, Reports, returns/reversal ni hardware.
 
 ## Filosofía del producto
 
@@ -99,7 +109,7 @@ point-of-sale/
 ├── README.md
 ├── CONTRIBUTING.md
 ├── SECURITY.md
-└── VERSION             0.3.0-SNAPSHOT
+└── VERSION             0.3.0
 ```
 
 ## Requisitos
@@ -184,7 +194,7 @@ completa incluyen E2E. Ver la estrategia detallada en
 ```text
 v0.1.x Foundation      ✓ RELEASED (privada, 2026-10-10)
 v0.2.x POS Core        ✓ RELEASED (privada, 2026-10-12)
-v0.3.x Inventory       ⬜ IN DEVELOPMENT (Backend, UI-A/UI-B/UI-C y E2E-D implementados; auditoría de release pendiente)
+v0.3.x Inventory       ✓ RELEASED (privada, 2026-10-14)
 v0.4.x Purchasing
 v0.5.x Expenses & Management
 v0.6.x Reporting
@@ -234,5 +244,6 @@ Los derechos de uso para clientes, instalaciones o terceros se otorgarán
 
 Consulta `LICENSE` y `docs/05-development/legal-status.md`.
 
-La release `v0.1.0` representa únicamente la Foundation técnica del producto;
-no significa que el POS comercial completo esté terminado.
+La release `v0.3.0` añade Inventory a la Foundation y POS Core, pero no
+representa el POS comercial completo ni incluye Purchasing, Expenses, Reports,
+returns/reversal ni hardware.
