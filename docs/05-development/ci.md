@@ -38,6 +38,8 @@ Reglas de decisión:
 - cambio de `backend`, `frontend`, `docker` o `.github/**` → ejecuta el job afín.
 - `workflow_dispatch` → validación completa.
 - sin base de diff válida (por ejemplo, primer push) → se cae a validación completa.
+- ruta desconocida (no documentación y no mapeada a un área) → fail-safe:
+  validación completa, para no omitir jobs ante código no reconocido.
 
 La integración E2E **no** depende de la detección de cambios: corre solo en el CI
 robusto de `main` y en la validación manual.
