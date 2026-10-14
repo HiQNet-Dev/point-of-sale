@@ -21,6 +21,12 @@ este directorio es la capa humana que explica cómo usarlo.
 - `/swagger-ui.html` redirige a `/swagger-ui/index.html`.
 - Para probar endpoints autenticados en Swagger: pulsar **Authorize**, pegar el
   `accessToken` (JWT) y llamar.
+- El contrato de error es el schema reutilizable `ApiError`
+  (`components.schemas.ApiError`); toda respuesta 4xx/5xx del spec lo referencia.
+  Ver [`errors.md`](errors.md).
+- Receta end-to-end en la UI: `POST /api/v1/auth/login` → copiar `accessToken` →
+  **Authorize** → llamar un endpoint protegido. Ver
+  [`authentication.md`](authentication.md).
 
 > La especificación generada es la **fuente de verdad** de requests, responses y
 > códigos de estado. Estas guías explican cómo consumirla, no la reemplazan.

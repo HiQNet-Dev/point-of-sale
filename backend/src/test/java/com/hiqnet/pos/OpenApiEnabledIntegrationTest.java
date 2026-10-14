@@ -121,4 +121,35 @@ class OpenApiEnabledIntegrationTest {
         mockMvc.perform(get(INVENTORY_ITEMS_PATH, UUID.randomUUID(), UUID.randomUUID()))
                 .andExpect(status().isUnauthorized());
     }
+
+    @Test
+    void openApiSpecExposesReusableApiErrorSchema() throws Exception {
+        JsonNode apiError = apiDocs().path("components").path("schemas").path("ApiError");
+        assertThat(apiError.isMissingNode()).as("ApiError schema must be registered").isFalse();
+        JsonNode properties = apiError.path("properties");
+        for (String field : new String[] {"timestamp", "status", "code", "message", "path", "details"}) {
+            assertThat(properties.has(field)).as("ApiError." + field).isTrue();
+        }
+        assertThat(properties.path("status").path("type").asText()).isEqualTo("integer");
+        assertThat(properties.path("details").path("type").asText()).isEqualTo("array");
+    }
+
+    @Test
+    void openApiErrorResponsesReferenceApiErrorSchema() throws Exception {
+        JsonNode paths = apiDocs().path("paths");
+        // Auth: public login declares 400/401.
+        assertApiErrorRef(paths.path("/api/v1/auth/login").path("post").path("responses").path("401"));
+        // Business admin: 409 (duplicate) and 403 (forbidden).
+        JsonNode usersResponses = paths.path("/api/v1/organizations/{organizationId}/users")
+                .path("post")
+                .path("responses");
+        assertApiErrorRef(usersResponses.path("409"));
+        assertApiErrorRef(usersResponses.path("403"));
+    }
+
+    private static void assertApiErrorRef(JsonNode response) {
+        assertThat(response.isMissingNode()).as("error response must be documented").isFalse();
+        assertThat(response.path("content").path("application/json").path("schema").path("$ref").asText())
+                .isEqualTo("#/components/schemas/ApiError");
+    }
 }
