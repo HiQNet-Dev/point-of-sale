@@ -27,6 +27,17 @@ flowchart LR
     A --> B --> C --> D
 ```
 
+## Contenido rápido
+
+| Bloque | Secciones |
+| --- | --- |
+| Empezar (qué es, stack, entorno, Quick Start) | §1–§9 |
+| API / Swagger (contrato, auth, errores, datos) | §10–§21 |
+| Git (modelo, reglas, ramas, flujo diario, commits) | §22–§27 |
+| Frontend y calidad (tests, checklist, UI/TS/a11y) | §28–§32 |
+| Entrega (CI, PR, después del merge) | §33–§36 |
+| Ayuda (troubleshooting, debugging, glosario, cheat sheet) | §37–§50 |
+
 ## 1. ¿Qué es HiQNet POS?
 
 Un **sistema de punto de venta** para pequeños negocios de alimentos y retail
@@ -66,7 +77,7 @@ flowchart LR
     A --> D
 ```
 
-- **Flyway** es la única autoridad de schema (migraciones `V1`–`V21`).
+- **Flyway** es la única autoridad de schema (migraciones versionadas).
 - Detalle: `docs/01-architecture/architecture.md` y los ADR en
   `docs/01-architecture/adr/`.
 
@@ -318,7 +329,8 @@ frontend/src/
     └── admin-shell/
 ```
 
-Cada `feature` sigue el mismo patrón:
+Patrón habitual de una `feature` (usa solo las carpetas que necesites; no todas
+tienen las cuatro):
 
 ```text
 features/<feature>/
