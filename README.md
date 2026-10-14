@@ -10,9 +10,9 @@ pequeños) y **retail ligero**.
 > release técnica privada. POS Core incluye catálogo operativo, cajas, turnos,
 > ventas y checkout. Inventory v0.3 ya tiene catálogo y stock por sucursal con
 > ledger, apertura y ajustes, recipes y efectos de modificadores, UI de
-> administración (incluida la política de stock negativo a nivel de organización)
-> y consumo de inventario en checkout; el E2E integrado de inventario sigue
-> pendiente.
+administración (incluida la política de stock negativo a nivel de organización),
+consumo de inventario en checkout y E2E integrado de inventario (E2E-D). La
+auditoría de release de v0.3 permanece pendiente.
 
 ## Foundation implementada (v0.1.x)
 
@@ -173,14 +173,18 @@ pnpm test
 pnpm build
 ```
 
-CI ejecuta exactamente estos pasos en cada push a `main` y en cada PR.
+En pull requests y pushes a `dev`, CI da fast feedback con `Detect Changes`,
+validaciones condicionales de Backend, Frontend y Compose, y `CI Gate`; el E2E
+integrado no corre en ese nivel. Los pushes a `main` y la validación manual
+completa incluyen E2E. Ver la estrategia detallada en
+`docs/05-development/ci.md`.
 
 ## Roadmap (orientativo)
 
 ```text
 v0.1.x Foundation      ✓ RELEASED (privada, 2026-10-10)
 v0.2.x POS Core        ✓ RELEASED (privada, 2026-10-12)
-v0.3.x Inventory       ⬜ IN DEVELOPMENT (UI de Items/Stock/Recetas/Efectos/Configuración implementada; E2E integrado pendiente)
+v0.3.x Inventory       ⬜ IN DEVELOPMENT (Backend, UI-A/UI-B/UI-C y E2E-D implementados; auditoría de release pendiente)
 v0.4.x Purchasing
 v0.5.x Expenses & Management
 v0.6.x Reporting
