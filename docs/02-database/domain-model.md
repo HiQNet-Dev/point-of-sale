@@ -7,7 +7,7 @@ catálogo POS, Sales Foundation y Payments + Atomic Checkout están implementado
 (V17), recipes y modifier effects (V18) y snapshots + consumo de checkout
 (V19–V21) están implementados.
 
-Versión actual: `0.3.0-SNAPSHOT`.
+Versión de esta release: `0.3.0`.
 
 ## Jerarquía principal
 
