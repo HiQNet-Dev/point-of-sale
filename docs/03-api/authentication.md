@@ -95,10 +95,28 @@ y `docs/04-security/rbac.md`.
 
 ## Uso en Swagger UI
 
-1. `POST /api/v1/auth/login` y copiar `accessToken`.
-2. Pulsar **Authorize** (arriba a la derecha) y pegar el token.
-3. Llamar a cualquier endpoint protegido. Swagger enviará
-   `Authorization: Bearer <token>`.
+1. `POST /api/v1/auth/login` con `organizationCode`, `email` y `password` (usa
+   una cuenta de desarrollo; ver `docs/05-development/local-development.md`) y
+   copia `accessToken` de la respuesta.
+2. Pulsa **Authorize** (arriba a la derecha), pega el token y confirma. Swagger
+   enviará `Authorization: Bearer <token>` en cada llamada.
+3. Llama a un endpoint protegido (p. ej. `GET /api/v1/auth/me`) y revisa el `200`
+   con la identidad y el contexto operativo.
+
+Para salir del esquema en la UI: **Authorize → Logout**.
+
+### Probar 401 / 403 / 409 en Swagger
+
+- **401** — sin autorizar (o tras **Authorize → Logout**), llama un endpoint
+  protegido: `AUTHENTICATION_REQUIRED`. Con token inválido/expirado:
+  `TOKEN_INVALID` / `TOKEN_EXPIRED`.
+- **403** — autentícate con un usuario **sin** el permiso del endpoint (p. ej. un
+  cajero llamando una ruta de administración): `FORBIDDEN`.
+- **409** — en una mutación, reenvía el `PATCH`/`PUT` con un `expectedVersion`
+  desactualizado: `CONCURRENT_MODIFICATION`; o repite un `POST` con un `code` ya
+  existente: el `*_ALREADY_EXISTS` correspondiente.
+- Todas las respuestas de error usan el schema `ApiError` (ver
+  [`errors.md`](errors.md)).
 
 ## Errores de autenticación
 

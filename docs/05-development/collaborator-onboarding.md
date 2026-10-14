@@ -241,6 +241,10 @@ flowchart LR
 > La especificación generada es la **fuente de verdad** del contrato. No la
 > reemplacemos con mocks ni con copias.
 
+- El contrato de error es el schema **`ApiError`**: toda respuesta 4xx/5xx del
+  spec lo referencia. En Swagger UI se ve en el panel **Schemas** y en el
+  *Example Value* de cada error.
+
 ## 11. Documentación de la API
 
 | Documento | Contenido |
@@ -260,6 +264,14 @@ flowchart LR
 POST /auth/login  →  accessToken (JWT ~10 min)
 Pulsar "Authorize" en Swagger  →  Bearer <accessToken>
 Llamar a endpoints protegidos
+```
+
+Para salir del esquema: **Authorize → Logout**. Probar errores en la UI:
+
+```text
+401 → sin autorizar (o Logout) + endpoint protegido → AUTHENTICATION_REQUIRED
+403 → usuario sin el permiso del endpoint           → FORBIDDEN
+409 → mutación con expectedVersion desactualizado   → CONCURRENT_MODIFICATION
 ```
 
 - El JWT es **solo identidad** (`sub`, `org_id`, `token_type`): **no** contiene

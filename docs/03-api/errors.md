@@ -30,6 +30,20 @@ Todas las respuestas de error (4xx y 5xx) tienen la misma forma:
 
 **Nunca** se exponen stack traces, mensajes SQL ni detalles internos.
 
+## El error en OpenAPI / Swagger
+
+La forma del error no se adivina: la especificación la expone como el schema
+reutilizable **`ApiError`** (`components.schemas.ApiError`), y **cada** respuesta
+4xx/5xx de `/v3/api-docs` lo referencia. En Swagger UI se ve en el panel
+**Schemas** y en el **Example Value** de cualquier respuesta de error.
+
+- El schema lo registra `OpenApiConfig` (`apiErrorSchemaCustomizer`) a partir del
+  record `ApiError`; es puramente documental y **no** cambia el contrato en
+  runtime.
+- La envoltura es idéntica en runtime: `GlobalExceptionHandler` (negocio,
+  validación, `404/409/500`) y `ApiSecurityErrorHandler` (`401/403` de la cadena
+  de seguridad) siempre serializan `ApiError`.
+
 ## Validación
 
 Los errores de Bean Validation llegan como `400 VALIDATION_ERROR` con la lista de

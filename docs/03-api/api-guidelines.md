@@ -174,7 +174,6 @@ GET /api/v1/organizations/{organizationId}/audit-events   (audit.read, organizat
   → 403 (anti privilege-escalation).
 - Detalle: `docs/04-security/audit.md`.
 
-## Contrato de error
 ## Branch Memberships (scopes de autorización)
 
 La gestión de memberships se autoriza SIEMPRE con permisos **organization-wide**
@@ -529,6 +528,16 @@ Convención estable desde la administración de usuarios (`shared.api.PageRespon
   `app.security.permit-opendoc=true`, activo únicamente en `dev`).
 - En producción los endpoints de docs siguen **denegados** por
   deny-by-default.
+- La forma del error se expone como schema reutilizable
+  `components.schemas.ApiError`; toda respuesta 4xx/5xx del spec lo referencia.
+  El schema y su referencia se generan en `OpenApiConfig`
+  (`apiErrorSchemaCustomizer`); es **documental** y no altera el contrato en
+  runtime.
+- **Regla del repositorio:** todo cambio de contrato de API (endpoint, request,
+  response, código de estado, permiso o código de error estable) debe actualizar
+  OpenAPI **en el mismo cambio**: anotaciones (`@Operation`, `@Schema`,
+  `@ApiResponse`), descripción global cuando aplique y los documentos de
+  `docs/03-api`. Un contrato sin su doc es un cambio incompleto.
 
 ## Otros
 
