@@ -4,6 +4,10 @@ All notable changes to HiQNet POS are documented in this file.
 
 ## [Unreleased]
 
+### CI
+
+- Dividido el CI en dos niveles. El **CI general** (pull requests y pushes a `dev` y ramas de trabajo) valida código limpio e integración de código (backend, frontend y compose según el área modificada) y ya **no ejecuta** la integración E2E; el **CI de `main`** es más robusto y añade el E2E integrado (Playwright + PostgreSQL) en cada push a `main` y en la validación manual. Se añade detección de cambios nativa (solo `git`, sin actions de terceros), se cancelan los runs obsoletos del mismo pull request vía concurrency, se conservan los caches de Maven y pnpm, y se agrega un único `CI Gate` recomendado como required status check. No se elimina ni se marca ninguna prueba como `skip`. Backend, frontend, migraciones (V1–V21), permisos (51) y `VERSION` no cambian.
+
 ### Development environment
 
 - Added a reproducible Docker-based local development environment. `docker compose up --build` runs PostgreSQL 17, the Spring Boot backend (Maven Wrapper; no host Java/Maven) and the Vite frontend dev server with HMR, and `docker compose up -d db backend` keeps the fast frontend loop on the host. Added a deterministic, development-only fixture loader (`pnpm dev:seed`) provisioned through the real Secure Admin Bootstrap + administrative APIs, a guarded deterministic reset (`pnpm dev:reset`) that refuses non-development targets, a root `.env.example` and `docs/05-development/local-development.md`. The E2E harness, Testcontainers, the permission catalog (51), `SecurityConfig`, JWT, migrations (V1–V21) and `VERSION` are unchanged.
