@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/organizations/{organizationId}/products/{productId}/inventory-recipe")
+@Tag(name = "Recipes", description = "Recetas de producto (consumo de inventario).")
 public class ProductInventoryRecipeController {
     private final InventoryRecipeService recipeService;
     public ProductInventoryRecipeController(InventoryRecipeService recipeService) { this.recipeService = recipeService; }

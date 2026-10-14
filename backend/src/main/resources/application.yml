@@ -4,6 +4,10 @@
 spring:
   application:
     name: hiqnet-pos
+    # Versión de la aplicación, inyectada por el filtrado de recursos de Maven
+    # desde backend/pom.xml. La expone OpenAPI (springdoc) como versión de la
+    # API; no fija reglas de negocio.
+    version: "@project.version@"
   profiles:
     # Local runs without an explicit profile get the development defaults.
     default: dev

@@ -61,7 +61,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> {
                     auth.requestMatchers(HEALTH_AND_DOCS).permitAll();
                     if (permitOpenDoc) {
-                        auth.requestMatchers("/v3/api-docs/**", "/swagger-ui/**").permitAll();
+                        auth.requestMatchers("/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**")
+                                .permitAll();
                     }
                     auth.requestMatchers(HttpMethod.POST, PUBLIC_AUTH).permitAll();
                     // One-shot bootstrap: the route is reachable ONLY while a

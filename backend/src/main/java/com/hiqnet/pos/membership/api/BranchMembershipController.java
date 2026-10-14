@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -40,6 +41,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/organizations/{organizationId}/branches/{branchId}/memberships")
+@Tag(name = "Branch Memberships", description = "Pertenencia de usuarios a sucursales y sus roles con alcance de sucursal.")
 public class BranchMembershipController {
 
     private static final int MAX_PAGE_SIZE = 100;

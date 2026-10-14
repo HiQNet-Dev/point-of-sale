@@ -7,6 +7,12 @@ import com.hiqnet.pos.sales.domain.SaleStatus;
 import com.hiqnet.pos.shared.api.PageResponse;
 import com.hiqnet.pos.shared.error.BusinessException;
 import com.hiqnet.pos.shared.error.ErrorCodes;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -29,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 /** Branch-scoped operational sale API. No payment, completion or physical delete endpoint exists. */
 @RestController
 @RequestMapping("/api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}/cash-shifts/{cashShiftId}/sales")
+@Tag(name = "Sales", description = "Ventas de un turno de caja y su checkout.")
 public class SaleController {
     private static final int MAX_PAGE_SIZE = 100;
     private static final Sort ORDER = Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
@@ -38,6 +45,18 @@ public class SaleController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(
+            summary = "Crea una venta OPEN en el turno",
+            description = "Abre una venta vacía en el turno de caja; el actor y el timestamp los fija el "
+                    + "servidor. Permission requerida: `sale.create`.")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+        @ApiResponse(responseCode = "201", description = "Venta creada"),
+        @ApiResponse(responseCode = "401", description = "AUTHENTICATION_REQUIRED / TOKEN_INVALID / TOKEN_EXPIRED", content = @Content),
+        @ApiResponse(responseCode = "403", description = "Sin el permiso `sale.create` (FORBIDDEN)", content = @Content),
+        @ApiResponse(responseCode = "404", description = "Turno/caja/sucursal inexistente o de otra organización", content = @Content),
+        @ApiResponse(responseCode = "409", description = "El turno no está OPEN (CASH_SHIFT_NOT_OPEN)", content = @Content)
+    })
     @PreAuthorize("@authorizationService.hasBranchPermission(authentication, #organizationId, #branchId, 'sale.create')")
     public SaleResponse create(@PathVariable UUID organizationId, @PathVariable UUID branchId,
             @PathVariable UUID cashRegisterId, @PathVariable UUID cashShiftId, @AuthenticationPrincipal Jwt jwt) {
@@ -45,6 +64,17 @@ public class SaleController {
     }
 
     @GetMapping
+    @Operation(
+            summary = "Lista las ventas del turno",
+            description = "Paginado, filtro opcional `status`. Permission requerida: `sale.read`.")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Página de ventas"),
+        @ApiResponse(responseCode = "400", description = "Parámetros de paginación inválidos (VALIDATION_ERROR)", content = @Content),
+        @ApiResponse(responseCode = "401", description = "AUTHENTICATION_REQUIRED / TOKEN_INVALID / TOKEN_EXPIRED", content = @Content),
+        @ApiResponse(responseCode = "403", description = "Sin el permiso `sale.read` (FORBIDDEN)", content = @Content),
+        @ApiResponse(responseCode = "404", description = "Turno/caja/sucursal inexistente o ajeno", content = @Content)
+    })
     @PreAuthorize("@authorizationService.hasBranchPermissionIgnoringBranchStatus(authentication, #organizationId, #branchId, 'sale.read')")
     public PageResponse<SaleResponse> list(@PathVariable UUID organizationId, @PathVariable UUID branchId,
             @PathVariable UUID cashRegisterId, @PathVariable UUID cashShiftId,
@@ -57,6 +87,16 @@ public class SaleController {
     }
 
     @GetMapping("/{saleId}")
+    @Operation(
+            summary = "Obtiene el detalle de una venta",
+            description = "Incluye la venta y sus líneas (items) activas. Permission requerida: `sale.read`.")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Detalle de la venta"),
+        @ApiResponse(responseCode = "401", description = "AUTHENTICATION_REQUIRED / TOKEN_INVALID / TOKEN_EXPIRED", content = @Content),
+        @ApiResponse(responseCode = "403", description = "Sin el permiso `sale.read` (FORBIDDEN)", content = @Content),
+        @ApiResponse(responseCode = "404", description = "Venta inexistente o ajena (SALE_NOT_FOUND)", content = @Content)
+    })
     @PreAuthorize("@authorizationService.hasBranchPermissionIgnoringBranchStatus(authentication, #organizationId, #branchId, 'sale.read')")
     public SaleDetailResponse get(@PathVariable UUID organizationId, @PathVariable UUID branchId,
             @PathVariable UUID cashRegisterId, @PathVariable UUID cashShiftId, @PathVariable UUID saleId) {
@@ -64,6 +104,22 @@ public class SaleController {
     }
 
     @PostMapping("/{saleId}/checkout")
+    @Operation(
+            summary = "Completa una venta (checkout)",
+            description = "Cierra la venta de forma atómica registrando los pagos y descontando inventario "
+                    + "según la receta del producto. `expectedSaleVersion` es obligatorio (concurrencia "
+                    + "optimista): si no coincide, responde 409 CONCURRENT_MODIFICATION y el cliente debe "
+                    + "releer la venta antes de reintentar. Un stock insuficiente responde 409 "
+                    + "INSUFFICIENT_INVENTORY con el detalle de faltantes. Permission requerida: `sale.checkout`.")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Venta completada"),
+        @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR / MALFORMED_REQUEST / INVALID_PAYMENT / INVALID_CASH_TENDERED_AMOUNT / TOO_MANY_PAYMENTS / MULTIPLE_CASH_PAYMENTS_NOT_ALLOWED", content = @Content),
+        @ApiResponse(responseCode = "401", description = "AUTHENTICATION_REQUIRED / TOKEN_INVALID / TOKEN_EXPIRED", content = @Content),
+        @ApiResponse(responseCode = "403", description = "Sin el permiso `sale.checkout` (FORBIDDEN)", content = @Content),
+        @ApiResponse(responseCode = "404", description = "Venta inexistente o ajena (SALE_NOT_FOUND)", content = @Content),
+        @ApiResponse(responseCode = "409", description = "CONCURRENT_MODIFICATION / SALE_ALREADY_COMPLETED / SALE_HAS_NO_ACTIVE_ITEMS / PAYMENT_TOTAL_MISMATCH / INSUFFICIENT_INVENTORY / NEGATIVE_EFFECTIVE_PRICE", content = @Content)
+    })
     @PreAuthorize("@authorizationService.hasBranchPermission(authentication, #organizationId, #branchId, 'sale.checkout')")
     public SaleDetailResponse checkout(@PathVariable UUID organizationId, @PathVariable UUID branchId,
             @PathVariable UUID cashRegisterId, @PathVariable UUID cashShiftId, @PathVariable UUID saleId,
@@ -73,6 +129,16 @@ public class SaleController {
     }
 
     @GetMapping("/{saleId}/payments")
+    @Operation(
+            summary = "Lista los pagos registrados de una venta",
+            description = "Historial de pagos (no paginado). Permission requerida: `payment.read`.")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Pagos de la venta (lista, posiblemente vacía)"),
+        @ApiResponse(responseCode = "401", description = "AUTHENTICATION_REQUIRED / TOKEN_INVALID / TOKEN_EXPIRED", content = @Content),
+        @ApiResponse(responseCode = "403", description = "Sin el permiso `payment.read` (FORBIDDEN)", content = @Content),
+        @ApiResponse(responseCode = "404", description = "Venta inexistente o ajena (SALE_NOT_FOUND)", content = @Content)
+    })
     @PreAuthorize("@authorizationService.hasBranchPermissionIgnoringBranchStatus(authentication, #organizationId, #branchId, 'payment.read')")
     public java.util.List<PaymentResponse> payments(@PathVariable UUID organizationId, @PathVariable UUID branchId,
             @PathVariable UUID cashRegisterId, @PathVariable UUID cashShiftId, @PathVariable UUID saleId) {
@@ -81,6 +147,19 @@ public class SaleController {
     }
 
     @PostMapping("/{saleId}/items")
+    @Operation(
+            summary = "Agrega una línea (item) a la venta",
+            description = "`quantity` es un entero positivo. Los precios los calcula el servidor y no se "
+                    + "aceptan del cliente. Requiere `expectedSaleVersion`. Permission requerida: `sale.update`.")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Venta actualizada con la nueva línea"),
+        @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR / INVALID_MODIFIER_SELECTION / MALFORMED_REQUEST", content = @Content),
+        @ApiResponse(responseCode = "401", description = "AUTHENTICATION_REQUIRED / TOKEN_INVALID / TOKEN_EXPIRED", content = @Content),
+        @ApiResponse(responseCode = "403", description = "Sin el permiso `sale.update` (FORBIDDEN)", content = @Content),
+        @ApiResponse(responseCode = "404", description = "Venta/producto/grupo inexistente o ajeno", content = @Content),
+        @ApiResponse(responseCode = "409", description = "CONCURRENT_MODIFICATION / SALE_NOT_OPEN / PRODUCT_INACTIVE / PRODUCT_MODIFIER_CONFIGURATION_UNAVAILABLE / NEGATIVE_EFFECTIVE_PRICE", content = @Content)
+    })
     @PreAuthorize("@authorizationService.hasBranchPermission(authentication, #organizationId, #branchId, 'sale.update')")
     public SaleDetailResponse addItem(@PathVariable UUID organizationId, @PathVariable UUID branchId,
             @PathVariable UUID cashRegisterId, @PathVariable UUID cashShiftId, @PathVariable UUID saleId,
@@ -90,6 +169,19 @@ public class SaleController {
     }
 
     @PatchMapping("/{saleId}/items/{saleItemId}")
+    @Operation(
+            summary = "Actualiza una línea (item) de la venta",
+            description = "Cambia cantidad y/o modifiers de una línea. El producto de la línea es inmutable. "
+                    + "Requiere `expectedSaleVersion`. Permission requerida: `sale.update`.")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Venta actualizada"),
+        @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR / INVALID_MODIFIER_SELECTION / MALFORMED_REQUEST", content = @Content),
+        @ApiResponse(responseCode = "401", description = "AUTHENTICATION_REQUIRED / TOKEN_INVALID / TOKEN_EXPIRED", content = @Content),
+        @ApiResponse(responseCode = "403", description = "Sin el permiso `sale.update` (FORBIDDEN)", content = @Content),
+        @ApiResponse(responseCode = "404", description = "Venta o línea inexistente/ajena (SALE_ITEM_NOT_FOUND)", content = @Content),
+        @ApiResponse(responseCode = "409", description = "CONCURRENT_MODIFICATION / SALE_NOT_OPEN / SALE_ITEM_ALREADY_REMOVED / NEGATIVE_EFFECTIVE_PRICE", content = @Content)
+    })
     @PreAuthorize("@authorizationService.hasBranchPermission(authentication, #organizationId, #branchId, 'sale.update')")
     public SaleDetailResponse updateItem(@PathVariable UUID organizationId, @PathVariable UUID branchId,
             @PathVariable UUID cashRegisterId, @PathVariable UUID cashShiftId, @PathVariable UUID saleId,
@@ -99,6 +191,19 @@ public class SaleController {
     }
 
     @PostMapping("/{saleId}/items/{saleItemId}/remove")
+    @Operation(
+            summary = "Quita (baja lógica) una línea de la venta",
+            description = "Marca la línea como REMOVED (no hay borrado físico). Requiere `expectedVersion`. "
+                    + "Permission requerida: `sale.update`.")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Venta actualizada"),
+        @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR / MALFORMED_REQUEST", content = @Content),
+        @ApiResponse(responseCode = "401", description = "AUTHENTICATION_REQUIRED / TOKEN_INVALID / TOKEN_EXPIRED", content = @Content),
+        @ApiResponse(responseCode = "403", description = "Sin el permiso `sale.update` (FORBIDDEN)", content = @Content),
+        @ApiResponse(responseCode = "404", description = "Venta o línea inexistente/ajena (SALE_ITEM_NOT_FOUND)", content = @Content),
+        @ApiResponse(responseCode = "409", description = "CONCURRENT_MODIFICATION / SALE_NOT_OPEN / SALE_ITEM_ALREADY_REMOVED", content = @Content)
+    })
     @PreAuthorize("@authorizationService.hasBranchPermission(authentication, #organizationId, #branchId, 'sale.update')")
     public SaleDetailResponse removeItem(@PathVariable UUID organizationId, @PathVariable UUID branchId,
             @PathVariable UUID cashRegisterId, @PathVariable UUID cashShiftId, @PathVariable UUID saleId,
@@ -108,6 +213,19 @@ public class SaleController {
     }
 
     @PostMapping("/{saleId}/cancel")
+    @Operation(
+            summary = "Cancela una venta OPEN",
+            description = "Cancela la venta (no hay borrado físico). Requiere `expectedVersion`. "
+                    + "Permission requerida: `sale.cancel`.")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Venta cancelada"),
+        @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR / MALFORMED_REQUEST", content = @Content),
+        @ApiResponse(responseCode = "401", description = "AUTHENTICATION_REQUIRED / TOKEN_INVALID / TOKEN_EXPIRED", content = @Content),
+        @ApiResponse(responseCode = "403", description = "Sin el permiso `sale.cancel` (FORBIDDEN)", content = @Content),
+        @ApiResponse(responseCode = "404", description = "Venta inexistente o ajena (SALE_NOT_FOUND)", content = @Content),
+        @ApiResponse(responseCode = "409", description = "CONCURRENT_MODIFICATION / SALE_ALREADY_CANCELLED / SALE_ALREADY_COMPLETED", content = @Content)
+    })
     @PreAuthorize("@authorizationService.hasBranchPermissionIgnoringBranchStatus(authentication, #organizationId, #branchId, 'sale.cancel')")
     public SaleDetailResponse cancel(@PathVariable UUID organizationId, @PathVariable UUID branchId,
             @PathVariable UUID cashRegisterId, @PathVariable UUID cashShiftId, @PathVariable UUID saleId,
