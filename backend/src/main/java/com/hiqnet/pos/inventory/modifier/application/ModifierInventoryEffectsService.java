@@ -2,9 +2,9 @@ package com.hiqnet.pos.inventory.modifier.application;
 
 import com.hiqnet.pos.catalog.domain.ModifierOption;
 import com.hiqnet.pos.catalog.domain.ModifierOptionRepository;
+import com.hiqnet.pos.inventory.application.InventoryItemUnitGuard;
 import com.hiqnet.pos.inventory.domain.InventoryBaseUnit;
 import com.hiqnet.pos.inventory.domain.InventoryItem;
-import com.hiqnet.pos.inventory.domain.InventoryItemRepository;
 import com.hiqnet.pos.inventory.domain.InventoryItemStatus;
 import com.hiqnet.pos.inventory.modifier.api.ModifierInventoryEffectResponse;
 import com.hiqnet.pos.inventory.modifier.api.ModifierInventoryEffectsResponse;
@@ -34,19 +34,19 @@ import org.springframework.transaction.annotation.Transactional;
 public class ModifierInventoryEffectsService {
     private final OrganizationRepository organizationRepository;
     private final ModifierOptionRepository modifierOptionRepository;
-    private final InventoryItemRepository inventoryItemRepository;
+    private final InventoryItemUnitGuard inventoryItemUnitGuard;
     private final ModifierOptionInventoryConfigRepository configRepository;
     private final ModifierOptionInventoryConfigStore configStore;
     private final ModifierOptionInventoryEffectRepository effectRepository;
     private final AuditPort auditPort;
 
     public ModifierInventoryEffectsService(OrganizationRepository organizationRepository,
-            ModifierOptionRepository modifierOptionRepository, InventoryItemRepository inventoryItemRepository,
+            ModifierOptionRepository modifierOptionRepository, InventoryItemUnitGuard inventoryItemUnitGuard,
             ModifierOptionInventoryConfigRepository configRepository, ModifierOptionInventoryConfigStore configStore,
             ModifierOptionInventoryEffectRepository effectRepository, AuditPort auditPort) {
         this.organizationRepository = organizationRepository;
         this.modifierOptionRepository = modifierOptionRepository;
-        this.inventoryItemRepository = inventoryItemRepository;
+        this.inventoryItemUnitGuard = inventoryItemUnitGuard;
         this.configRepository = configRepository;
         this.configStore = configStore;
         this.effectRepository = effectRepository;
@@ -116,15 +116,7 @@ public class ModifierInventoryEffectsService {
     }
 
     private Map<UUID, InventoryItem> resolveItems(UUID organizationId, List<UUID> ids) {
-        if (ids.isEmpty()) return Map.of();
-        List<InventoryItem> found = inventoryItemRepository.findByOrganizationIdAndIdIn(organizationId, ids);
-        if (found.size() != ids.size()) {
-            throw notFound(ErrorCodes.INVENTORY_ITEM_NOT_FOUND,
-                    "One or more inventory items were not found in the organization");
-        }
-        Map<UUID, InventoryItem> items = new HashMap<>();
-        found.forEach(item -> items.put(item.getId(), item));
-        return items;
+        return inventoryItemUnitGuard.lockAndMarkReferenced(organizationId, ids);
     }
 
     private static void validateItemStatus(List<ModifierInventoryEffectData> desired,

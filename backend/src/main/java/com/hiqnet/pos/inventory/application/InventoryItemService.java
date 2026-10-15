@@ -102,6 +102,15 @@ public class InventoryItemService {
                     "The resource was modified concurrently; retry with fresh data");
         }
 
+        // El marcador se lee antes de mutar la entidad y con una proyección escalar
+        // (que no usa el Persistence Context, por si la unidad ya se marcó en esta
+        // misma transacción). Leerlo aquí, con la entidad aún limpia, evita el
+        // auto-flush intermedio que provocaría un incremento doble de @Version.
+        boolean unitLocked = command.baseUnit() != null
+                && command.baseUnit() != item.getBaseUnit()
+                && Boolean.TRUE.equals(
+                        inventoryItemRepository.findUnitLockedFlag(inventoryItemId, organizationId));
+
         List<String> changedFields = new ArrayList<>();
         if (command.name() != null) {
             String before = item.getName();
@@ -118,6 +127,12 @@ public class InventoryItemService {
             }
         }
         if (command.baseUnit() != null && command.baseUnit() != item.getBaseUnit()) {
+            if (unitLocked) {
+                throw new BusinessException(
+                        HttpStatus.CONFLICT,
+                        ErrorCodes.INVENTORY_ITEM_UNIT_LOCKED,
+                        "The base unit cannot be changed because the item has dependent inventory facts");
+            }
             item.updateBaseUnit(command.baseUnit());
             changedFields.add("baseUnit");
         }

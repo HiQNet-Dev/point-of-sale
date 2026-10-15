@@ -3,6 +3,7 @@ package com.hiqnet.pos.inventory.stock.application;
 import com.hiqnet.pos.branch.domain.Branch;
 import com.hiqnet.pos.branch.domain.BranchRepository;
 import com.hiqnet.pos.branch.domain.BranchStatus;
+import com.hiqnet.pos.inventory.application.InventoryItemUnitGuard;
 import com.hiqnet.pos.inventory.domain.InventoryBaseUnit;
 import com.hiqnet.pos.inventory.domain.InventoryItem;
 import com.hiqnet.pos.inventory.domain.InventoryItemRepository;
@@ -40,6 +41,7 @@ public class InventoryStockService {
 
     private final BranchRepository branchRepository;
     private final InventoryItemRepository inventoryItemRepository;
+    private final InventoryItemUnitGuard inventoryItemUnitGuard;
     private final BranchInventoryRepository branchInventoryRepository;
     private final InventoryMovementRepository movementRepository;
     private final JdbcTemplate jdbcTemplate;
@@ -48,12 +50,14 @@ public class InventoryStockService {
     public InventoryStockService(
             BranchRepository branchRepository,
             InventoryItemRepository inventoryItemRepository,
+            InventoryItemUnitGuard inventoryItemUnitGuard,
             BranchInventoryRepository branchInventoryRepository,
             InventoryMovementRepository movementRepository,
             JdbcTemplate jdbcTemplate,
             AuditPort auditPort) {
         this.branchRepository = branchRepository;
         this.inventoryItemRepository = inventoryItemRepository;
+        this.inventoryItemUnitGuard = inventoryItemUnitGuard;
         this.branchInventoryRepository = branchInventoryRepository;
         this.movementRepository = movementRepository;
         this.jdbcTemplate = jdbcTemplate;
@@ -163,7 +167,9 @@ public class InventoryStockService {
                     HttpStatus.CONFLICT, ErrorCodes.BRANCH_INACTIVE, "Branch must be active for inventory mutations");
         }
 
-        InventoryItem item = requireItem(organizationId, inventoryItemId);
+        InventoryItem item = inventoryItemUnitGuard
+                .lockAndMarkReferenced(organizationId, List.of(inventoryItemId))
+                .get(inventoryItemId);
         if (item.getStatus() != InventoryItemStatus.ACTIVE) {
             throw new BusinessException(
                     HttpStatus.CONFLICT, ErrorCodes.INVENTORY_ITEM_INACTIVE, "Inventory item must be active for stock mutations");
