@@ -16,7 +16,7 @@ este directorio es la capa humana que explica cómo usarlo.
   (activo en el perfil `dev`; **desactivado en producción** por
   deny-by-default, que responde `401 AUTHENTICATION_REQUIRED`). Ver
   `docs/04-security/authentication.md`.
-- Título: **`HiQNet POS API`**. Versión: la del artefacto (hoy `0.3.0`, tomada de
+- Título: **`HiQNet POS API`**. Versión: la del artefacto (hoy `0.4.0-SNAPSHOT`, tomada de
   `backend/pom.xml` vía filtrado Maven).
 - `/swagger-ui.html` redirige a `/swagger-ui/index.html`.
 - Para probar endpoints autenticados en Swagger: pulsar **Authorize**, pegar el
@@ -42,6 +42,7 @@ este directorio es la capa humana que explica cómo usarlo.
 | [`errors.md`](errors.md) | Forma del error y cómo manejarlo desde el Frontend. |
 | [`frontend-integration.md`](frontend-integration.md) | Guía práctica (base URL, decimales/moneda, concurrencia, checklist). |
 | `inventory-recipes.md` | Recipes y efectos de inventario (detalle de dominio, V18). |
+| [`purchasing-suppliers.md`](purchasing-suppliers.md) | Proveedores de Purchasing (V22): permisos, rutas, filtros, concurrencia y ejemplos. |
 
 ## Convenciones base
 
@@ -78,6 +79,7 @@ dominio. Rutas base relativas a `/api/v1`:
 | Branch Stock | `.../branches/{branchId}/inventory-items` | `inventory.stock.read` / `inventory.stock.adjust` |
 | Recipes | `/organizations/{organizationId}/products/{productId}/inventory-recipe` | `inventory.recipe.read` / `inventory.recipe.write` |
 | Inventory Effects | `/organizations/{organizationId}/modifier-options/{modifierOptionId}/inventory-effects` | `inventory.recipe.read` / `inventory.recipe.write` |
+| Purchasing Suppliers | `/organizations/{organizationId}/suppliers` | `purchasing.supplier.read` / `purchasing.supplier.write` |
 | Audit | `/organizations/{organizationId}/audit-events` | `audit.read` (solo lectura) |
 
 ## Ciclo de una petición

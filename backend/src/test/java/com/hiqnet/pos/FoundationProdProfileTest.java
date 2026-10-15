@@ -97,7 +97,7 @@ class FoundationProdProfileTest {
         Long organizations = jdbcTemplate.queryForObject("select count(*) from organizations", Long.class);
         assertThat(organizations).isZero();
         Long permissions = jdbcTemplate.queryForObject("select count(*) from permissions", Long.class);
-        assertThat(permissions).isEqualTo(51L);
+        assertThat(permissions).isEqualTo(53L);
         Boolean completed = jdbcTemplate.queryForObject(
                 "select completed_at is not null from installation_bootstrap where id = 1", Boolean.class);
         assertThat(completed).isFalse();

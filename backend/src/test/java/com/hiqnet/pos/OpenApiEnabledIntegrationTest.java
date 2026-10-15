@@ -32,6 +32,8 @@ class OpenApiEnabledIntegrationTest {
     private static final String INVENTORY_ITEMS_PATH =
             "/api/v1/organizations/{organizationId}/branches/{branchId}/inventory-items";
 
+    private static final String SUPPLIERS_PATH = "/api/v1/organizations/{organizationId}/suppliers";
+
     private static final String CHECKOUT_PATH =
             "/api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}"
                     + "/cash-shifts/{cashShiftId}/sales/{saleId}/checkout";
@@ -84,6 +86,8 @@ class OpenApiEnabledIntegrationTest {
         assertThat(paths.path("/api/v1/auth/login").has("post")).isTrue();
         assertThat(paths.has(INVENTORY_ITEMS_PATH)).isTrue();
         assertThat(paths.path(INVENTORY_ITEMS_PATH).has("get")).isTrue();
+        assertThat(paths.has(SUPPLIERS_PATH)).isTrue();
+        assertThat(paths.path(SUPPLIERS_PATH).has("post")).isTrue();
         assertThat(paths.has(CHECKOUT_PATH)).isTrue();
         assertThat(paths.path(CHECKOUT_PATH).has("post")).isTrue();
     }
@@ -145,6 +149,9 @@ class OpenApiEnabledIntegrationTest {
                 .path("responses");
         assertApiErrorRef(usersResponses.path("409"));
         assertApiErrorRef(usersResponses.path("403"));
+        JsonNode suppliersResponses = paths.path(SUPPLIERS_PATH).path("post").path("responses");
+        assertApiErrorRef(suppliersResponses.path("409"));
+        assertApiErrorRef(suppliersResponses.path("403"));
     }
 
     private static void assertApiErrorRef(JsonNode response) {

@@ -11,7 +11,7 @@ User
   ↓ user_organization_roles (organization_id, user_id, role_id)     [ORGANIZATION scope]
 Role  (per Organization; code slug único e inmutable; status ACTIVE|INACTIVE)
   ↓ role_permissions (role_id, permission_code)
-Permission (catálogo, sembrado por V5/V6/V7/V9/V10/V11/V12/V13/V14/V15/V16/V17/V18; sin CRUD de cliente)
+Permission (catálogo, sembrado por V5/V6/V7/V9/V10/V11/V12/V13/V14/V15/V16/V17/V18/V22; sin CRUD de cliente)
 
 User
   ↓ branch_memberships (organization_id, branch_id, user_id, status)  [BRANCH scope]
@@ -20,7 +20,7 @@ Role   (mismas definiciones de roles; sin modelo BranchRole separado)
 ```
 
 - **Permissions**: catálogo del SISTEMA (`permissions.code` PK natural).
-  Se crean únicamente vía Flyway (`V5`/`V6`/`V7`/`V9`/`V10`/`V11`/`V12`/`V13`/`V14`/`V15`/`V16`/`V17`/`V18`). Orden `code ASC`.
+  Se crean únicamente vía Flyway (`V5`/`V6`/`V7`/`V9`/`V10`/`V11`/`V12`/`V13`/`V14`/`V15`/`V16`/`V17`/`V18`/`V22`). Orden `code ASC`.
 - **Role**: pertenece a una organización; `code` normalizado (trim+lowercase,
   slug) único por organización e inmutable; `name` editable; sin DELETE
   (baja = `status INACTIVE`).
@@ -114,6 +114,9 @@ avala en una sola `EXISTS` (`BranchMembershipRoleRepository`
 | GET /organizations/{id}/branches/{branchId}/pos/catalog/categories | `pos.catalog.read` (branch context; Branch ACTIVE) |
 | GET /organizations/{id}/branches/{branchId}/pos/catalog/products | `pos.catalog.read` (branch context; Product ACTIVE-only) |
 | GET /organizations/{id}/branches/{branchId}/pos/catalog/products/{productId}/configuration | `pos.catalog.read` (branch context; configuration and options batched) |
+| GET /organizations/{id}/suppliers[/{supplierId}] | `purchasing.supplier.read` (organization scope) |
+| POST /organizations/{id}/suppliers | `purchasing.supplier.write` (organization scope) |
+| PATCH /organizations/{id}/suppliers/{supplierId} | `purchasing.supplier.write` (organization scope) |
 | GET /organizations/{id}/inventory-items[/{inventoryItemId}] | `inventory.item.read` (organization scope) |
 | POST /organizations/{id}/inventory-items | `inventory.item.write` (organization scope) |
 | PATCH /organizations/{id}/inventory-items/{inventoryItemId} | `inventory.item.write` (organization scope) |
@@ -168,13 +171,14 @@ el mismo JWT (ADR-0005). Los access JWTs no se blacklistean (stateless, 10m).
 - Aislamiento de recurso (id ajeno con permiso válido en la org de la ruta) →
   **404** (`USER_NOT_FOUND` / `BRANCH_NOT_FOUND` / `ROLE_NOT_FOUND` /
   `CATEGORY_NOT_FOUND` / `PRODUCT_NOT_FOUND` / `MODIFIER_GROUP_NOT_FOUND` /
-  `MODIFIER_OPTION_NOT_FOUND` / `CASH_REGISTER_NOT_FOUND`).
+  `MODIFIER_OPTION_NOT_FOUND` / `CASH_REGISTER_NOT_FOUND` /
+  `SUPPLIER_NOT_FOUND`).
 
 ## Optimistic concurrency HTTP
 
 Promovido de decisión pendiente a contrato v0.1.x: **`expectedVersion`**
 (requerido, `>= 0`) en PATCH de Organization, Branch, User, Role, Membership,
-Category, Product, ModifierGroup, ModifierOption y CashRegister, y en los `PUT` de
+Category, Product, ModifierGroup, ModifierOption, CashRegister y Supplier, y en los `PUT` de
 reemplazo producto↔modifier-group, Product Inventory Recipe y ModifierOption Inventory Effects. El servidor
 compara con `@Version`; mismatch → `409 CONCURRENT_MODIFICATION`. Sin ETag /
 If-Match todavía.
@@ -223,6 +227,19 @@ existentes; bootstrap nuevo recibe el catálogo completo.
   ACTIVE), para que un recurso ya abierto siga siendo recuperable. `open` y las
   escrituras de Cash Register siguen exigiendo la branch ACTIVE.
 - **Recovery/backdoor** para el administrador destruido: no (operativo/futuro).
+
+## Permisos de proveedores Purchasing (V22)
+
+`purchasing.supplier.read` y `purchasing.supplier.write` son permisos
+organization-scoped independientes. V22 añade únicamente estos dos códigos: el
+catálogo pasa de 51 a 53 y los grants existentes permanecen en 51; ningún rol
+recibe acceso de forma automática. El bootstrap seguro nuevo concede los 53
+permisos del catálogo. No se agregan claims JWT ni permisos branch-scoped.
+
+- GET `/organizations/{id}/suppliers` y GET
+  `/organizations/{id}/suppliers/{supplierId}`: `purchasing.supplier.read`.
+- POST `/organizations/{id}/suppliers` y PATCH
+  `/organizations/{id}/suppliers/{supplierId}`: `purchasing.supplier.write`.
 
 ## Inventory recipe permissions (V18)
 

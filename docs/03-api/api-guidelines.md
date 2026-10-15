@@ -64,6 +64,11 @@ GET   /api/v1/organizations/{organizationId}/products                (paginado, 
 GET   /api/v1/organizations/{organizationId}/products/{productId}
 PATCH /api/v1/organizations/{organizationId}/products/{productId}
 
+POST  /api/v1/organizations/{organizationId}/suppliers
+GET   /api/v1/organizations/{organizationId}/suppliers          (paginado, ?page&size&q&status)
+GET   /api/v1/organizations/{organizationId}/suppliers/{supplierId}
+PATCH /api/v1/organizations/{organizationId}/suppliers/{supplierId}
+
 POST  /api/v1/organizations/{organizationId}/inventory-items
 GET   /api/v1/organizations/{organizationId}/inventory-items    (paginado, ?page&size&q&status&baseUnit)
 GET   /api/v1/organizations/{organizationId}/inventory-items/{inventoryItemId}
@@ -139,8 +144,8 @@ concurrente), 500 (interno).
 ## PATCH (parcial, no PUT disfrazado)
 
 - Solo se actualizan los campos presentes (no nulos) en el body.
-- `code` es **inmutable** tras la creación, tanto en `organizations` como en
-  `branches` (no se expone en PATCH): evita romper futuras referencias y URLs
+- `code` es **inmutable** tras la creación en `organizations`, `branches` y
+  `suppliers` (no se expone en PATCH): evita romper futuras referencias y URLs
   lógicas.
 - `status` permite `ACTIVE`/`INACTIVE` (activar/desactivar).
 - `branch.timezone` tiene semántica tri-estado explícita

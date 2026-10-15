@@ -24,7 +24,7 @@ implementado** hasta que llegue su milestone (ver
 | `payment` | Pagos inmutables de checkout | CASH/CARD, split tender, tendered/change, historical reads | **implementado** |
 | `cash` | Turnos de caja y arqueos | shifts, arqueos (cash registers viven en `cashregister`) | **no implementado** |
 | `inventory` | Definiciones y consumo teórico de inventario; existencias operativas por sucursal | `InventoryItem` organization-owned (V16); Branch balances and immutable movements (V17); Product recipes and ModifierOption effects organization-owned (V18) | **Inventory foundation in progress** |
-| `purchasing` | Compras | suppliers, órdenes, recepción | **no implementado** |
+| `purchasing` | Compras | suppliers Organization-owned (`V22`), órdenes y recepción | **parcial: Suppliers implementado; órdenes y recepción pendientes** |
 | `expenses` | Gastos del negocio | expenses, categorías | **no implementado** |
 | `reporting` | Reportes | ventas, inventario, caja | **no implementado** |
 | `shared` | Utilidades transversales | config, error (`ApiError`, `BusinessException`, `ErrorCodes`) | **parcial (fundación)** |
@@ -158,6 +158,12 @@ com.hiqnet.pos.<modulo>[.domain|.application|.infrastructure|.api]
   `organization_id` de la branch) y `shared`; el recurso es **branch-owned**.
 - `cashshift` usa `domain` (`CashShift`, `CashShiftStatus` + `CashShiftRepository`), `application` (`CashShiftService`, `OpenSalesForCashShiftPort`) y `api` (`CashShiftController` + DTOs). `sales` implementa el port de guard para evitar que cashshift dependa de un repositorio concreto de Sales.
 - `sales` usa `domain` (`Sale`, `SaleItem`, `SaleItemModifier`, estados y repositorios), `application` (`SaleService`, adaptador del guard de turno) y `api` (`SaleController` y DTOs). Depende de catálogo para cotizar snapshots y de los recursos operacionales para scope; create, checkout and close share the scoped CashShift coordination lock (ADR-0007/0008), while regular mutations retain `Sale.version` optimistic. `payment` contains only immutable Payment facts/repository and response DTO; it has no independent write API.
+- `purchasing` usa `domain` (`Supplier`, `SupplierStatus` + `SupplierRepository`
+  con `JpaSpecificationExecutor`), `application` (`SupplierService`,
+  `UpdateSupplierCommand`) y `api` (`SupplierController` + DTOs). Sin
+  `infrastructure`. `Supplier` es **organization-owned** (no branch-owned);
+  dependencia de lectura `purchasing -> organization` y `shared`. Órdenes y
+  recepciones siguen pendientes (ver ADR-0015).
 - Dependencia entre módulos (lectura): `branch` usa
   `OrganizationRepository` de `organization` para validar existencia y
   resolución de timezone; `auth` usa `User`/`UserRepository` de `users` y
