@@ -6,7 +6,8 @@ pequeños) y **retail ligero**.
 
 > **Estado:** HiQNet POS está en desarrollo activo y todavía **no es una release
 > comercial estable**. La release técnica privada más reciente es **`v0.3.0`
-> (Inventory)**, versión actual `0.3.0` (ver `VERSION`); el milestone previo es
+> (Inventory)**; la versión en desarrollo es `0.4.0-SNAPSHOT` (ver `VERSION`) y
+> el milestone previo es
 > **`v0.2.0` (POS Core)**. Inventory incluye catálogo de artículos y stock por
 > sucursal con ledger, apertura y ajustes, recipes y efectos de modificadores, UI
 > de administración (incluida la política de stock negativo a nivel de
@@ -21,7 +22,7 @@ La fundación actual ya es operativa como backend administrativo seguro:
 - **Organization / Branch / Users** — administración completa scoped por organización.
 - **Authentication** — login, refresh rotativo (30d, familia 30d), logout en
   familia, `logout-all`, `/me`; JWT identity-only, PostgreSQL autoritativa.
-- **Roles / Permissions / RBAC** — catálogo de 51 permisos sembrado por Flyway,
+- **Roles / Permissions / RBAC** — catálogo de 53 permisos sembrado por Flyway,
   roles por organización, assignments, `@PreAuthorize` database-authoritative.
 - **Branch Memberships** — usuarios por sucursal con roles branch-scoped y
   `hasBranchPermission` (org-wide UNION membership ACTIVE de esa branch).
@@ -42,7 +43,15 @@ y `docs/04-security/secure-bootstrap.md`. El roadmap completo en
 - Política de stock negativo por organización (`STRICT` / `ALLOW_NEGATIVE`) y consumo atómico de inventario en checkout (`SALE_CONSUMPTION`).
 - UI de administración de inventario (items, stock por sucursal, recipes, modifier effects y settings) y E2E integrado de Inventory (E2E-D).
 
-Esta release no incluye Purchasing, Expenses, Reports, returns/reversal ni hardware.
+La release `v0.3.0` no incluye Purchasing, Expenses, Reports, returns/reversal ni hardware.
+
+## Purchasing en desarrollo (v0.4.x)
+
+- Suppliers organization-owned (`V22`): código comercial inmutable y único,
+  datos de contacto opcionales, baja lógica `INACTIVE`, RBAC y auditoría
+  transaccional.
+- Órdenes de compra, recepciones, movimientos de inventario, costeo, cuentas por
+  pagar y pagos a proveedores siguen pendientes.
 
 ## Filosofía del producto
 

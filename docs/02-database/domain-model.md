@@ -5,9 +5,10 @@ administración), `RefreshSession`, RBAC, memberships, auditoría, bootstrap, el
 catálogo POS, Sales Foundation y Payments + Atomic Checkout están implementados
 (V1–V15). `InventoryItem` organization-owned (V16), Branch stock y movements
 (V17), recipes y modifier effects (V18) y snapshots + consumo de checkout
-(V19–V21) están implementados.
+(V19–V21) están implementados. `Supplier` organization-owned (V22) es el primer
+incremento de Purchasing.
 
-Versión de esta release: `0.3.0`.
+Versión en desarrollo: `0.4.0-SNAPSHOT`.
 
 ## Jerarquía principal
 
@@ -19,6 +20,7 @@ Organization (organización / empresa)  ✔ implementado
  ├── AuditEvent (historial append-only)  ✔ implementado (V7)
  ├── Category / Product (catálogo)     ✔ implementado (V9)
  ├── InventoryItem (definición)         ✔ implementado (V16), organization-owned
+ ├── Supplier (proveedor)               ✔ implementado (V22), organization-owned
  ├── ModifierGroup / ModifierOption (modifiers)  ✔ implementado (V10)
  │    └── ProductModifierGroup (producto ↔ grupo, ordenado)  ✔ implementado (V10)
  └── Branch (sucursal)                 ✔ implementado
@@ -60,7 +62,8 @@ Organization (organización / empresa)  ✔ implementado
 | Recipe | **organización** | Producto → ingredientes + cantidades |
 | Stock | **sucursal** | Existencias por ingrediente/producto en cada branch |
 | Sale / SaleLine / Payment | sucursal | Dinero siempre en `BigDecimal` |
-| Supplier / PurchaseOrder | organización | Compras (futuro) |
+| Supplier | organización | **implementado (`V22`)** — datos maestros organization-owned; `code` slug único por org e inmutable; contacto/razón social/identificador fiscal opcionales; `status ACTIVE/INACTIVE` sin DELETE; `@Version`; ver `docs/02-database/purchasing-suppliers-model.md` |
+| PurchaseOrder / PurchaseReceipt | organización+sucursal | Compras (futuro) |
 | Expense | sucursal u organización | Gastos (futuro) |
 
 ## Regla clave (repetida)
@@ -94,6 +97,8 @@ operación pasa por `organization_id` (`findByIdAndOrganizationId`).
 - Organization 1—N ModifierGroup ✔ (`V10`); ModifierGroup 1—N ModifierOption ✔
   (`V10`); Product N—M ModifierGroup (vía `product_modifier_groups`, ordenada) ✔
   (`V10`).
+- Organization 1—N Supplier ✔ (`V22`); un mismo proveedor puede ser referenciado
+  por órdenes de cualquier Branch de la organización.
 - Branch 1—N CashRegister ✔ (`V11`); CashRegister 1—N CashShift ✔ (`V12`).
 - User 1—N RefreshSession ✔; User N—M Role (vía `user_organization_roles`, ✔).
 - Branch 1—N BranchMembership ✔ (`V6`); BranchMembership N—M Role (vía

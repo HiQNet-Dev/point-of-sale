@@ -28,6 +28,7 @@ public final class ConstraintTranslator {
     public static final String MODIFIER_GROUPS_ORGANIZATION_CODE_UNIQUE = "modifier_groups_organization_code_unique";
     public static final String MODIFIER_OPTIONS_GROUP_CODE_UNIQUE = "modifier_options_group_code_unique";
     public static final String INVENTORY_ITEMS_ORGANIZATION_CODE_UNIQUE = "inventory_items_organization_code_unique";
+    public static final String SUPPLIERS_ORGANIZATION_CODE_UNIQUE = "suppliers_organization_code_unique";
     public static final String CASH_REGISTERS_BRANCH_CODE_UNIQUE = "cash_registers_branch_code_unique";
     public static final String CASH_SHIFTS_ONE_OPEN_PER_REGISTER = "cash_shifts_one_open_per_register";
 
@@ -91,6 +92,10 @@ public final class ConstraintTranslator {
                     HttpStatus.CONFLICT,
                     ErrorCodes.INVENTORY_ITEM_CODE_ALREADY_EXISTS,
                     "An inventory item with this code already exists in the organization");
+            case SUPPLIERS_ORGANIZATION_CODE_UNIQUE -> new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.SUPPLIER_CODE_ALREADY_EXISTS,
+                    "A supplier with this code already exists in the organization");
             case CASH_REGISTERS_BRANCH_CODE_UNIQUE -> new BusinessException(
                     HttpStatus.CONFLICT,
                     ErrorCodes.CASH_REGISTER_CODE_ALREADY_EXISTS,

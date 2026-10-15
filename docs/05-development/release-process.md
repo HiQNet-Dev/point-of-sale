@@ -64,9 +64,9 @@ comerciales** correspondientes (EULA/acuerdos de servicio, futuros).
    `backend/target/hiqnet-pos-backend-0.1.0.jar` del build validado si el
    workflow de release lo justifica. No existe pipeline de imágenes OCI, npm
    package ni instaladores todavía (nada que inventar).
-8. **Post-release**: cuando HiQNet lo defina, abrir el ciclo siguiente
-   (`0.4.0-SNAPSHOT` en `VERSION`, `pom.xml` y `package.json`) después de
-   publicar `v0.3.0`. La sincronización `dev = main` posterior no cambia la versión.
+8. **Post-release**: el ciclo posterior a `v0.3.0` ya está abierto como
+   `0.4.0-SNAPSHOT` en `VERSION`, `pom.xml` y `package.json`. La sincronización
+   `dev = main` posterior no cambia la versión.
 
 ## Rollback / corrección
 
@@ -78,8 +78,8 @@ comerciales** correspondientes (EULA/acuerdos de servicio, futuros).
 
 ## Hoy
 
-- **Última release: `v0.3.0`** (Inventory, release técnica privada desde el corte
-  de `dev`; `main` y `dev` quedan sincronizadas en el mismo commit).
+- **Última release: `v0.3.0`** (Inventory, release técnica privada). El ciclo
+  de desarrollo actual es **`0.4.0-SNAPSHOT`** para Purchasing.
 - Producto **no comercialmente estable**; sin garantías entre snapshots.
 - **Distribución legal del repositorio resuelta**: propietario / All Rights
   Reserved, `LICENSE` presente, repo privado (no open-source).
