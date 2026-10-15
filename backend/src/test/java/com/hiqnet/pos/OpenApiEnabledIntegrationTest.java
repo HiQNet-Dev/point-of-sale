@@ -5,6 +5,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +35,9 @@ class OpenApiEnabledIntegrationTest {
             "/api/v1/organizations/{organizationId}/branches/{branchId}/inventory-items";
 
     private static final String SUPPLIERS_PATH = "/api/v1/organizations/{organizationId}/suppliers";
+
+    private static final String PURCHASE_ORDERS_PATH =
+            "/api/v1/organizations/{organizationId}/branches/{branchId}/purchase-orders";
 
     private static final String CHECKOUT_PATH =
             "/api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}"
@@ -88,6 +93,12 @@ class OpenApiEnabledIntegrationTest {
         assertThat(paths.path(INVENTORY_ITEMS_PATH).has("get")).isTrue();
         assertThat(paths.has(SUPPLIERS_PATH)).isTrue();
         assertThat(paths.path(SUPPLIERS_PATH).has("post")).isTrue();
+        assertThat(paths.has(PURCHASE_ORDERS_PATH)).isTrue();
+        assertThat(paths.path(PURCHASE_ORDERS_PATH).has("post")).isTrue();
+        assertThat(paths.path(PURCHASE_ORDERS_PATH + "/{purchaseOrderId}/lines").has("post")).isTrue();
+        assertThat(paths.path(PURCHASE_ORDERS_PATH + "/{purchaseOrderId}/lines/{purchaseOrderLineId}")
+                        .has("patch"))
+                .isTrue();
         assertThat(paths.has(CHECKOUT_PATH)).isTrue();
         assertThat(paths.path(CHECKOUT_PATH).has("post")).isTrue();
     }
@@ -111,6 +122,31 @@ class OpenApiEnabledIntegrationTest {
                                 .path("type")
                                 .asText())
                 .isEqualTo("string");
+        assertNullableDecimalString(
+                schemas.path("UpdatePurchaseOrderLineRequest").path("properties").path("unitCost"));
+        assertNullableDecimalString(
+                schemas.path("CreatePurchaseOrderLineRequest").path("properties").path("unitCost"));
+        assertNullableDecimalString(
+                schemas.path("PurchaseOrderLineResponse").path("properties").path("unitCost"));
+        List<String> updateLineRequired = new ArrayList<>();
+        schemas.path("UpdatePurchaseOrderLineRequest")
+                .path("required")
+                .forEach(node -> updateLineRequired.add(node.asText()));
+        assertThat(updateLineRequired).doesNotContain("unitCost");
+    }
+
+    /**
+     * Un costo unitario opcional se documenta como la unión de tipos de OpenAPI 3.1
+     * {@code ["string", "null"]}, de modo que el contrato permita formalmente el
+     * {@code null} que limpia el valor.
+     */
+    private static void assertNullableDecimalString(JsonNode schema) {
+        assertThat(schema.path("type").isArray())
+                .as("un decimal nullable debe declarar la unión de tipos de OpenAPI 3.1")
+                .isTrue();
+        List<String> types = new ArrayList<>();
+        schema.path("type").forEach(node -> types.add(node.asText()));
+        assertThat(types).containsExactlyInAnyOrder("string", "null");
     }
 
     @Test
@@ -152,6 +188,9 @@ class OpenApiEnabledIntegrationTest {
         JsonNode suppliersResponses = paths.path(SUPPLIERS_PATH).path("post").path("responses");
         assertApiErrorRef(suppliersResponses.path("409"));
         assertApiErrorRef(suppliersResponses.path("403"));
+        JsonNode orderResponses = paths.path(PURCHASE_ORDERS_PATH).path("post").path("responses");
+        assertApiErrorRef(orderResponses.path("409"));
+        assertApiErrorRef(orderResponses.path("403"));
     }
 
     private static void assertApiErrorRef(JsonNode response) {

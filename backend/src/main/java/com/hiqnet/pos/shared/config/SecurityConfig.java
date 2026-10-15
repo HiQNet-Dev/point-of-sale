@@ -116,6 +116,13 @@ public class SecurityConfig {
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/suppliers").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/suppliers/*").authenticated();
                     auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*/suppliers/*").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/purchase-orders").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/purchase-orders").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/purchase-orders/*").authenticated();
+                    auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*/branches/*/purchase-orders/*").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/purchase-orders/*/lines").authenticated();
+                    auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*/branches/*/purchase-orders/*/lines/*").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/purchase-orders/*/lines/*/remove").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/inventory-items").authenticated();
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/inventory-items").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/inventory-items/*").authenticated();

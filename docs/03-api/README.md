@@ -43,6 +43,7 @@ este directorio es la capa humana que explica cómo usarlo.
 | [`frontend-integration.md`](frontend-integration.md) | Guía práctica (base URL, decimales/moneda, concurrencia, checklist). |
 | `inventory-recipes.md` | Recipes y efectos de inventario (detalle de dominio, V18). |
 | [`purchasing-suppliers.md`](purchasing-suppliers.md) | Proveedores de Purchasing (V22): permisos, rutas, filtros, concurrencia y ejemplos. |
+| [`purchasing-purchase-orders.md`](purchasing-purchase-orders.md) | Órdenes de compra (V23): borradores, partidas, snapshots, permisos, concurrencia y ejemplos. |
 
 ## Convenciones base
 
@@ -80,6 +81,7 @@ dominio. Rutas base relativas a `/api/v1`:
 | Recipes | `/organizations/{organizationId}/products/{productId}/inventory-recipe` | `inventory.recipe.read` / `inventory.recipe.write` |
 | Inventory Effects | `/organizations/{organizationId}/modifier-options/{modifierOptionId}/inventory-effects` | `inventory.recipe.read` / `inventory.recipe.write` |
 | Purchasing Suppliers | `/organizations/{organizationId}/suppliers` | `purchasing.supplier.read` / `purchasing.supplier.write` |
+| Purchasing Purchase Orders | `/organizations/{organizationId}/branches/{branchId}/purchase-orders` | `purchasing.order.read` / `purchasing.order.write` |
 | Audit | `/organizations/{organizationId}/audit-events` | `audit.read` (solo lectura) |
 
 ## Ciclo de una petición

@@ -69,6 +69,14 @@ GET   /api/v1/organizations/{organizationId}/suppliers          (paginado, ?page
 GET   /api/v1/organizations/{organizationId}/suppliers/{supplierId}
 PATCH /api/v1/organizations/{organizationId}/suppliers/{supplierId}
 
+POST  /api/v1/organizations/{organizationId}/branches/{branchId}/purchase-orders
+GET   /api/v1/organizations/{organizationId}/branches/{branchId}/purchase-orders          (paginado, ?page&size&q&status&supplierId)
+GET   /api/v1/organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}
+PATCH /api/v1/organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}
+POST  /api/v1/organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}/lines
+PATCH /api/v1/organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}/lines/{purchaseOrderLineId}
+POST  /api/v1/organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}/lines/{purchaseOrderLineId}/remove
+
 POST  /api/v1/organizations/{organizationId}/inventory-items
 GET   /api/v1/organizations/{organizationId}/inventory-items    (paginado, ?page&size&q&status&baseUnit)
 GET   /api/v1/organizations/{organizationId}/inventory-items/{inventoryItemId}
@@ -144,9 +152,9 @@ concurrente), 500 (interno).
 ## PATCH (parcial, no PUT disfrazado)
 
 - Solo se actualizan los campos presentes (no nulos) en el body.
-- `code` es **inmutable** tras la creación en `organizations`, `branches` y
-  `suppliers` (no se expone en PATCH): evita romper futuras referencias y URLs
-  lógicas.
+- `code` es **inmutable** tras la creación en `organizations`, `branches`,
+  `suppliers` y `purchase-orders` (no se expone en PATCH): evita romper futuras
+  referencias y URLs lógicas.
 - `status` permite `ACTIVE`/`INACTIVE` (activar/desactivar).
 - `branch.timezone` tiene semántica tri-estado explícita
   (`PatchField` en `shared.api`): omitir la clave = sin cambios;

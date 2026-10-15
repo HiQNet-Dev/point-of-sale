@@ -1,0 +1,465 @@
+package com.hiqnet.pos.purchasing.application;
+
+import com.hiqnet.pos.branch.domain.Branch;
+import com.hiqnet.pos.branch.domain.BranchRepository;
+import com.hiqnet.pos.branch.domain.BranchStatus;
+import com.hiqnet.pos.inventory.domain.InventoryItem;
+import com.hiqnet.pos.inventory.domain.InventoryItemRepository;
+import com.hiqnet.pos.inventory.domain.InventoryItemStatus;
+import com.hiqnet.pos.organization.domain.Organization;
+import com.hiqnet.pos.organization.domain.OrganizationRepository;
+import com.hiqnet.pos.purchasing.domain.PurchaseOrder;
+import com.hiqnet.pos.purchasing.domain.PurchaseOrderLine;
+import com.hiqnet.pos.purchasing.domain.PurchaseOrderLineRepository;
+import com.hiqnet.pos.purchasing.domain.PurchaseOrderRepository;
+import com.hiqnet.pos.purchasing.domain.PurchaseOrderStatus;
+import com.hiqnet.pos.purchasing.domain.Supplier;
+import com.hiqnet.pos.purchasing.domain.SupplierRepository;
+import com.hiqnet.pos.purchasing.domain.SupplierStatus;
+import com.hiqnet.pos.shared.audit.AuditMetadata;
+import com.hiqnet.pos.shared.audit.AuditPort;
+import com.hiqnet.pos.shared.audit.AuditRecord;
+import com.hiqnet.pos.shared.error.BusinessException;
+import com.hiqnet.pos.shared.error.ErrorCodes;
+import jakarta.persistence.criteria.Predicate;
+import java.time.Clock;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Casos de uso de la administración de órdenes de compra en borrador.
+ *
+ * <p>Una orden es un agregado cuyo punto de sincronización es la fila de
+ * cabecera: toda mutación de cabecera o de partidas toma primero el bloqueo
+ * pesimista de la cabecera ({@code SELECT ... FOR UPDATE}), valida la
+ * {@code expectedVersion} recibida y deja el agregado sucio para que
+ * {@code @Version} incremente la versión al hacer flush. Así dos escrituras
+ * concurrentes sobre la misma orden se serializan (la segunda observa la versión
+ * nueva y responde {@code 409 CONCURRENT_MODIFICATION}) y no se pierde ninguna
+ * actualización. El orden de adquisición de bloqueos es siempre
+ * {@code PurchaseOrder → PurchaseOrderLine → (futuro) BranchInventory}, igual que
+ * la convención de Sales.</p>
+ *
+ * <p>Esta fundación no implementa {@code issue} ni {@code cancel} (PR 2.2) y
+ * nunca escribe movimientos de inventario.</p>
+ */
+@Service
+public class PurchaseOrderService {
+
+    private final PurchaseOrderRepository purchaseOrderRepository;
+    private final PurchaseOrderLineRepository purchaseOrderLineRepository;
+    private final OrganizationRepository organizationRepository;
+    private final BranchRepository branchRepository;
+    private final SupplierRepository supplierRepository;
+    private final InventoryItemRepository inventoryItemRepository;
+    private final AuditPort auditPort;
+    private final Clock clock;
+
+    public PurchaseOrderService(
+            PurchaseOrderRepository purchaseOrderRepository,
+            PurchaseOrderLineRepository purchaseOrderLineRepository,
+            OrganizationRepository organizationRepository,
+            BranchRepository branchRepository,
+            SupplierRepository supplierRepository,
+            InventoryItemRepository inventoryItemRepository,
+            AuditPort auditPort,
+            Clock clock) {
+        this.purchaseOrderRepository = purchaseOrderRepository;
+        this.purchaseOrderLineRepository = purchaseOrderLineRepository;
+        this.organizationRepository = organizationRepository;
+        this.branchRepository = branchRepository;
+        this.supplierRepository = supplierRepository;
+        this.inventoryItemRepository = inventoryItemRepository;
+        this.auditPort = auditPort;
+        this.clock = clock;
+    }
+
+    /**
+     * Crea una orden en borrador con la moneda de la organización y los snapshots del proveedor.
+     *
+     * @param organizationId organización propietaria
+     * @param branchId sucursal de destino, dentro de la organización
+     * @param code código comercial del borrador
+     * @param supplierId proveedor activo de la misma organización
+     * @param actorUserId usuario autenticado que crea la orden
+     * @return orden creada con su detalle (sin partidas)
+     * @throws BusinessException si la organización, sucursal o proveedor no existen en el ámbito,
+     *         la sucursal o el proveedor están inactivos, o el código ya está ocupado
+     */
+    @Transactional
+    public PurchaseOrderDetail create(
+            UUID organizationId, UUID branchId, String code, UUID supplierId, UUID actorUserId) {
+        Organization organization = requireOrganization(organizationId);
+        Branch branch = requireBranch(organizationId, branchId);
+        requireActiveBranch(branch);
+        Supplier supplier = requireSupplier(organizationId, supplierId);
+        requireActiveSupplier(supplier);
+
+        String normalizedCode = code == null ? null : code.trim().toLowerCase(Locale.ROOT);
+        if (normalizedCode != null
+                && purchaseOrderRepository.existsByOrganizationIdAndCode(organizationId, normalizedCode)) {
+            throw duplicateCode();
+        }
+        PurchaseOrder order = PurchaseOrder.create(
+                organization, branchId, supplier, normalizedCode, organization.getCurrency(), actorUserId);
+        PurchaseOrder saved = purchaseOrderRepository.saveAndFlush(order);
+        auditPort.record(AuditRecord.ofBranch(
+                organizationId,
+                branchId,
+                "purchase_order.created",
+                "purchase_order",
+                saved.getId(),
+                AuditMetadata.of("code", saved.getCode())));
+        return detail(saved);
+    }
+
+    /**
+     * Obtiene una orden con sus partidas dentro del ámbito organización-sucursal.
+     *
+     * @param organizationId organización solicitada
+     * @param branchId sucursal de destino de la ruta
+     * @param purchaseOrderId identificador de la orden
+     * @return orden con sus partidas
+     * @throws BusinessException si la organización, la sucursal o la orden no existen en el ámbito
+     */
+    @Transactional(readOnly = true)
+    public PurchaseOrderDetail get(UUID organizationId, UUID branchId, UUID purchaseOrderId) {
+        requireOrganization(organizationId);
+        requireBranch(organizationId, branchId);
+        PurchaseOrder order = requireOrder(organizationId, branchId, purchaseOrderId);
+        return detail(order);
+    }
+
+    /**
+     * Lista órdenes de la sucursal con filtros opcionales y paginación.
+     *
+     * @param organizationId organización solicitada
+     * @param branchId sucursal de destino de la ruta
+     * @param status filtro de estado opcional
+     * @param supplierId filtro de proveedor opcional
+     * @param q texto opcional que busca en el código comercial
+     * @param pageable página y orden fijados por el controlador
+     * @return página de órdenes scoped
+     * @throws BusinessException si la organización o la sucursal no existen en el ámbito
+     */
+    @Transactional(readOnly = true)
+    public Page<PurchaseOrder> list(
+            UUID organizationId,
+            UUID branchId,
+            PurchaseOrderStatus status,
+            UUID supplierId,
+            String q,
+            Pageable pageable) {
+        requireOrganization(organizationId);
+        requireBranch(organizationId, branchId);
+        return purchaseOrderRepository.findAll(
+                specification(organizationId, branchId, status, supplierId, q), pageable);
+    }
+
+    /**
+     * Actualiza la cabecera editable de un borrador.
+     *
+     * <p>Una actualización sin cambios reales es idempotente: no incrementa la
+     * versión ni escribe auditoría.</p>
+     *
+     * @param organizationId organización propietaria
+     * @param branchId sucursal de destino de la ruta
+     * @param purchaseOrderId identificador de la orden
+     * @param command nuevo proveedor opcional y versión esperada
+     * @return orden actualizada
+     * @throws BusinessException si la orden no existe, no está en DRAFT, la versión es obsoleta,
+     *         el proveedor no existe en la organización o está inactivo
+     */
+    @Transactional
+    public PurchaseOrderDetail update(
+            UUID organizationId,
+            UUID branchId,
+            UUID purchaseOrderId,
+            UpdatePurchaseOrderCommand command) {
+        PurchaseOrder order = lockOrder(organizationId, branchId, purchaseOrderId);
+        order.requireDraft();
+        requireExpectedVersion(order, command.expectedVersion());
+
+        List<String> changedFields = new ArrayList<>();
+        if (command.supplierId() != null
+                && !Objects.equals(order.getSupplier().getId(), command.supplierId())) {
+            Supplier supplier = requireSupplier(organizationId, command.supplierId());
+            requireActiveSupplier(supplier);
+            order.changeSupplier(supplier, clock.instant());
+            changedFields.add("supplierId");
+        }
+        if (changedFields.isEmpty()) {
+            return detail(order);
+        }
+        PurchaseOrder saved = purchaseOrderRepository.saveAndFlush(order);
+        auditPort.record(AuditRecord.ofBranch(
+                organizationId,
+                branchId,
+                "purchase_order.updated",
+                "purchase_order",
+                saved.getId(),
+                AuditMetadata.of("changedFields", changedFields)));
+        return detail(saved);
+    }
+
+    /**
+     * Agrega una partida a un borrador, capturando los snapshots del artículo.
+     *
+     * @param organizationId organización propietaria
+     * @param branchId sucursal de destino de la ruta
+     * @param purchaseOrderId identificador de la orden
+     * @param command artículo, cantidad, costo opcional y versión esperada
+     * @return orden con la nueva partida
+     * @throws BusinessException si la orden no existe, no está en DRAFT, la versión es obsoleta,
+     *         el artículo no existe en la organización, está inactivo o ya tiene una partida en la orden
+     */
+    @Transactional
+    public PurchaseOrderDetail addLine(
+            UUID organizationId,
+            UUID branchId,
+            UUID purchaseOrderId,
+            CreatePurchaseOrderLineCommand command) {
+        PurchaseOrder order = lockOrder(organizationId, branchId, purchaseOrderId);
+        order.requireDraft();
+        requireExpectedVersion(order, command.expectedVersion());
+
+        InventoryItem item = requireInventoryItem(organizationId, command.inventoryItemId());
+        requireActiveInventoryItem(item);
+        if (purchaseOrderLineRepository.existsByPurchaseOrderIdAndInventoryItemId(
+                purchaseOrderId, item.getId())) {
+            throw duplicateLine();
+        }
+        int lineNumber = purchaseOrderLineRepository.findMaxLineNumber(purchaseOrderId) + 1;
+        PurchaseOrderLine line = PurchaseOrderLine.create(
+                organizationId, purchaseOrderId, item, lineNumber, command.quantity(), command.unitCost());
+        PurchaseOrderLine savedLine = purchaseOrderLineRepository.saveAndFlush(line);
+
+        order.registerLineMutation(clock.instant());
+        PurchaseOrder saved = purchaseOrderRepository.saveAndFlush(order);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("lineNumber", savedLine.getLineNumber());
+        metadata.put("inventoryItemId", savedLine.getInventoryItemId().toString());
+        metadata.put("quantity", savedLine.getQuantity().toPlainString());
+        auditPort.record(AuditRecord.ofBranch(
+                organizationId, branchId, "purchase_order.line.added", "purchase_order", saved.getId(),
+                AuditMetadata.of(metadata)));
+        return detail(saved);
+    }
+
+    /**
+     * Actualiza la cantidad y/o el costo unitario de una partida de un borrador.
+     *
+     * @param organizationId organización propietaria
+     * @param branchId sucursal de destino de la ruta
+     * @param purchaseOrderId identificador de la orden
+     * @param purchaseOrderLineId identificador de la partida
+     * @param command cantidad y costo opcionales y versión esperada
+     * @return orden con la partida actualizada
+     * @throws BusinessException si la orden o la partida no existen, la orden no está en DRAFT,
+     *         la versión es obsoleta o la cantidad/costo son inválidos
+     */
+    @Transactional
+    public PurchaseOrderDetail updateLine(
+            UUID organizationId,
+            UUID branchId,
+            UUID purchaseOrderId,
+            UUID purchaseOrderLineId,
+            UpdatePurchaseOrderLineCommand command) {
+        PurchaseOrder order = lockOrder(organizationId, branchId, purchaseOrderId);
+        order.requireDraft();
+        requireExpectedVersion(order, command.expectedVersion());
+        PurchaseOrderLine line = requireLine(purchaseOrderId, purchaseOrderLineId);
+
+        List<String> changedFields = new ArrayList<>();
+        if (command.quantity() != null && command.quantity().compareTo(line.getQuantity()) != 0) {
+            line.updateQuantity(command.quantity());
+            changedFields.add("quantity");
+        }
+        if (command.unitCostSpecified() && !Objects.equals(command.unitCost(), line.getUnitCost())) {
+            line.updateUnitCost(command.unitCost());
+            changedFields.add("unitCost");
+        }
+        if (changedFields.isEmpty()) {
+            return detail(order);
+        }
+        purchaseOrderLineRepository.saveAndFlush(line);
+        order.registerLineMutation(clock.instant());
+        PurchaseOrder saved = purchaseOrderRepository.saveAndFlush(order);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("lineNumber", line.getLineNumber());
+        metadata.put("changedFields", changedFields);
+        auditPort.record(AuditRecord.ofBranch(
+                organizationId, branchId, "purchase_order.line.updated", "purchase_order", saved.getId(),
+                AuditMetadata.of(metadata)));
+        return detail(saved);
+    }
+
+    /**
+     * Elimina físicamente una partida de un borrador.
+     *
+     * <p>Solo se permite mientras la orden está en DRAFT: nada la referencia
+     * todavía. La eliminación queda registrada en auditoría.</p>
+     *
+     * @param organizationId organización propietaria
+     * @param branchId sucursal de destino de la ruta
+     * @param purchaseOrderId identificador de la orden
+     * @param purchaseOrderLineId identificador de la partida
+     * @param expectedVersion versión del agregado leída por el cliente
+     * @return orden sin la partida
+     * @throws BusinessException si la orden o la partida no existen, la orden no está en DRAFT
+     *         o la versión es obsoleta
+     */
+    @Transactional
+    public PurchaseOrderDetail removeLine(
+            UUID organizationId,
+            UUID branchId,
+            UUID purchaseOrderId,
+            UUID purchaseOrderLineId,
+            long expectedVersion) {
+        PurchaseOrder order = lockOrder(organizationId, branchId, purchaseOrderId);
+        order.requireDraft();
+        requireExpectedVersion(order, expectedVersion);
+        PurchaseOrderLine line = requireLine(purchaseOrderId, purchaseOrderLineId);
+
+        int lineNumber = line.getLineNumber();
+        String inventoryItemId = line.getInventoryItemId().toString();
+        purchaseOrderLineRepository.delete(line);
+        purchaseOrderLineRepository.flush();
+
+        order.registerLineMutation(clock.instant());
+        PurchaseOrder saved = purchaseOrderRepository.saveAndFlush(order);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("lineNumber", lineNumber);
+        metadata.put("inventoryItemId", inventoryItemId);
+        auditPort.record(AuditRecord.ofBranch(
+                organizationId, branchId, "purchase_order.line.removed", "purchase_order", saved.getId(),
+                AuditMetadata.of(metadata)));
+        return detail(saved);
+    }
+
+    private PurchaseOrderDetail detail(PurchaseOrder order) {
+        return new PurchaseOrderDetail(
+                order, purchaseOrderLineRepository.findByPurchaseOrderIdOrderByLineNumberAsc(order.getId()));
+    }
+
+    private static Specification<PurchaseOrder> specification(
+            UUID organizationId, UUID branchId, PurchaseOrderStatus status, UUID supplierId, String q) {
+        return (root, query, criteriaBuilder) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(criteriaBuilder.equal(root.get("organization").get("id"), organizationId));
+            predicates.add(criteriaBuilder.equal(root.get("branchId"), branchId));
+            if (status != null) {
+                predicates.add(criteriaBuilder.equal(root.get("status"), status));
+            }
+            if (supplierId != null) {
+                predicates.add(criteriaBuilder.equal(root.get("supplier").get("id"), supplierId));
+            }
+            if (q != null && !q.isBlank()) {
+                String pattern = "%" + q.trim().toLowerCase(Locale.ROOT) + "%";
+                predicates.add(criteriaBuilder.like(criteriaBuilder.lower(root.get("code")), pattern));
+            }
+            return criteriaBuilder.and(predicates.toArray(Predicate[]::new));
+        };
+    }
+
+    private PurchaseOrder lockOrder(UUID organizationId, UUID branchId, UUID purchaseOrderId) {
+        requireOrganization(organizationId);
+        requireBranch(organizationId, branchId);
+        return purchaseOrderRepository
+                .findByIdAndOrganizationIdAndBranchIdForUpdate(purchaseOrderId, organizationId, branchId)
+                .orElseThrow(PurchaseOrderService::notFound);
+    }
+
+    private PurchaseOrder requireOrder(UUID organizationId, UUID branchId, UUID purchaseOrderId) {
+        return purchaseOrderRepository
+                .findByIdAndOrganizationIdAndBranchId(purchaseOrderId, organizationId, branchId)
+                .orElseThrow(PurchaseOrderService::notFound);
+    }
+
+    private PurchaseOrderLine requireLine(UUID purchaseOrderId, UUID purchaseOrderLineId) {
+        return purchaseOrderLineRepository
+                .findByIdAndPurchaseOrderId(purchaseOrderLineId, purchaseOrderId)
+                .orElseThrow(() -> new BusinessException(
+                        HttpStatus.NOT_FOUND,
+                        ErrorCodes.PURCHASE_ORDER_LINE_NOT_FOUND,
+                        "Purchase order line not found"));
+    }
+
+    private Organization requireOrganization(UUID organizationId) {
+        return organizationRepository.findById(organizationId).orElseThrow(() -> new BusinessException(
+                HttpStatus.NOT_FOUND, ErrorCodes.ORGANIZATION_NOT_FOUND, "Organization not found"));
+    }
+
+    private Branch requireBranch(UUID organizationId, UUID branchId) {
+        return branchRepository.findByIdAndOrganizationId(branchId, organizationId).orElseThrow(() -> new BusinessException(
+                HttpStatus.NOT_FOUND, ErrorCodes.BRANCH_NOT_FOUND, "Branch not found"));
+    }
+
+    private static void requireActiveBranch(Branch branch) {
+        if (branch.getStatus() != BranchStatus.ACTIVE) {
+            throw new BusinessException(HttpStatus.CONFLICT, ErrorCodes.BRANCH_INACTIVE, "The branch is inactive");
+        }
+    }
+
+    private Supplier requireSupplier(UUID organizationId, UUID supplierId) {
+        return supplierRepository.findByIdAndOrganizationId(supplierId, organizationId).orElseThrow(() -> new BusinessException(
+                HttpStatus.NOT_FOUND, ErrorCodes.SUPPLIER_NOT_FOUND, "Supplier not found"));
+    }
+
+    private static void requireActiveSupplier(Supplier supplier) {
+        if (supplier.getStatus() != SupplierStatus.ACTIVE) {
+            throw new BusinessException(HttpStatus.CONFLICT, ErrorCodes.SUPPLIER_INACTIVE, "The supplier is inactive");
+        }
+    }
+
+    private InventoryItem requireInventoryItem(UUID organizationId, UUID inventoryItemId) {
+        return inventoryItemRepository.findByIdAndOrganizationId(inventoryItemId, organizationId).orElseThrow(() -> new BusinessException(
+                HttpStatus.NOT_FOUND, ErrorCodes.INVENTORY_ITEM_NOT_FOUND, "Inventory item not found"));
+    }
+
+    private static void requireActiveInventoryItem(InventoryItem item) {
+        if (item.getStatus() != InventoryItemStatus.ACTIVE) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT, ErrorCodes.INVENTORY_ITEM_INACTIVE, "The inventory item is inactive");
+        }
+    }
+
+    private static void requireExpectedVersion(PurchaseOrder order, long expectedVersion) {
+        if (order.getVersion() != expectedVersion) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.CONCURRENT_MODIFICATION,
+                    "The purchase order was modified concurrently; retry with fresh data");
+        }
+    }
+
+    private static BusinessException notFound() {
+        return new BusinessException(
+                HttpStatus.NOT_FOUND, ErrorCodes.PURCHASE_ORDER_NOT_FOUND, "Purchase order not found");
+    }
+
+    private static BusinessException duplicateCode() {
+        return new BusinessException(
+                HttpStatus.CONFLICT,
+                ErrorCodes.PURCHASE_ORDER_CODE_ALREADY_EXISTS,
+                "A purchase order with this code already exists in the organization");
+    }
+
+    private static BusinessException duplicateLine() {
+        return new BusinessException(
+                HttpStatus.CONFLICT,
+                ErrorCodes.PURCHASE_ORDER_LINE_DUPLICATE_ITEM,
+                "The purchase order already has a line for this inventory item");
+    }
+}

@@ -1,0 +1,314 @@
+package com.hiqnet.pos.purchasing.domain;
+
+import com.hiqnet.pos.organization.domain.Organization;
+import com.hiqnet.pos.shared.error.BusinessException;
+import com.hiqnet.pos.shared.error.ErrorCodes;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.Version;
+import java.time.Instant;
+import java.util.Locale;
+import java.util.UUID;
+import java.util.regex.Pattern;
+import org.springframework.http.HttpStatus;
+
+/**
+ * Orden de compra propiedad de una organización y dirigida a una de sus
+ * sucursales.
+ *
+ * <p>Es la raíz del agregado: cabecera y partidas comparten el contador
+ * {@link #version}, de modo que cualquier mutación de una partida también
+ * incrementa la versión de la cabecera. El código comercial es un slug inmutable
+ * y único por organización; la moneda es un snapshot de la organización que el
+ * cliente no puede fijar ni modificar; y el proveedor se guarda junto a sus
+ * snapshots de código y nombre para preservar el historial aunque el catálogo
+ * cambie.</p>
+ *
+ * <p>Esta fundación solo permite crear y editar órdenes en
+ * {@link PurchaseOrderStatus#DRAFT}: {@code issue} y {@code cancel} llegan en un
+ * incremento posterior. La orden nunca genera movimientos de inventario.</p>
+ */
+@Entity
+@Table(
+        name = "purchase_orders",
+        uniqueConstraints = @UniqueConstraint(
+                name = "purchase_orders_organization_code_unique",
+                columnNames = {"organization_id", "code"}))
+public class PurchaseOrder {
+
+    private static final Pattern CODE = Pattern.compile("^[a-z0-9]+(-[a-z0-9]+)*$");
+    private static final int MAX_CODE = 64;
+    private static final int CODE_LENGTH = 3;
+
+    @Id
+    private UUID id;
+
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "organization_id", nullable = false, updatable = false)
+    private Organization organization;
+
+    @Column(name = "branch_id", nullable = false, updatable = false)
+    private UUID branchId;
+
+    @ManyToOne(optional = false)
+    @JoinColumn(name = "supplier_id", nullable = false)
+    private Supplier supplier;
+
+    @Column(nullable = false, length = MAX_CODE, updatable = false)
+    private String code;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private PurchaseOrderStatus status;
+
+    @Column(nullable = false, length = 3, updatable = false)
+    private String currency;
+
+    @Column(name = "supplier_code_snapshot", nullable = false, length = 64)
+    private String supplierCodeSnapshot;
+
+    @Column(name = "supplier_name_snapshot", nullable = false, length = 120)
+    private String supplierNameSnapshot;
+
+    @Column(name = "created_by_user_id", nullable = false, updatable = false)
+    private UUID createdByUserId;
+
+    @Column(name = "issued_by_user_id")
+    private UUID issuedByUserId;
+
+    @Column(name = "cancelled_by_user_id")
+    private UUID cancelledByUserId;
+
+    @Version
+    @Column(nullable = false)
+    private long version;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
+
+    @Column(name = "issued_at")
+    private Instant issuedAt;
+
+    @Column(name = "cancelled_at")
+    private Instant cancelledAt;
+
+    protected PurchaseOrder() {
+    }
+
+    private PurchaseOrder(
+            Organization organization,
+            UUID branchId,
+            Supplier supplier,
+            String code,
+            String currency,
+            UUID createdByUserId) {
+        this.id = UUID.randomUUID();
+        this.organization = organization;
+        this.branchId = branchId;
+        this.supplier = supplier;
+        this.code = code;
+        this.status = PurchaseOrderStatus.DRAFT;
+        this.currency = currency;
+        this.supplierCodeSnapshot = supplier.getCode();
+        this.supplierNameSnapshot = supplier.getName();
+        this.createdByUserId = createdByUserId;
+        this.version = 0;
+    }
+
+    /**
+     * Crea una orden en borrador con la moneda y los snapshots del proveedor.
+     *
+     * @param organization organización propietaria
+     * @param branchId sucursal de destino, dentro de la misma organización
+     * @param supplier proveedor de la organización; sus datos se capturan como snapshot
+     * @param code código comercial normalizado (slug en minúsculas)
+     * @param currency moneda ISO 4217 copiada de la organización, nunca del cliente
+     * @param createdByUserId actor autenticado que crea la orden
+     * @return orden nueva en estado DRAFT, aún no persistida
+     * @throws BusinessException si falta un dato obligatorio o el código no es un slug válido
+     */
+    public static PurchaseOrder create(
+            Organization organization,
+            UUID branchId,
+            Supplier supplier,
+            String code,
+            String currency,
+            UUID createdByUserId) {
+        if (organization == null) {
+            throw new IllegalArgumentException("organization is required");
+        }
+        if (branchId == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_ERROR, "branchId is required");
+        }
+        if (supplier == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_ERROR, "supplierId is required");
+        }
+        if (createdByUserId == null) {
+            throw new BusinessException(
+                    HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_ERROR, "createdByUserId is required");
+        }
+        return new PurchaseOrder(
+                organization, branchId, supplier, requireCode(code), requireCurrency(currency), createdByUserId);
+    }
+
+    /**
+     * Reasigna el proveedor de un borrador y re-captura sus snapshots.
+     *
+     * <p>Solo es válido en {@link PurchaseOrderStatus#DRAFT}. Si el proveedor es
+     * el mismo que ya tenía la orden, no se produce ningún cambio real y el
+     * agregado permanece limpio (la versión no se incrementa).</p>
+     *
+     * @param newSupplier nuevo proveedor, de la misma organización
+     * @param when instante del cambio, fijado por el servidor
+     * @throws BusinessException si la orden no está en DRAFT o falta el proveedor
+     */
+    public void changeSupplier(Supplier newSupplier, Instant when) {
+        requireDraft();
+        if (newSupplier == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_ERROR, "supplierId is required");
+        }
+        this.supplier = newSupplier;
+        this.supplierCodeSnapshot = newSupplier.getCode();
+        this.supplierNameSnapshot = newSupplier.getName();
+        this.updatedAt = when;
+    }
+
+    /**
+     * Marca el agregado como modificado tras una mutación de sus partidas.
+     *
+     * <p>Las partidas viven en su propia tabla, por lo que insertar, actualizar o
+     * eliminar una línea no marca la cabecera por sí solo. Este método toca
+     * {@code updatedAt} para que Hibernate detecte el agregado como sucio y
+     * incremente {@link #version} al hacer flush: la versión de la cabecera es el
+     * punto de sincronización optimista de toda mutación de partidas.</p>
+     *
+     * @param when instante del cambio, fijado por el servidor
+     */
+    public void registerLineMutation(Instant when) {
+        this.updatedAt = when;
+    }
+
+    /**
+     * Exige que la orden esté en borrador antes de editar cabecera o partidas.
+     *
+     * @throws BusinessException con {@code 409 PURCHASE_ORDER_NOT_DRAFT} si la orden no está en DRAFT
+     */
+    public void requireDraft() {
+        if (status != PurchaseOrderStatus.DRAFT) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.PURCHASE_ORDER_NOT_DRAFT,
+                    "The purchase order is not editable because it is not in DRAFT");
+        }
+    }
+
+    public UUID getId() {
+        return id;
+    }
+
+    public Organization getOrganization() {
+        return organization;
+    }
+
+    public UUID getBranchId() {
+        return branchId;
+    }
+
+    public Supplier getSupplier() {
+        return supplier;
+    }
+
+    public String getCode() {
+        return code;
+    }
+
+    public PurchaseOrderStatus getStatus() {
+        return status;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
+
+    public String getSupplierCodeSnapshot() {
+        return supplierCodeSnapshot;
+    }
+
+    public String getSupplierNameSnapshot() {
+        return supplierNameSnapshot;
+    }
+
+    public UUID getCreatedByUserId() {
+        return createdByUserId;
+    }
+
+    public UUID getIssuedByUserId() {
+        return issuedByUserId;
+    }
+
+    public UUID getCancelledByUserId() {
+        return cancelledByUserId;
+    }
+
+    public long getVersion() {
+        return version;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public Instant getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public Instant getIssuedAt() {
+        return issuedAt;
+    }
+
+    public Instant getCancelledAt() {
+        return cancelledAt;
+    }
+
+    private static String requireCode(String value) {
+        if (value == null || value.length() > MAX_CODE || !CODE.matcher(value).matches()) {
+            throw new BusinessException(
+                    HttpStatus.BAD_REQUEST,
+                    ErrorCodes.INVALID_CODE,
+                    "code must match ^[a-z0-9]+(-[a-z0-9]+)*$ and not exceed " + MAX_CODE + " characters");
+        }
+        return value;
+    }
+
+    private static String requireCurrency(String value) {
+        if (value == null || value.isBlank() || value.trim().length() != CODE_LENGTH) {
+            throw new BusinessException(
+                    HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_ERROR, "currency is required");
+        }
+        return value.trim().toUpperCase(Locale.ROOT);
+    }
+
+    @PrePersist
+    void onCreate() {
+        Instant now = Instant.now();
+        createdAt = now;
+        updatedAt = now;
+    }
+
+    @PreUpdate
+    void onUpdate() {
+        updatedAt = Instant.now();
+    }
+}

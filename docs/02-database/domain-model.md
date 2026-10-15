@@ -5,8 +5,9 @@ administración), `RefreshSession`, RBAC, memberships, auditoría, bootstrap, el
 catálogo POS, Sales Foundation y Payments + Atomic Checkout están implementados
 (V1–V15). `InventoryItem` organization-owned (V16), Branch stock y movements
 (V17), recipes y modifier effects (V18) y snapshots + consumo de checkout
-(V19–V21) están implementados. `Supplier` organization-owned (V22) es el primer
-incremento de Purchasing.
+(V19–V21) están implementados. `Supplier` organization-owned (V22) y las órdenes
+de compra en borrador con sus partidas (V23) son los incrementos de Purchasing
+implementados.
 
 Versión en desarrollo: `0.4.0-SNAPSHOT`.
 
@@ -21,6 +22,8 @@ Organization (organización / empresa)  ✔ implementado
  ├── Category / Product (catálogo)     ✔ implementado (V9)
  ├── InventoryItem (definición)         ✔ implementado (V16), organization-owned
  ├── Supplier (proveedor)               ✔ implementado (V22), organization-owned
+ ├── PurchaseOrder (orden de compra)    ✔ implementado (V23), organization-owned + Branch destino
+ │    └── PurchaseOrderLine (partida)   ✔ implementado (V23); referencia InventoryItem
  ├── ModifierGroup / ModifierOption (modifiers)  ✔ implementado (V10)
  │    └── ProductModifierGroup (producto ↔ grupo, ordenado)  ✔ implementado (V10)
  └── Branch (sucursal)                 ✔ implementado
@@ -63,7 +66,9 @@ Organization (organización / empresa)  ✔ implementado
 | Stock | **sucursal** | Existencias por ingrediente/producto en cada branch |
 | Sale / SaleLine / Payment | sucursal | Dinero siempre en `BigDecimal` |
 | Supplier | organización | **implementado (`V22`)** — datos maestros organization-owned; `code` slug único por org e inmutable; contacto/razón social/identificador fiscal opcionales; `status ACTIVE/INACTIVE` sin DELETE; `@Version`; ver `docs/02-database/purchasing-suppliers-model.md` |
-| PurchaseOrder / PurchaseReceipt | organización+sucursal | Compras (futuro) |
+| PurchaseOrder | organización+sucursal | **implementada (`V23`)** — cabecera con `branch_id` de destino, `code` slug único por org e inmutable, moneda copiada de la organización, snapshots del proveedor, estados DRAFT/ORDERED/CANCELLED (solo DRAFT alcanzable en V23) y `@Version` del agregado; ver `docs/02-database/purchase-orders-model.md` |
+| PurchaseOrderLine | organización | **implementada (`V23`)** — partida con snapshots inmutables de `code`/`name`/`baseUnit` del `InventoryItem`, `line_number` único por orden, `quantity NUMERIC(19,6) > 0` y `unit_cost NUMERIC(19,4) >= 0` opcional |
+| PurchaseReceipt | organización+sucursal | Recepción de mercancía (futuro) |
 | Expense | sucursal u organización | Gastos (futuro) |
 
 ## Regla clave (repetida)
@@ -99,6 +104,9 @@ operación pasa por `organization_id` (`findByIdAndOrganizationId`).
   (`V10`).
 - Organization 1—N Supplier ✔ (`V22`); un mismo proveedor puede ser referenciado
   por órdenes de cualquier Branch de la organización.
+- Organization 1—N PurchaseOrder ✔ (`V23`); PurchaseOrder N—1 Branch (destino) y
+  N—1 Supplier; PurchaseOrder 1—N PurchaseOrderLine, que referencia un
+  InventoryItem organization-owned y congela sus snapshots.
 - Branch 1—N CashRegister ✔ (`V11`); CashRegister 1—N CashShift ✔ (`V12`).
 - User 1—N RefreshSession ✔; User N—M Role (vía `user_organization_roles`, ✔).
 - Branch 1—N BranchMembership ✔ (`V6`); BranchMembership N—M Role (vía
