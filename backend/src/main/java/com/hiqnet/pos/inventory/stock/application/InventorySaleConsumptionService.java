@@ -1,5 +1,6 @@
 package com.hiqnet.pos.inventory.stock.application;
 
+import com.hiqnet.pos.inventory.application.InventoryItemUnitGuard;
 import com.hiqnet.pos.inventory.stock.domain.BranchInventory;
 import com.hiqnet.pos.inventory.stock.domain.BranchInventoryRepository;
 import com.hiqnet.pos.inventory.stock.domain.InventoryMovementInsert;
@@ -35,12 +36,15 @@ public class InventorySaleConsumptionService {
 
     private final BranchInventoryRepository branchInventoryRepository;
     private final InventoryMovementRepository movementRepository;
+    private final InventoryItemUnitGuard inventoryItemUnitGuard;
 
     public InventorySaleConsumptionService(
             BranchInventoryRepository branchInventoryRepository,
-            InventoryMovementRepository movementRepository) {
+            InventoryMovementRepository movementRepository,
+            InventoryItemUnitGuard inventoryItemUnitGuard) {
         this.branchInventoryRepository = branchInventoryRepository;
         this.movementRepository = movementRepository;
+        this.inventoryItemUnitGuard = inventoryItemUnitGuard;
     }
 
     @Transactional
@@ -59,6 +63,11 @@ public class InventorySaleConsumptionService {
             byItem.put(requirement.inventoryItemId(), requirement);
         }
         Collection<UUID> itemIds = byItem.keySet();
+
+        // Bloqueo de artículos antes de los balances: orden global
+        // InventoryItem -> BranchInventory, coherente con las mutaciones manuales
+        // de stock, para evitar deadlocks con el FK de inventory_movements.
+        inventoryItemUnitGuard.lockAndMarkReferenced(organizationId, itemIds);
 
         branchInventoryRepository.ensureBalances(organizationId, branchId, joinIds(itemIds));
         List<BranchInventory> locked = branchInventoryRepository.lockBalances(organizationId, branchId, itemIds);

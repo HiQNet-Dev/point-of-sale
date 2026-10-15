@@ -57,6 +57,20 @@ public class InventoryItem {
     @Column(name = "fractional_unit_allowed", nullable = false)
     private boolean fractionalUnitAllowed;
 
+    /**
+     * Unidad base congelada una vez que el artículo tiene dependencias
+     * operativas o históricas.
+     *
+     * <p>Es <b>monótona</b>: pasa a {@code true} una sola vez y nunca regresa a
+     * {@code false}. Para garantizarlo el mapeo es {@code updatable = false}: una
+     * actualización de estado de la entidad (flush de Hibernate) jamás escribe
+     * esta columna, por lo que una instancia administrada obsoleta (cargada con
+     * {@code false} antes de marcarla) no puede revertir el valor persistido. Solo
+     * la sentencia dedicada de {@code InventoryItemUnitGuard} la activa.</p>
+     */
+    @Column(name = "unit_locked", nullable = false, updatable = false)
+    private boolean unitLocked;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private InventoryItemStatus status;
@@ -109,6 +123,7 @@ public class InventoryItem {
     public String getDescription() { return description; }
     public InventoryBaseUnit getBaseUnit() { return baseUnit; }
     public boolean isFractionalUnitAllowed() { return fractionalUnitAllowed; }
+    public boolean isUnitLocked() { return unitLocked; }
     public InventoryItemStatus getStatus() { return status; }
     public long getVersion() { return version; }
     public Instant getCreatedAt() { return createdAt; }

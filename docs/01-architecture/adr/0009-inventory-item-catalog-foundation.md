@@ -25,4 +25,6 @@ Branch stock, balances and opening/adjustments are specified by ADR-0010 / V17. 
 - Catalog definitions can be shared across Branches while later stock remains branch-owned.
 - V15 installations receive two permissions but no existing role silently gains them.
 - Changing a base unit will need a guarded contract before dependent inventory data is introduced.
+- `base_unit` immutability once the item is used, and the lock strategy that
+  coordinates it with the dependency writers, are specified by ADR-0018 / `V24`.
 - This ADR does not authorize any stock mutation or alter POS checkout behavior.

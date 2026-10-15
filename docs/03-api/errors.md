@@ -70,6 +70,20 @@ campos inválidos en `details`:
 }
 ```
 
+`409 INVENTORY_ITEM_UNIT_LOCKED` (catálogo) rechaza cambiar la unidad base de un
+artículo que ya tiene dependencias; el mensaje explica el motivo para que el
+frontend pueda mostrarlo:
+
+```json
+{
+  "status": 409,
+  "code": "INVENTORY_ITEM_UNIT_LOCKED",
+  "message": "The base unit cannot be changed because the item has dependent inventory facts",
+  "path": "/api/v1/organizations/…/inventory-items/…",
+  "details": []
+}
+```
+
 ## Semántica HTTP
 
 | HTTP | Significado |
@@ -78,7 +92,7 @@ campos inválidos en `details`:
 | 401 | No autenticado (`AUTHENTICATION_REQUIRED`, `TOKEN_EXPIRED`, `TOKEN_INVALID`, `INVALID_CREDENTIALS`, `INVALID_REFRESH_TOKEN`). |
 | 403 | Autenticado sin permiso (`FORBIDDEN`). |
 | 404 | Recurso inexistente o de otra organización. |
-| 409 | Conflicto: duplicado, estado o modificación concurrente (`CONCURRENT_MODIFICATION`). |
+| 409 | Conflicto: duplicado, estado o modificación concurrente (`CONCURRENT_MODIFICATION`, `INVENTORY_ITEM_UNIT_LOCKED`). |
 | 500 | Error interno (`INTERNAL_ERROR`). |
 
 ## Cómo manejarlos (Frontend)

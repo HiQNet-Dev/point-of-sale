@@ -164,6 +164,25 @@ class OpenApiEnabledIntegrationTest {
     }
 
     @Test
+    void openApiDocumentsInventoryItemUnitLockAndImmutableUnitError() throws Exception {
+        JsonNode docs = apiDocs();
+        JsonNode schemas = docs.path("components").path("schemas");
+        assertThat(schemas.path("InventoryItemResponse").path("properties").path("unitLocked").path("type").asText())
+                .isEqualTo("boolean");
+        JsonNode updateResponses = docs.path("paths")
+                .path("/api/v1/organizations/{organizationId}/inventory-items/{inventoryItemId}")
+                .path("patch")
+                .path("responses");
+        assertApiErrorRef(updateResponses.path("409"));
+        assertThat(docs.path("paths")
+                        .path("/api/v1/organizations/{organizationId}/inventory-items/{inventoryItemId}")
+                        .path("patch")
+                        .path("description")
+                        .asText())
+                .contains("INVENTORY_ITEM_UNIT_LOCKED");
+    }
+
+    @Test
     void swaggerUiIsServedAlongsideTheSpec() throws Exception {
         mockMvc.perform(get("/swagger-ui/index.html")).andExpect(status().isOk());
         // Canonical springdoc entry: redirects to the UI served above.

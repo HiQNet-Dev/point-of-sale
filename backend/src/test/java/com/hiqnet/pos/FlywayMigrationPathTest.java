@@ -21,7 +21,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * contexts that reuse a Testcontainers DB across the suite):
  *
  * <ul>
- * <li><b>Clean install</b>: V1 → V23 applies completely and validates, leaving
+ * <li><b>Clean install</b>: V1 → V24 applies completely and validates, leaving
  *       the expected seed state (permission catalog = 57, bootstrap singleton = 1,
  *       catalog/modifier/cash-register/cash-shift/sales and inventory-item tables present).</li>
  *   <li><b>Upgrade path (V7)</b>: a database migrated up to V7 (the state before
@@ -41,12 +41,12 @@ class FlywayMigrationPathTest {
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
 
     @Test
-    void cleanInstallationMigratesV1ThroughV23AndValidates() {
+    void cleanInstallationMigratesV1ThroughV24AndValidates() {
         Flyway flyway = flyway("clean_foundation");
 
         MigrateResult result = flyway.migrate();
 
-        assertThat(result.migrationsExecuted).isEqualTo(23);
+        assertThat(result.migrationsExecuted).isEqualTo(24);
         flyway.validate();
         assertThat(countRows("clean_foundation", "permissions")).isEqualTo(57);
         assertThat(countRows("clean_foundation", "installation_bootstrap")).isEqualTo(1);
@@ -72,6 +72,7 @@ class FlywayMigrationPathTest {
         assertThat(columnExists("clean_foundation", "organizations", "inventory_negative_stock_policy"))
                 .isTrue();
         assertThat(columnExists("clean_foundation", "inventory_movements", "sale_id")).isTrue();
+        assertThat(columnExists("clean_foundation", "inventory_items", "unit_locked")).isTrue();
         assertThat(tableExists("clean_foundation", "suppliers")).isTrue();
         assertThat(tableExists("clean_foundation", "purchase_orders")).isTrue();
         assertThat(tableExists("clean_foundation", "purchase_order_lines")).isTrue();
@@ -541,7 +542,7 @@ class FlywayMigrationPathTest {
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas(schema)
                 .load();
-        assertThat(latest.migrate().migrationsExecuted).isEqualTo(5);
+        assertThat(latest.migrate().migrationsExecuted).isEqualTo(6);
         latest.validate();
         assertThat(countRows(schema, "permissions")).isEqualTo(57);
         assertThat(countRows(schema, "role_permissions")).isEqualTo(49);
@@ -550,6 +551,7 @@ class FlywayMigrationPathTest {
         assertThat(columnExists(schema, "organizations", "inventory_negative_stock_policy"))
                 .isTrue();
         assertThat(columnExists(schema, "inventory_movements", "sale_id")).isTrue();
+        assertThat(columnExists(schema, "inventory_items", "unit_locked")).isTrue();
     }
 
     @Test
@@ -765,13 +767,14 @@ class FlywayMigrationPathTest {
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas(schema)
                 .load();
-        assertThat(latest.migrate().migrationsExecuted).isEqualTo(1);
+        assertThat(latest.migrate().migrationsExecuted).isEqualTo(2);
         latest.validate();
 
         assertThat(countRows(schema, "permissions")).isEqualTo(57);
         assertThat(countRows(schema, "role_permissions")).isEqualTo(53);
         assertThat(tableExists(schema, "purchase_orders")).isTrue();
         assertThat(tableExists(schema, "purchase_order_lines")).isTrue();
+        assertThat(columnExists(schema, "inventory_items", "unit_locked")).isTrue();
     }
 
     private static String valueOfString(String schema, String table, String column, UUID id) {

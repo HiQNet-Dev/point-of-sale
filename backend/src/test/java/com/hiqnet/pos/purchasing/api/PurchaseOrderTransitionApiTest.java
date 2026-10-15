@@ -219,11 +219,16 @@ class PurchaseOrderTransitionApiTest extends AbstractAuditIntegrationTest {
         Setup setup = setup();
         String orderId = createOrder(setup, "po-unit-changed", setup.token());
         addLine(setup, orderId, 0, setup.token());
+        // La partida bloquea la unidad del artículo: la corrección vía API se
+        // rechaza. Se simula un cambio fuera de banda (migración/operación) para
+        // seguir ejercitando la validación defensiva de emisión.
         mockMvc.perform(patch(BASE + setup.fixture().orgId() + "/inventory-items/" + setup.itemId())
                         .header("Authorization", bearer(setup.token()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"expectedVersion\":0,\"baseUnit\":\"UNIT\"}"))
-                .andExpect(status().isOk());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("INVENTORY_ITEM_UNIT_LOCKED"));
+        jdbcTemplate.update("update inventory_items set base_unit = 'UNIT' where id = ?", setup.itemId());
 
         mockMvc.perform(post(ordersUrl(setup) + "/" + orderId + "/issue")
                         .header("Authorization", bearer(setup.token()))

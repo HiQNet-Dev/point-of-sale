@@ -3,6 +3,7 @@ package com.hiqnet.pos.purchasing.application;
 import com.hiqnet.pos.branch.domain.Branch;
 import com.hiqnet.pos.branch.domain.BranchRepository;
 import com.hiqnet.pos.branch.domain.BranchStatus;
+import com.hiqnet.pos.inventory.application.InventoryItemUnitGuard;
 import com.hiqnet.pos.inventory.domain.InventoryItem;
 import com.hiqnet.pos.inventory.domain.InventoryItemRepository;
 import com.hiqnet.pos.inventory.domain.InventoryItemStatus;
@@ -50,8 +51,8 @@ import org.springframework.transaction.annotation.Transactional;
  * concurrentes sobre la misma orden se serializan (la segunda observa la versión
  * nueva y responde {@code 409 CONCURRENT_MODIFICATION}) y no se pierde ninguna
  * actualización. El orden de adquisición de bloqueos es siempre
- * {@code PurchaseOrder → PurchaseOrderLine → (futuro) BranchInventory}, igual que
- * la convención de Sales.</p>
+ * {@code PurchaseOrder → InventoryItem → PurchaseOrderLine → (futuro)
+ * BranchInventory}, igual que la convención de Sales.</p>
  *
  * <p>La emisión ({@code issue}) y la cancelación ({@code cancel}) son
  * transiciones privilegiadas que reutilizan el mismo bloqueo de cabecera y la
@@ -70,6 +71,7 @@ public class PurchaseOrderService {
     private final BranchRepository branchRepository;
     private final SupplierRepository supplierRepository;
     private final InventoryItemRepository inventoryItemRepository;
+    private final InventoryItemUnitGuard inventoryItemUnitGuard;
     private final AuditPort auditPort;
     private final Clock clock;
 
@@ -80,6 +82,7 @@ public class PurchaseOrderService {
             BranchRepository branchRepository,
             SupplierRepository supplierRepository,
             InventoryItemRepository inventoryItemRepository,
+            InventoryItemUnitGuard inventoryItemUnitGuard,
             AuditPort auditPort,
             Clock clock) {
         this.purchaseOrderRepository = purchaseOrderRepository;
@@ -88,6 +91,7 @@ public class PurchaseOrderService {
         this.branchRepository = branchRepository;
         this.supplierRepository = supplierRepository;
         this.inventoryItemRepository = inventoryItemRepository;
+        this.inventoryItemUnitGuard = inventoryItemUnitGuard;
         this.auditPort = auditPort;
         this.clock = clock;
     }
@@ -241,7 +245,9 @@ public class PurchaseOrderService {
         order.requireDraft();
         requireExpectedVersion(order, command.expectedVersion());
 
-        InventoryItem item = requireInventoryItem(organizationId, command.inventoryItemId());
+        InventoryItem item = inventoryItemUnitGuard
+                .lockAndMarkReferenced(organizationId, List.of(command.inventoryItemId()))
+                .get(command.inventoryItemId());
         requireActiveInventoryItem(item);
         if (purchaseOrderLineRepository.existsByPurchaseOrderIdAndInventoryItemId(
                 purchaseOrderId, item.getId())) {
@@ -539,11 +545,6 @@ public class PurchaseOrderService {
         if (supplier.getStatus() != SupplierStatus.ACTIVE) {
             throw new BusinessException(HttpStatus.CONFLICT, ErrorCodes.SUPPLIER_INACTIVE, "The supplier is inactive");
         }
-    }
-
-    private InventoryItem requireInventoryItem(UUID organizationId, UUID inventoryItemId) {
-        return inventoryItemRepository.findByIdAndOrganizationId(inventoryItemId, organizationId).orElseThrow(() -> new BusinessException(
-                HttpStatus.NOT_FOUND, ErrorCodes.INVENTORY_ITEM_NOT_FOUND, "Inventory item not found"));
     }
 
     private static void requireActiveInventoryItem(InventoryItem item) {

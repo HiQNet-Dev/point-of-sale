@@ -48,7 +48,7 @@ public class InventoryItemController {
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "Create an inventory item inside an organization")
     @ApiResponses({
-        @ApiResponse(responseCode = "201", description = "Created", content = @Content),
+        @ApiResponse(responseCode = "201", description = "Created"),
         @ApiResponse(responseCode = "400", description = "Validation (VALIDATION_ERROR, INVALID_CODE)", content = @Content),
         @ApiResponse(responseCode = "404", description = "Organization not found (ORGANIZATION_NOT_FOUND)", content = @Content),
         @ApiResponse(responseCode = "409", description = "Duplicate code (INVENTORY_ITEM_CODE_ALREADY_EXISTS)", content = @Content),
@@ -69,7 +69,7 @@ public class InventoryItemController {
     @GetMapping
     @Operation(summary = "List inventory items of an organization (paginated; filters q, status and baseUnit)")
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "OK", content = @Content),
+        @ApiResponse(responseCode = "200", description = "OK"),
         @ApiResponse(responseCode = "400", description = "Invalid paging parameters (VALIDATION_ERROR)", content = @Content),
         @ApiResponse(responseCode = "404", description = "Organization not found (ORGANIZATION_NOT_FOUND)", content = @Content),
         @ApiResponse(responseCode = "403", description = "Forbidden (inventory.item.read)", content = @Content)
@@ -91,7 +91,7 @@ public class InventoryItemController {
     @GetMapping("/{inventoryItemId}")
     @Operation(summary = "Get an inventory item by id, scoped to its organization")
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "OK", content = @Content),
+        @ApiResponse(responseCode = "200", description = "OK"),
         @ApiResponse(responseCode = "404", description = "Organization or item not found (ORGANIZATION_NOT_FOUND, INVENTORY_ITEM_NOT_FOUND)", content = @Content),
         @ApiResponse(responseCode = "403", description = "Forbidden (inventory.item.read)", content = @Content)
     })
@@ -102,12 +102,20 @@ public class InventoryItemController {
     }
 
     @PatchMapping("/{inventoryItemId}")
-    @Operation(summary = "Partially update an inventory item; its code is immutable")
+    @Operation(
+            summary = "Partially update an inventory item; its code is immutable",
+            description = "Permite corregir name/description y, mientras el artículo no tenga dependencias, "
+                    + "baseUnit y fractionalUnitAllowed; también cambia status. baseUnit solo puede modificarse "
+                    + "si el artículo no tiene hechos dependientes (balance de sucursal, movimiento, componente de "
+                    + "receta, efecto de modificador o partida de orden de compra): en ese caso responde 409 "
+                    + "INVENTORY_ITEM_UNIT_LOCKED. Enviar la unidad actual es un no-op idempotente (no cambia la "
+                    + "versión ni escribe auditoría). El campo unitLocked de la respuesta indica si la unidad está "
+                    + "congelada.")
     @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Updated", content = @Content),
+        @ApiResponse(responseCode = "200", description = "Updated"),
         @ApiResponse(responseCode = "400", description = "Validation (VALIDATION_ERROR)", content = @Content),
         @ApiResponse(responseCode = "404", description = "Organization or item not found (ORGANIZATION_NOT_FOUND, INVENTORY_ITEM_NOT_FOUND)", content = @Content),
-        @ApiResponse(responseCode = "409", description = "Concurrent modification (CONCURRENT_MODIFICATION)", content = @Content),
+        @ApiResponse(responseCode = "409", description = "Concurrent modification (CONCURRENT_MODIFICATION) or immutable base unit (INVENTORY_ITEM_UNIT_LOCKED)", content = @Content),
         @ApiResponse(responseCode = "403", description = "Forbidden (inventory.item.write)", content = @Content)
     })
     @PreAuthorize("@authorizationService.hasPermission(authentication, #organizationId, 'inventory.item.write')")

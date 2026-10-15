@@ -281,8 +281,14 @@ inmutable, único por organización. `POST` crea `ACTIVE`; `GET` collection usa
 `expectedVersion`; campos ausentes no cambian. El DTO nullable no distingue un
 campo omitido de JSON `null`: ambos significan “no provisto”. Para `description`,
 `""` o solo whitespace sí limpia el valor a `null`; para `name`, blank es error.
-La unidad base puede corregirse en esta fundación, antes de que existan datos de
-inventario dependientes. Ver `docs/02-database/inventory-item-model.md`.
+La unidad base solo puede corregirse mientras el artículo **no** tenga
+dependencias: balance de sucursal, movimiento, componente de receta, efecto de
+modificador o partida de orden de compra. Si el artículo ya tiene cualquier
+dependencia, `PATCH` con un `baseUnit` distinto responde **409
+`INVENTORY_ITEM_UNIT_LOCKED`** y no modifica el recurso; el campo de lectura
+`unitLocked` de la respuesta indica si la unidad está congelada. Enviar la unidad
+actual es un no-op idempotente. Ver `docs/02-database/inventory-item-model.md` y
+ADR-0018.
 
 ## POS Operational Catalog (lecturas operacionales)
 
@@ -472,6 +478,7 @@ Códigos estables:
 | `MODIFIER_OPTION_CODE_ALREADY_EXISTS` | 409 | `code` de opción duplicado dentro del grupo |
 | `CASH_REGISTER_NOT_FOUND` | 404 | Caja inexistente (o de otra branch/organización) |
 | `CASH_REGISTER_CODE_ALREADY_EXISTS` | 409 | `code` de caja duplicado dentro de la branch |
+| `INVENTORY_ITEM_UNIT_LOCKED` | 409 | Intento de cambiar `baseUnit` de un artículo con dependencias (balance, movimiento, receta, efecto o partida) |
 | `CONCURRENT_MODIFICATION` | 409 | Falló optimistic locking |
 | `INTERNAL_ERROR` | 500 | Error inesperado |
 
