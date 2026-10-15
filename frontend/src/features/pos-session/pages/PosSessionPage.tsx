@@ -354,13 +354,53 @@ export function PosSessionPage() {
   )
 
   return (
-    <Box component="main" sx={{ minHeight: '100dvh', py: { xs: 3, md: 6 }, px: 2, bgcolor: 'background.default' }}>
-      <Container maxWidth="md" disableGutters>
-        <Stack spacing={3}>
-          <Box>
-            <Typography variant="overline" color="primary.main" sx={{ fontWeight: 700 }}>HiQNet POS</Typography>
+    <Box
+      component="main"
+      sx={{
+        minHeight: '100dvh',
+        py: { xs: 2, md: activeShift ? 1.5 : 3 },
+        px: { xs: 1.5, sm: 2 },
+        bgcolor: 'background.default',
+        // Con un turno activo el modo caja ocupa la altura completa del viewport
+        // en escritorio: el catálogo y el carrito hacen scroll interno y el
+        // total/cobro permanecen visibles sin desplazar la página. Los valores
+        // son responsivos por propiedad (breakpoint `md`) para no afectar móvil.
+        height: activeShift ? { md: '100dvh' } : undefined,
+        overflow: activeShift ? { md: 'hidden' } : undefined,
+        display: activeShift ? { md: 'flex' } : undefined,
+        flexDirection: activeShift ? { md: 'column' } : undefined,
+      }}
+    >
+      <Container
+        maxWidth={activeShift ? false : 'md'}
+        disableGutters
+        sx={activeShift ? {
+          display: { md: 'flex' },
+          flexDirection: { md: 'column' },
+          flexGrow: { md: 1 },
+          minHeight: { md: 0 },
+          width: { md: '100%' },
+        } : undefined}
+      >
+        <Stack
+          spacing={activeShift ? { xs: 2, md: 1.5 } : 2}
+          sx={activeShift ? { flexGrow: { md: 1 }, minHeight: { md: 0 } } : undefined}
+        >
+          <Box sx={activeShift ? {
+            display: { md: 'flex' },
+            alignItems: { md: 'baseline' },
+            flexWrap: { md: 'wrap' },
+            columnGap: { md: 1.5 },
+          } : undefined}>
+            <Typography
+              variant="overline"
+              color="primary.main"
+              sx={{ fontWeight: 700, display: activeShift ? { md: 'none' } : 'block' }}
+            >
+              HiQNet POS
+            </Typography>
             <Typography component="h1" variant="h4">Punto de venta</Typography>
-            <Typography color="text.secondary">Hola, {me.email}</Typography>
+            <Typography color="text.secondary" sx={activeShift ? { fontSize: { md: '0.9rem' } } : undefined}>Hola, {me.email}</Typography>
           </Box>
 
           {message && <Alert role="status" severity="info" onClose={() => setMessage(null)}>{message}</Alert>}
@@ -379,9 +419,18 @@ export function PosSessionPage() {
             </Alert>
           )}
 
-          <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 } }}>
-            <Stack spacing={3}>
-              <Typography component="h2" variant="h6">Contexto operacional</Typography>
+          <Paper
+            variant="outlined"
+            sx={{
+              p: { xs: 1.5, sm: 2 },
+              flexGrow: activeShift ? { md: 1 } : undefined,
+              minHeight: activeShift ? { md: 0 } : undefined,
+              display: activeShift ? { md: 'flex' } : undefined,
+              flexDirection: activeShift ? { md: 'column' } : undefined,
+            }}
+          >
+            <Stack spacing={activeShift ? { xs: 2, md: 1 } : 2} sx={activeShift ? { flexGrow: { md: 1 }, minHeight: { md: 0 } } : undefined}>
+              <Typography component="h2" variant="h6" sx={activeShift ? { display: { md: 'none' } } : undefined}>Contexto operacional</Typography>
 
               {branchesQuery.isLoading ? <LoadingState label="sucursales" /> : null}
               {branchesQuery.isSuccess && branchesQuery.data.totalElements === 0 && (
@@ -426,7 +475,7 @@ export function PosSessionPage() {
                     <Alert severity="warning">La sucursal seleccionada ya no está disponible. Elige una sucursal actualizada.</Alert>
                   )}
                   {selectedBranch && (
-                    <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+                    <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', display: activeShift ? { md: 'none' } : 'flex' }}>
                       <Typography variant="body2">Sucursal actual: <strong>{selectedBranch.name}</strong> ({selectedBranch.code})</Typography>
                       <StatusChip status={selectedBranch.status} />
                     </Stack>
@@ -443,7 +492,7 @@ export function PosSessionPage() {
               {selectedBranchIdForScope && (
                 <>
                   <Box>
-                    <Typography component="h3" variant="subtitle1" sx={{ mb: 1.5 }}>Caja</Typography>
+                    <Typography component="h3" variant="subtitle1" sx={{ mb: 1.5, display: activeShift ? { md: 'none' } : undefined }}>Caja</Typography>
                     {registersQuery.isLoading && <LoadingState label="cajas" />}
                     {registerError && (
                       <Alert
@@ -469,7 +518,7 @@ export function PosSessionPage() {
                       <Alert severity="info">Esta sucursal no tiene cajas disponibles.</Alert>
                     )}
                     {registersQuery.isSuccess && registersQuery.data.totalElements > 0 && (
-                      <Stack spacing={2}>
+                      <Stack spacing={activeShift ? { xs: 2, md: 1 } : 2}>
                         <FormControl fullWidth>
                           <InputLabel id="register-select-label">Caja</InputLabel>
                           <Select
@@ -507,7 +556,7 @@ export function PosSessionPage() {
                           <Alert severity="warning">La caja seleccionada ya no está disponible. Elige una caja actualizada.</Alert>
                         )}
                         {selectedRegister && (
-                          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+                          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', display: activeShift ? { md: 'none' } : 'flex' }}>
                             <Typography variant="body2">Caja actual: <strong>{selectedRegister.name}</strong> ({selectedRegister.code})</Typography>
                             <StatusChip status={selectedRegister.status} />
                           </Stack>
@@ -525,8 +574,14 @@ export function PosSessionPage() {
               )}
 
               {selectedRegisterIdForScope && selectedBranch && selectedRegister && (
-                <Box>
-                  <Typography component="h3" variant="subtitle1" sx={{ mb: 1.5 }}>Turno</Typography>
+                <Box sx={activeShift ? {
+                  display: { md: 'flex' },
+                  flexDirection: { md: 'column' },
+                  flexGrow: { md: 1 },
+                  minHeight: { md: 0 },
+                  gap: { md: 2 },
+                } : undefined}>
+                  <Typography component="h3" variant="subtitle1" sx={{ mb: activeShift ? { md: 0 } : 1.5, flexShrink: 0, display: activeShift ? { md: 'none' } : 'block' }}>Turno</Typography>
                   {shiftsQuery.isLoading && <LoadingState label="turno" />}
                   {shiftError && (
                     <Alert
@@ -583,16 +638,20 @@ export function PosSessionPage() {
                   )}
                   {shiftsQuery.isSuccess && activeShift && (
                     <>
-                    <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 }, bgcolor: 'background.paper' }}>
-                      <Stack spacing={2.5}>
-                        <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
-                          <Box>
+                    <Paper variant="outlined" sx={{ p: activeShift ? { xs: 1.5, sm: 2, md: 1.5 } : { xs: 1.5, sm: 2 }, bgcolor: 'background.paper', flexShrink: 0 }}>
+                      <Stack
+                        spacing={activeShift ? { xs: 2, md: 1.5 } : 2}
+                        direction={activeShift ? { xs: 'column', md: 'row' } : 'column'}
+                        sx={activeShift ? { alignItems: { md: 'center' }, flexWrap: { md: 'wrap' }, rowGap: { md: 1 } } : undefined}
+                      >
+                        <Stack direction="row" sx={{ alignItems: 'center', justifyContent: activeShift ? { xs: 'space-between', md: 'flex-start' } : 'space-between', gap: 2, flexShrink: 0 }}>
+                          <Box sx={activeShift ? { display: { md: 'flex' }, alignItems: { md: 'baseline' }, columnGap: { md: 1 } } : undefined}>
                             <Typography variant="overline" color="text.secondary">TURNO ACTIVO</Typography>
                             <Typography component="h4" variant="h6">En curso</Typography>
                           </Box>
                           <Chip label="OPEN · Activo" color="success" />
                         </Stack>
-                        <Box component="dl" sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(150px, 1fr) 2fr' }, gap: 1, m: 0 }}>
+                        <Box component="dl" sx={{ display: 'grid', gridTemplateColumns: activeShift ? { xs: '1fr', sm: 'minmax(150px, 1fr) 2fr', md: 'auto 1fr auto 1fr' } : { xs: '1fr', sm: 'minmax(150px, 1fr) 2fr' }, gap: activeShift ? 1 : 1, columnGap: activeShift ? { md: 2 } : undefined, m: 0 }}>
                           <Typography component="dt" variant="body2" color="text.secondary">Sucursal</Typography>
                           <Typography component="dd" variant="body2" sx={{ m: 0 }}>{selectedBranch.name} · {selectedBranch.code}</Typography>
                           <Typography component="dt" variant="body2" color="text.secondary">Caja</Typography>
@@ -606,7 +665,7 @@ export function PosSessionPage() {
                             {formatTimestamp(activeShift.openedAt, me.organization.locale, selectedTimezone)}
                           </Typography>
                         </Box>
-                        <Box>
+                        <Box sx={activeShift ? { ml: { md: 'auto' }, flexShrink: 0 } : undefined}>
                           <Button variant="contained" color="primary" onClick={() => setDialogMode('close')}>
                             Cerrar turno
                           </Button>
@@ -622,6 +681,7 @@ export function PosSessionPage() {
                         shift={activeShift}
                         locale={me.organization.locale}
                         currency={me.organization.currency}
+                        fillHeight
                       />
                     </Suspense>
                     </>

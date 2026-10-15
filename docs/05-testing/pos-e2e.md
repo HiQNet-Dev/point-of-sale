@@ -106,3 +106,16 @@ screenshot and server logs, and do not soften the expected behavior to hide it.
 The local environment used to create this harness did not have a running Docker
 Engine or `psql`; local integrated execution therefore requires enabling those
 prerequisites. CI is the reproducible execution environment.
+
+### Limitación local en Windows: control de aplicaciones y `ffmpeg`
+
+En Windows, si una **política de control de aplicaciones** (WDAC, AppLocker o
+Smart App Control) bloquea el binario `ffmpeg-win64.exe` que Playwright instala en
+`%LOCALAPPDATA%\ms-playwright\ffmpeg-<rev>`, toda la suite falla al cerrar el
+contexto con `browserContext.close: spawn UNKNOWN` (la grabación de vídeo no puede
+finalizarse), **incluso en pruebas cuyas aserciones pasan**. No es un defecto del
+producto ni del código: es una restricción del equipo. Para confirmarlo, ejecute
+`ffmpeg-win64.exe -version`; un mensaje de bloqueo del sistema lo delata. Opciones:
+autorizar ese binario en la política de control de aplicaciones, o ejecutar la
+suite localmente sin vídeo (por ejemplo, con una configuración que herede
+`playwright.config.ts` y fije `use.video: 'off'`). CI (Ubuntu) no se ve afectado.
