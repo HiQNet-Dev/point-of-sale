@@ -165,8 +165,10 @@ com.hiqnet.pos.<modulo>[.domain|.application|.infrastructure|.api]
   (`SupplierController`, `PurchaseOrderController` + DTOs). Sin
   `infrastructure`. `Supplier` es **organization-owned**; `PurchaseOrder` es
   organization-owned con sucursal de destino y rutas branch-nested. Dependencias
-  de lectura `purchasing -> organization, branch, inventory` y `shared`. Emisión,
-  cancelación y recepción siguen pendientes (ver ADR-0015 y ADR-0016).
+  de lectura `purchasing -> organization, branch, inventory` y `shared`. Las
+  transiciones de emisión (`DRAFT → ORDERED`) y cancelación (`DRAFT|ORDERED →
+  CANCELLED`) están implementadas sobre el mismo bloqueo de cabecera; la recepción
+  sigue pendiente (ver ADR-0015, ADR-0016 y ADR-0017).
 - Dependencia entre módulos (lectura): `branch` usa
   `OrganizationRepository` de `organization` para validar existencia y
   resolución de timezone; `auth` usa `User`/`UserRepository` de `users` y

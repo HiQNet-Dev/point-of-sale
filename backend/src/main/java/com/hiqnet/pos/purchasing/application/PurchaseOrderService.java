@@ -30,6 +30,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -51,8 +53,13 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code PurchaseOrder → PurchaseOrderLine → (futuro) BranchInventory}, igual que
  * la convención de Sales.</p>
  *
- * <p>Esta fundación no implementa {@code issue} ni {@code cancel} (PR 2.2) y
- * nunca escribe movimientos de inventario.</p>
+ * <p>La emisión ({@code issue}) y la cancelación ({@code cancel}) son
+ * transiciones privilegiadas que reutilizan el mismo bloqueo de cabecera y la
+ * misma validación de {@code expectedVersion}: al emitir se valida que la orden
+ * tenga partidas, que el proveedor y los artículos sigan activos y que la unidad
+ * base de cada artículo no haya cambiado desde la captura; al cancelar se
+ * conserva el historial de emisión. Ninguna transición escribe movimientos de
+ * inventario.</p>
  */
 @Service
 public class PurchaseOrderService {
@@ -346,6 +353,117 @@ public class PurchaseOrderService {
                 organizationId, branchId, "purchase_order.line.removed", "purchase_order", saved.getId(),
                 AuditMetadata.of(metadata)));
         return detail(saved);
+    }
+
+    /**
+     * Emite una orden de compra en borrador (transición {@code DRAFT → ORDERED}).
+     *
+     * <p>Reutiliza el bloqueo pesimista scoped de la cabecera y la validación de
+     * {@code expectedVersion}. Antes de emitir exige al menos una partida, un
+     * proveedor y artículos activos, y que la unidad base actual de cada artículo
+     * coincida con el snapshot capturado en la partida. Emitir no modifica
+     * existencias.</p>
+     *
+     * @param organizationId organización propietaria
+     * @param branchId sucursal de destino de la ruta
+     * @param purchaseOrderId identificador de la orden
+     * @param expectedVersion versión del agregado leída por el cliente
+     * @param actorUserId usuario autenticado que emite la orden
+     * @return orden emitida con sus partidas
+     * @throws BusinessException si la orden no existe, no está en DRAFT, la versión es obsoleta,
+     *         está vacía, el proveedor o un artículo están inactivos, o la unidad base cambió
+     */
+    @Transactional
+    public PurchaseOrderDetail issue(
+            UUID organizationId, UUID branchId, UUID purchaseOrderId, long expectedVersion, UUID actorUserId) {
+        PurchaseOrder order = lockOrder(organizationId, branchId, purchaseOrderId);
+        order.requireDraft();
+        requireExpectedVersion(order, expectedVersion);
+
+        List<PurchaseOrderLine> lines =
+                purchaseOrderLineRepository.findByPurchaseOrderIdOrderByLineNumberAsc(purchaseOrderId);
+        if (lines.isEmpty()) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.PURCHASE_ORDER_EMPTY,
+                    "The purchase order cannot be issued without lines");
+        }
+        requireActiveSupplier(order.getSupplier());
+        requireIssuableLines(organizationId, lines);
+
+        order.issue(actorUserId, clock.instant());
+        PurchaseOrder saved = purchaseOrderRepository.saveAndFlush(order);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("toStatus", saved.getStatus().name());
+        metadata.put("lineCount", lines.size());
+        auditPort.record(AuditRecord.ofBranch(
+                organizationId, branchId, "purchase_order.issued", "purchase_order", saved.getId(),
+                AuditMetadata.of(metadata)));
+        return detail(saved);
+    }
+
+    /**
+     * Cancela una orden (transición {@code DRAFT|ORDERED → CANCELLED}).
+     *
+     * <p>Reutiliza el bloqueo pesimista scoped de la cabecera y la validación de
+     * {@code expectedVersion}. La cancelación es irreversible y conserva el
+     * historial de emisión cuando la orden ya estaba emitida. Cancelar no modifica
+     * existencias.</p>
+     *
+     * @param organizationId organización propietaria
+     * @param branchId sucursal de destino de la ruta
+     * @param purchaseOrderId identificador de la orden
+     * @param expectedVersion versión del agregado leída por el cliente
+     * @param actorUserId usuario autenticado que cancela la orden
+     * @return orden cancelada con sus partidas
+     * @throws BusinessException si la orden no existe, la versión es obsoleta o ya estaba cancelada
+     */
+    @Transactional
+    public PurchaseOrderDetail cancel(
+            UUID organizationId, UUID branchId, UUID purchaseOrderId, long expectedVersion, UUID actorUserId) {
+        PurchaseOrder order = lockOrder(organizationId, branchId, purchaseOrderId);
+        requireExpectedVersion(order, expectedVersion);
+
+        String previousStatus = order.getStatus().name();
+        order.cancel(actorUserId, clock.instant());
+        PurchaseOrder saved = purchaseOrderRepository.saveAndFlush(order);
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("fromStatus", previousStatus);
+        metadata.put("toStatus", saved.getStatus().name());
+        auditPort.record(AuditRecord.ofBranch(
+                organizationId, branchId, "purchase_order.cancelled", "purchase_order", saved.getId(),
+                AuditMetadata.of(metadata)));
+        return detail(saved);
+    }
+
+    /**
+     * Exige que todos los artículos de las partidas sigan activos y que su unidad
+     * base actual coincida con la capturada en la partida.
+     *
+     * @param organizationId organización propietaria
+     * @param lines partidas de la orden
+     * @throws BusinessException si un artículo está inactivo o su unidad base cambió
+     */
+    private void requireIssuableLines(UUID organizationId, List<PurchaseOrderLine> lines) {
+        List<UUID> itemIds = lines.stream().map(PurchaseOrderLine::getInventoryItemId).toList();
+        Map<UUID, InventoryItem> items = inventoryItemRepository
+                .findByOrganizationIdAndIdIn(organizationId, itemIds)
+                .stream()
+                .collect(Collectors.toMap(InventoryItem::getId, Function.identity()));
+        for (PurchaseOrderLine line : lines) {
+            InventoryItem item = items.get(line.getInventoryItemId());
+            if (item == null) {
+                throw new BusinessException(
+                        HttpStatus.NOT_FOUND, ErrorCodes.INVENTORY_ITEM_NOT_FOUND, "Inventory item not found");
+            }
+            requireActiveInventoryItem(item);
+            if (line.getUnitSnapshot() != item.getBaseUnit()) {
+                throw new BusinessException(
+                        HttpStatus.CONFLICT,
+                        ErrorCodes.PURCHASE_ORDER_UNIT_CHANGED,
+                        "The inventory item base unit changed since the line was captured");
+            }
+        }
     }
 
     private PurchaseOrderDetail detail(PurchaseOrder order) {

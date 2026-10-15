@@ -164,6 +164,191 @@ class PurchaseOrderConcurrencyTest extends AbstractRbacIntegrationTest {
         assertThat(supplierSnapshot).isEqualTo("proveedor-norte");
     }
 
+    @Test
+    void concurrentIssuesYieldOneOrderedAndOneAuditEvent() throws Exception {
+        Fixture fixture = prepare(1);
+        String orderId = createOrder(fixture, "po-issue-race");
+        addLine(fixture, orderId, fixture.itemIds().get(0), 0);
+
+        List<Integer> statuses = runParallel(THREADS, () -> issue(fixture, orderId, 1));
+
+        assertThat(statuses.stream().filter(status -> status == 200).count()).isEqualTo(1);
+        assertThat(statuses.stream().filter(status -> status == 409).count()).isEqualTo(THREADS - 1);
+        String status = jdbcTemplate.queryForObject(
+                "select status from purchase_orders where id = ?", String.class, UUID.fromString(orderId));
+        Long version = jdbcTemplate.queryForObject(
+                "select version from purchase_orders where id = ?", Long.class, UUID.fromString(orderId));
+        assertThat(status).isEqualTo("ORDERED");
+        assertThat(version).isEqualTo(2);
+        assertThat(auditCountByAction(fixture.rbac().orgId(), "purchase_order.issued")).isEqualTo(1);
+    }
+
+    @Test
+    void concurrentCancelsYieldOneCancelledAndOneAuditEvent() throws Exception {
+        Fixture fixture = prepare(1);
+        String orderId = createOrder(fixture, "po-cancel-race");
+
+        List<Integer> statuses = runParallel(THREADS, () -> cancel(fixture, orderId, 0));
+
+        assertThat(statuses.stream().filter(status -> status == 200).count()).isEqualTo(1);
+        assertThat(statuses.stream().filter(status -> status == 409).count()).isEqualTo(THREADS - 1);
+        String status = jdbcTemplate.queryForObject(
+                "select status from purchase_orders where id = ?", String.class, UUID.fromString(orderId));
+        Long version = jdbcTemplate.queryForObject(
+                "select version from purchase_orders where id = ?", Long.class, UUID.fromString(orderId));
+        assertThat(status).isEqualTo("CANCELLED");
+        assertThat(version).isEqualTo(1);
+        assertThat(auditCountByAction(fixture.rbac().orgId(), "purchase_order.cancelled")).isEqualTo(1);
+    }
+
+    @Test
+    void issueAndCancelRaceLeavesASingleCoherentResult() throws Exception {
+        Fixture fixture = prepare(1);
+        String orderId = createOrder(fixture, "po-issue-cancel-race");
+        addLine(fixture, orderId, fixture.itemIds().get(0), 0);
+        java.util.concurrent.atomic.AtomicInteger index = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        List<Integer> statuses = runParallel(THREADS, () -> index.getAndIncrement() % 2 == 0
+                ? issue(fixture, orderId, 1)
+                : cancel(fixture, orderId, 1));
+
+        assertThat(statuses.stream().filter(status -> status == 200).count()).isEqualTo(1);
+        assertThat(statuses.stream().filter(status -> status == 409).count()).isEqualTo(THREADS - 1);
+        String status = jdbcTemplate.queryForObject(
+                "select status from purchase_orders where id = ?", String.class, UUID.fromString(orderId));
+        Long version = jdbcTemplate.queryForObject(
+                "select version from purchase_orders where id = ?", Long.class, UUID.fromString(orderId));
+        assertThat(status).isIn("ORDERED", "CANCELLED");
+        assertThat(version).isEqualTo(2);
+        assertThat(auditCountByAction(fixture.rbac().orgId(), "purchase_order.issued")
+                        + auditCountByAction(fixture.rbac().orgId(), "purchase_order.cancelled"))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void issueAndAddLineRaceLeavesASingleCoherentResult() throws Exception {
+        Fixture fixture = prepare(2);
+        String orderId = createOrder(fixture, "po-issue-addline-race");
+        addLine(fixture, orderId, fixture.itemIds().get(0), 0);
+        java.util.concurrent.atomic.AtomicInteger index = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        List<Integer> statuses = runParallel(THREADS, () -> index.getAndIncrement() % 2 == 0
+                ? issue(fixture, orderId, 1)
+                : addLine(fixture, orderId, fixture.itemIds().get(1), 1));
+
+        long successes = statuses.stream().filter(status -> status == 200 || status == 201).count();
+        assertThat(successes).isEqualTo(1);
+        Long version = jdbcTemplate.queryForObject(
+                "select version from purchase_orders where id = ?", Long.class, UUID.fromString(orderId));
+        assertThat(version).isEqualTo(2);
+    }
+
+    @Test
+    void issueAndUpdateLineRaceLeavesASingleCoherentResult() throws Exception {
+        Fixture fixture = prepare(1);
+        String orderId = createOrder(fixture, "po-issue-updateline-race");
+        addLine(fixture, orderId, fixture.itemIds().get(0), 0);
+        UUID lineId = lineId(orderId);
+        java.util.concurrent.atomic.AtomicInteger index = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        List<Integer> statuses = runParallel(THREADS, () -> index.getAndIncrement() % 2 == 0
+                ? issue(fixture, orderId, 1)
+                : updateLine(fixture, orderId, lineId, 1));
+
+        long successes = statuses.stream().filter(status -> status == 200).count();
+        assertThat(successes).isEqualTo(1);
+        String status = jdbcTemplate.queryForObject(
+                "select status from purchase_orders where id = ?", String.class, UUID.fromString(orderId));
+        Long version = jdbcTemplate.queryForObject(
+                "select version from purchase_orders where id = ?", Long.class, UUID.fromString(orderId));
+        assertThat(status).isIn("DRAFT", "ORDERED");
+        assertThat(version).isEqualTo(2);
+    }
+
+    @Test
+    void cancelAndRemoveLineRaceLeavesASingleCoherentResult() throws Exception {
+        Fixture fixture = prepare(1);
+        String orderId = createOrder(fixture, "po-cancel-removeline-race");
+        addLine(fixture, orderId, fixture.itemIds().get(0), 0);
+        UUID lineId = lineId(orderId);
+        java.util.concurrent.atomic.AtomicInteger index = new java.util.concurrent.atomic.AtomicInteger(0);
+
+        List<Integer> statuses = runParallel(THREADS, () -> index.getAndIncrement() % 2 == 0
+                ? cancel(fixture, orderId, 1)
+                : removeLine(fixture, orderId, lineId, 1));
+
+        long successes = statuses.stream().filter(status -> status == 200).count();
+        assertThat(successes).isEqualTo(1);
+        Long version = jdbcTemplate.queryForObject(
+                "select version from purchase_orders where id = ?", Long.class, UUID.fromString(orderId));
+        assertThat(version).isEqualTo(2);
+    }
+
+    private UUID lineId(String orderId) {
+        return jdbcTemplate.queryForObject(
+                "select id from purchase_order_lines where purchase_order_id = ?", UUID.class, UUID.fromString(orderId));
+    }
+
+    private int updateLine(Fixture fixture, String orderId, UUID lineId, long expectedVersion) throws Exception {
+        return mockMvc.perform(patch(ordersUrl(fixture) + "/" + orderId + "/lines/" + lineId)
+                        .header("Authorization", bearer(fixture.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":" + expectedVersion + ",\"quantity\":\"2.000000\"}"))
+                .andReturn()
+                .getResponse()
+                .getStatus();
+    }
+
+    private int removeLine(Fixture fixture, String orderId, UUID lineId, long expectedVersion) throws Exception {
+        return mockMvc.perform(post(ordersUrl(fixture) + "/" + orderId + "/lines/" + lineId + "/remove")
+                        .header("Authorization", bearer(fixture.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":" + expectedVersion + "}"))
+                .andReturn()
+                .getResponse()
+                .getStatus();
+    }
+
+    private int issue(Fixture fixture, String orderId, long expectedVersion) throws Exception {
+        return mockMvc.perform(post(ordersUrl(fixture) + "/" + orderId + "/issue")
+                        .header("Authorization", bearer(fixture.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":" + expectedVersion + "}"))
+                .andReturn()
+                .getResponse()
+                .getStatus();
+    }
+
+    private int cancel(Fixture fixture, String orderId, long expectedVersion) throws Exception {
+        return mockMvc.perform(post(ordersUrl(fixture) + "/" + orderId + "/cancel")
+                        .header("Authorization", bearer(fixture.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":" + expectedVersion + "}"))
+                .andReturn()
+                .getResponse()
+                .getStatus();
+    }
+
+    private int addLine(Fixture fixture, String orderId, UUID itemId, long expectedVersion) throws Exception {
+        return mockMvc.perform(post(ordersUrl(fixture) + "/" + orderId + "/lines")
+                        .header("Authorization", bearer(fixture.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":" + expectedVersion + ",\"inventoryItemId\":\"" + itemId
+                                + "\",\"quantity\":\"1.000000\"}"))
+                .andReturn()
+                .getResponse()
+                .getStatus();
+    }
+
+    private long auditCountByAction(UUID organizationId, String action) {
+        Long count = jdbcTemplate.queryForObject(
+                "select count(*) from audit_events where organization_id = ? and action = ?",
+                Long.class,
+                organizationId,
+                action);
+        return count == null ? 0 : count;
+    }
+
     private List<Integer> runParallel(int threads, Callable<Integer> action) throws Exception {
         CountDownLatch ready = new CountDownLatch(threads);
         CountDownLatch start = new CountDownLatch(1);

@@ -76,4 +76,74 @@ class PurchaseOrderDomainTest {
 
         assertThat(order.getUpdatedAt()).isEqualTo(when);
     }
+
+    @Test
+    void issueMovesDraftToOrderedAndStampsActorAndTime() {
+        PurchaseOrder order = PurchaseOrder.create(ORGANIZATION, BRANCH_ID, SUPPLIER, "po-1", "MXN", ACTOR_ID);
+        Instant when = Instant.parse("2026-10-15T12:00:00Z");
+
+        order.issue(ACTOR_ID, when);
+
+        assertThat(order.getStatus()).isEqualTo(PurchaseOrderStatus.ORDERED);
+        assertThat(order.getIssuedByUserId()).isEqualTo(ACTOR_ID);
+        assertThat(order.getIssuedAt()).isEqualTo(when);
+        assertThat(order.getUpdatedAt()).isEqualTo(when);
+        assertThat(order.getCancelledAt()).isNull();
+    }
+
+    @Test
+    void issueIsRejectedFromOrderedOrCancelled() {
+        PurchaseOrder ordered = PurchaseOrder.create(ORGANIZATION, BRANCH_ID, SUPPLIER, "po-1", "MXN", ACTOR_ID);
+        ordered.issue(ACTOR_ID, Instant.parse("2026-10-15T12:00:00Z"));
+        assertThatThrownBy(() -> ordered.issue(ACTOR_ID, Instant.parse("2026-10-15T13:00:00Z")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo("PURCHASE_ORDER_NOT_DRAFT");
+
+        PurchaseOrder cancelled = PurchaseOrder.create(ORGANIZATION, BRANCH_ID, SUPPLIER, "po-2", "MXN", ACTOR_ID);
+        cancelled.cancel(ACTOR_ID, Instant.parse("2026-10-15T12:00:00Z"));
+        assertThatThrownBy(() -> cancelled.issue(ACTOR_ID, Instant.parse("2026-10-15T13:00:00Z")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo("PURCHASE_ORDER_NOT_DRAFT");
+    }
+
+    @Test
+    void cancelDraftMovesToCancelledWithoutIssueHistory() {
+        PurchaseOrder order = PurchaseOrder.create(ORGANIZATION, BRANCH_ID, SUPPLIER, "po-1", "MXN", ACTOR_ID);
+        Instant when = Instant.parse("2026-10-15T12:00:00Z");
+
+        order.cancel(ACTOR_ID, when);
+
+        assertThat(order.getStatus()).isEqualTo(PurchaseOrderStatus.CANCELLED);
+        assertThat(order.getCancelledByUserId()).isEqualTo(ACTOR_ID);
+        assertThat(order.getCancelledAt()).isEqualTo(when);
+        assertThat(order.getIssuedAt()).isNull();
+        assertThat(order.getIssuedByUserId()).isNull();
+    }
+
+    @Test
+    void cancelOrderedPreservesIssueHistory() {
+        PurchaseOrder order = PurchaseOrder.create(ORGANIZATION, BRANCH_ID, SUPPLIER, "po-1", "MXN", ACTOR_ID);
+        Instant issued = Instant.parse("2026-10-15T12:00:00Z");
+        order.issue(ACTOR_ID, issued);
+
+        order.cancel(ACTOR_ID, Instant.parse("2026-10-15T14:00:00Z"));
+
+        assertThat(order.getStatus()).isEqualTo(PurchaseOrderStatus.CANCELLED);
+        assertThat(order.getIssuedAt()).isEqualTo(issued);
+        assertThat(order.getIssuedByUserId()).isEqualTo(ACTOR_ID);
+        assertThat(order.getCancelledAt()).isEqualTo(Instant.parse("2026-10-15T14:00:00Z"));
+    }
+
+    @Test
+    void cancelIsRejectedWhenAlreadyCancelled() {
+        PurchaseOrder order = PurchaseOrder.create(ORGANIZATION, BRANCH_ID, SUPPLIER, "po-1", "MXN", ACTOR_ID);
+        order.cancel(ACTOR_ID, Instant.parse("2026-10-15T12:00:00Z"));
+
+        assertThatThrownBy(() -> order.cancel(ACTOR_ID, Instant.parse("2026-10-15T13:00:00Z")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("code")
+                .isEqualTo("PURCHASE_ORDER_ALREADY_CANCELLED");
+    }
 }

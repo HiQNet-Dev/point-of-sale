@@ -33,9 +33,11 @@ import org.springframework.http.HttpStatus;
  * snapshots de código y nombre para preservar el historial aunque el catálogo
  * cambie.</p>
  *
- * <p>Esta fundación solo permite crear y editar órdenes en
- * {@link PurchaseOrderStatus#DRAFT}: {@code issue} y {@code cancel} llegan en un
- * incremento posterior. La orden nunca genera movimientos de inventario.</p>
+ * <p>El ciclo de vida lo gobierna el propio agregado: una orden nace en
+ * {@link PurchaseOrderStatus#DRAFT} y solo puede emitirse ({@link #issue}) desde
+ * DRAFT, o cancelarse ({@link #cancel}) desde DRAFT u ORDERED. La cancelación es
+ * irreversible y conserva los datos históricos de emisión cuando la orden ya
+ * estaba emitida. La orden nunca genera movimientos de inventario.</p>
  */
 @Entity
 @Table(
@@ -212,6 +214,65 @@ public class PurchaseOrder {
                     ErrorCodes.PURCHASE_ORDER_NOT_DRAFT,
                     "The purchase order is not editable because it is not in DRAFT");
         }
+    }
+
+    /**
+     * Emite la orden: transición irreversible {@code DRAFT → ORDERED}.
+     *
+     * <p>Registra el actor y el instante de emisión, ambos fijados por el
+     * servidor. Emitir <b>no</b> modifica existencias: es un registro interno de
+     * que la orden fue cursada; no implica envío de correos ni documentos al
+     * proveedor. Una orden ya emitida o cancelada no puede volver a emitirse.</p>
+     *
+     * @param actorUserId usuario autenticado que emite la orden
+     * @param when instante de la emisión, fijado por el servidor
+     * @throws BusinessException con {@code 409 PURCHASE_ORDER_NOT_DRAFT} si la orden no está en DRAFT
+     */
+    public void issue(UUID actorUserId, Instant when) {
+        if (status != PurchaseOrderStatus.DRAFT) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.PURCHASE_ORDER_NOT_DRAFT,
+                    "The purchase order can only be issued from DRAFT");
+        }
+        if (actorUserId == null) {
+            throw new BusinessException(
+                    HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_ERROR, "issuedByUserId is required");
+        }
+        this.status = PurchaseOrderStatus.ORDERED;
+        this.issuedByUserId = actorUserId;
+        this.issuedAt = when;
+        this.updatedAt = when;
+    }
+
+    /**
+     * Cancela la orden: transición irreversible {@code DRAFT|ORDERED → CANCELLED}.
+     *
+     * <p>Registra el actor y el instante de cancelación, ambos fijados por el
+     * servidor. Si la orden ya estaba emitida, conserva sus datos históricos de
+     * emisión ({@code issued_at} e {@code issued_by_user_id}); si era un borrador,
+     * esos campos permanecen {@code NULL}. Cancelar <b>no</b> modifica existencias.
+     * Una orden cancelada no puede volver a emitirse ni cancelarse.</p>
+     *
+     * @param actorUserId usuario autenticado que cancela la orden
+     * @param when instante de la cancelación, fijado por el servidor
+     * @throws BusinessException con {@code 409 PURCHASE_ORDER_ALREADY_CANCELLED} si ya estaba cancelada
+     */
+    public void cancel(UUID actorUserId, Instant when) {
+        if (status == PurchaseOrderStatus.CANCELLED) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.PURCHASE_ORDER_ALREADY_CANCELLED,
+                    "The purchase order is already cancelled");
+        }
+        if (actorUserId == null) {
+            throw new BusinessException(
+                    HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_ERROR, "cancelledByUserId is required");
+        }
+        this.status = PurchaseOrderStatus.CANCELLED;
+        this.cancelledByUserId = actorUserId;
+        this.cancelledAt = when;
+        this.updatedAt = when;
     }
 
     public UUID getId() {

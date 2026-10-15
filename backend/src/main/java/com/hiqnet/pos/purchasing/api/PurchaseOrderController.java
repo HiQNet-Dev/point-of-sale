@@ -41,9 +41,10 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * API administrativa de órdenes de compra de una sucursal.
  *
- * <p>Esta fundación administra únicamente borradores y sus partidas: no existen
- * todavía los endpoints de emisión ni de cancelación, y ninguna operación escribe
- * movimientos de inventario. Los errores usan el sobre estándar {@code ApiError}.</p>
+ * <p>Administra borradores y sus partidas, y las transiciones de estado
+ * {@code issue} (DRAFT → ORDERED) y {@code cancel} (DRAFT|ORDERED → CANCELLED).
+ * Ninguna operación escribe movimientos de inventario. Los errores usan el sobre
+ * estándar {@code ApiError}.</p>
  */
 @RestController
 @RequestMapping("/api/v1/organizations/{organizationId}/branches/{branchId}/purchase-orders")
@@ -319,6 +320,81 @@ public class PurchaseOrderController {
             @Valid @RequestBody ExpectedPurchaseOrderVersionRequest request) {
         return PurchaseOrderDetailResponse.from(purchaseOrderService.removeLine(
                 organizationId, branchId, purchaseOrderId, purchaseOrderLineId, request.expectedVersion()));
+    }
+
+    /**
+     * Emite una orden de compra en borrador.
+     *
+     * @param organizationId organización propietaria
+     * @param branchId sucursal de destino
+     * @param purchaseOrderId identificador de la orden
+     * @param request versión esperada
+     * @param jwt identidad del actor autenticado
+     * @return orden emitida con sus partidas
+     */
+    @PostMapping("/{purchaseOrderId}/issue")
+    @Operation(
+            summary = "Emitir una orden de compra (DRAFT → ORDERED)",
+            description = "Solo válido desde DRAFT. Exige al menos una partida, proveedor y artículos activos y "
+                    + "unidad base sin cambios; registra actor y fecha de emisión y pasa la orden a ORDERED. La "
+                    + "emisión no modifica existencias: es un registro interno, no un envío al proveedor. Una orden "
+                    + "ya emitida o cancelada responde 409 PURCHASE_ORDER_NOT_DRAFT. Requiere `expectedVersion`. "
+                    + "Permiso requerido: `purchasing.order.issue`.")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Orden emitida (estado ORDERED)"),
+        @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR / MALFORMED_REQUEST", content = @Content),
+        @ApiResponse(responseCode = "401", description = "AUTHENTICATION_REQUIRED / TOKEN_INVALID / TOKEN_EXPIRED", content = @Content),
+        @ApiResponse(responseCode = "403", description = "Sin el permiso `purchasing.order.issue` (FORBIDDEN)", content = @Content),
+        @ApiResponse(responseCode = "404", description = "Orden o artículo inexistente o ajeno (PURCHASE_ORDER_NOT_FOUND / INVENTORY_ITEM_NOT_FOUND)", content = @Content),
+        @ApiResponse(responseCode = "409", description = "PURCHASE_ORDER_NOT_DRAFT / PURCHASE_ORDER_EMPTY / SUPPLIER_INACTIVE / INVENTORY_ITEM_INACTIVE / PURCHASE_ORDER_UNIT_CHANGED / CONCURRENT_MODIFICATION", content = @Content)
+    })
+    @PreAuthorize("@authorizationService.hasBranchPermission(authentication, #organizationId, #branchId, 'purchasing.order.issue')")
+    public PurchaseOrderDetailResponse issue(
+            @PathVariable UUID organizationId,
+            @PathVariable UUID branchId,
+            @PathVariable UUID purchaseOrderId,
+            @Valid @RequestBody ExpectedPurchaseOrderVersionRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return PurchaseOrderDetailResponse.from(purchaseOrderService.issue(
+                organizationId, branchId, purchaseOrderId, request.expectedVersion(), actorId(jwt)));
+    }
+
+    /**
+     * Cancela una orden de compra en borrador o emitida.
+     *
+     * @param organizationId organización propietaria
+     * @param branchId sucursal de destino
+     * @param purchaseOrderId identificador de la orden
+     * @param request versión esperada
+     * @param jwt identidad del actor autenticado
+     * @return orden cancelada con sus partidas
+     */
+    @PostMapping("/{purchaseOrderId}/cancel")
+    @Operation(
+            summary = "Cancelar una orden de compra (DRAFT|ORDERED → CANCELLED)",
+            description = "Válido desde DRAFT u ORDERED; la cancelación es irreversible. Registra actor y fecha de "
+                    + "cancelación y conserva el historial de emisión si la orden ya estaba emitida. No modifica "
+                    + "existencias. Una orden ya cancelada responde 409 PURCHASE_ORDER_ALREADY_CANCELLED. Requiere "
+                    + "`expectedVersion`. Permiso requerido: `purchasing.order.cancel`.")
+    @SecurityRequirement(name = "bearerAuth")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Orden cancelada (estado CANCELLED)"),
+        @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR / MALFORMED_REQUEST", content = @Content),
+        @ApiResponse(responseCode = "401", description = "AUTHENTICATION_REQUIRED / TOKEN_INVALID / TOKEN_EXPIRED", content = @Content),
+        @ApiResponse(responseCode = "403", description = "Sin el permiso `purchasing.order.cancel` (FORBIDDEN)", content = @Content),
+        @ApiResponse(responseCode = "404", description = "Orden inexistente o ajena (PURCHASE_ORDER_NOT_FOUND)", content = @Content),
+        @ApiResponse(responseCode = "409", description = "PURCHASE_ORDER_ALREADY_CANCELLED / CONCURRENT_MODIFICATION", content = @Content)
+    })
+    @PreAuthorize("@authorizationService.hasBranchPermission(authentication, #organizationId, #branchId, 'purchasing.order.cancel')")
+    public PurchaseOrderDetailResponse cancel(
+            @PathVariable UUID organizationId,
+            @PathVariable UUID branchId,
+            @PathVariable UUID purchaseOrderId,
+            @Valid @RequestBody ExpectedPurchaseOrderVersionRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        return PurchaseOrderDetailResponse.from(purchaseOrderService.cancel(
+                organizationId, branchId, purchaseOrderId, request.expectedVersion(), actorId(jwt)));
     }
 
     private static void validatePaging(int page, int size) {
