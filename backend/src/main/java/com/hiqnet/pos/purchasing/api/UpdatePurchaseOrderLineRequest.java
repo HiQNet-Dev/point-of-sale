@@ -25,6 +25,7 @@ public record UpdatePurchaseOrderLineRequest(
                 JsonNode quantity,
         @Schema(
                         type = "string",
+                        nullable = true,
                         example = "0.0190",
                         description = "Nuevo costo unitario como string decimal no negativo. Omitir para no "
                                 + "cambiarlo; `null` explícito limpia el costo a NULL; `0.0000` asigna cero.")

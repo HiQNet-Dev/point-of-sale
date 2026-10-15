@@ -17,7 +17,12 @@ public record PurchaseOrderLineResponse(
         @Schema(example = "Harina de trigo") String itemNameSnapshot,
         @Schema(example = "GRAM", description = "Unidad base del artículo capturada al crear la partida.") String unitSnapshot,
         @Schema(example = "25000.000000", description = "Cantidad solicitada como string decimal (escala 6).") String quantity,
-        @Schema(example = "0.0180", description = "Costo unitario pactado como string decimal (escala 4), o null si no se informó.") String unitCost) {
+        @Schema(
+                        type = "string",
+                        nullable = true,
+                        example = "0.0180",
+                        description = "Costo unitario pactado como string decimal (escala 4), o null si no se informó.")
+                String unitCost) {
 
     /**
      * Convierte la partida persistida en su representación HTTP.

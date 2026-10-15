@@ -5,6 +5,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -120,11 +122,31 @@ class OpenApiEnabledIntegrationTest {
                                 .path("type")
                                 .asText())
                 .isEqualTo("string");
-        JsonNode updateLineUnitCost = schemas.path("UpdatePurchaseOrderLineRequest")
-                .path("properties")
-                .path("unitCost");
-        assertThat(updateLineUnitCost.path("type").asText()).isEqualTo("string");
-        assertThat(updateLineUnitCost.path("description").asText()).contains("null");
+        assertNullableDecimalString(
+                schemas.path("UpdatePurchaseOrderLineRequest").path("properties").path("unitCost"));
+        assertNullableDecimalString(
+                schemas.path("CreatePurchaseOrderLineRequest").path("properties").path("unitCost"));
+        assertNullableDecimalString(
+                schemas.path("PurchaseOrderLineResponse").path("properties").path("unitCost"));
+        List<String> updateLineRequired = new ArrayList<>();
+        schemas.path("UpdatePurchaseOrderLineRequest")
+                .path("required")
+                .forEach(node -> updateLineRequired.add(node.asText()));
+        assertThat(updateLineRequired).doesNotContain("unitCost");
+    }
+
+    /**
+     * Un costo unitario opcional se documenta como la unión de tipos de OpenAPI 3.1
+     * {@code ["string", "null"]}, de modo que el contrato permita formalmente el
+     * {@code null} que limpia el valor.
+     */
+    private static void assertNullableDecimalString(JsonNode schema) {
+        assertThat(schema.path("type").isArray())
+                .as("un decimal nullable debe declarar la unión de tipos de OpenAPI 3.1")
+                .isTrue();
+        List<String> types = new ArrayList<>();
+        schema.path("type").forEach(node -> types.add(node.asText()));
+        assertThat(types).containsExactlyInAnyOrder("string", "null");
     }
 
     @Test

@@ -23,6 +23,7 @@ public record CreatePurchaseOrderLineRequest(
                 JsonNode quantity,
         @Schema(
                         type = "string",
+                        nullable = true,
                         example = "0.0180",
                         description = "Costo unitario pactado opcional, como string decimal (hasta 4 decimales, no negativo). Omitir o null si no se conoce.")
                 JsonNode unitCost) {
