@@ -99,6 +99,8 @@ class OpenApiEnabledIntegrationTest {
         assertThat(paths.path(PURCHASE_ORDERS_PATH + "/{purchaseOrderId}/lines/{purchaseOrderLineId}")
                         .has("patch"))
                 .isTrue();
+        assertThat(paths.path(PURCHASE_ORDERS_PATH + "/{purchaseOrderId}/issue").has("post")).isTrue();
+        assertThat(paths.path(PURCHASE_ORDERS_PATH + "/{purchaseOrderId}/cancel").has("post")).isTrue();
         assertThat(paths.has(CHECKOUT_PATH)).isTrue();
         assertThat(paths.path(CHECKOUT_PATH).has("post")).isTrue();
     }
@@ -150,6 +152,18 @@ class OpenApiEnabledIntegrationTest {
     }
 
     @Test
+    void openApiDocumentsTransitionVersionRequestSchema() throws Exception {
+        JsonNode schemas = apiDocs().path("components").path("schemas");
+        JsonNode request = schemas.path("ExpectedPurchaseOrderVersionRequest");
+        assertThat(request.isMissingNode()).as("transition request schema must be registered").isFalse();
+        assertThat(request.path("properties").path("expectedVersion").path("type").asText())
+                .isEqualTo("integer");
+        List<String> required = new ArrayList<>();
+        request.path("required").forEach(node -> required.add(node.asText()));
+        assertThat(required).contains("expectedVersion");
+    }
+
+    @Test
     void swaggerUiIsServedAlongsideTheSpec() throws Exception {
         mockMvc.perform(get("/swagger-ui/index.html")).andExpect(status().isOk());
         // Canonical springdoc entry: redirects to the UI served above.
@@ -191,6 +205,16 @@ class OpenApiEnabledIntegrationTest {
         JsonNode orderResponses = paths.path(PURCHASE_ORDERS_PATH).path("post").path("responses");
         assertApiErrorRef(orderResponses.path("409"));
         assertApiErrorRef(orderResponses.path("403"));
+        JsonNode issueResponses = paths.path(PURCHASE_ORDERS_PATH + "/{purchaseOrderId}/issue")
+                .path("post")
+                .path("responses");
+        assertApiErrorRef(issueResponses.path("409"));
+        assertApiErrorRef(issueResponses.path("403"));
+        JsonNode cancelResponses = paths.path(PURCHASE_ORDERS_PATH + "/{purchaseOrderId}/cancel")
+                .path("post")
+                .path("responses");
+        assertApiErrorRef(cancelResponses.path("409"));
+        assertApiErrorRef(cancelResponses.path("403"));
     }
 
     private static void assertApiErrorRef(JsonNode response) {

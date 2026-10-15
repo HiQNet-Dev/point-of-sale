@@ -121,6 +121,8 @@ avala en una sola `EXISTS` (`BranchMembershipRoleRepository`
 | POST /organizations/{id}/branches/{branchId}/purchase-orders | `purchasing.order.write` (branch context) |
 | PATCH /organizations/{id}/branches/{branchId}/purchase-orders/{purchaseOrderId} | `purchasing.order.write` (branch context) |
 | POST/PATCH/remove de `.../purchase-orders/{purchaseOrderId}/lines[/{lineId}]` | `purchasing.order.write` (branch context) |
+| POST `.../purchase-orders/{purchaseOrderId}/issue` | `purchasing.order.issue` (branch context) |
+| POST `.../purchase-orders/{purchaseOrderId}/cancel` | `purchasing.order.cancel` (branch context) |
 | GET /organizations/{id}/inventory-items[/{inventoryItemId}] | `inventory.item.read` (organization scope) |
 | POST /organizations/{id}/inventory-items | `inventory.item.write` (organization scope) |
 | PATCH /organizations/{id}/inventory-items/{inventoryItemId} | `inventory.item.write` (organization scope) |
@@ -259,9 +261,10 @@ No se agregan claims JWT.
   consultable si la sucursal se desactiva).
 - POST de la colección, PATCH de la cabecera y las operaciones sobre partidas:
   `purchasing.order.write`.
-- `purchasing.order.issue` y `purchasing.order.cancel` quedan reservados para la
-  emisión y cancelación de órdenes, que se implementan en un incremento posterior:
-  en V23 ningún endpoint los consume todavía.
+- POST `.../purchase-orders/{purchaseOrderId}/issue`:
+  `purchasing.order.issue` (transición `DRAFT → ORDERED`).
+- POST `.../purchase-orders/{purchaseOrderId}/cancel`:
+  `purchasing.order.cancel` (transición `DRAFT|ORDERED → CANCELLED`).
 
 Una orden de otra sucursal de la misma organización responde `404`, porque la
 sucursal forma parte del ámbito del recurso.

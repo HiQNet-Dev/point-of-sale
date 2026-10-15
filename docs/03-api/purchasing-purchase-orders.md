@@ -1,7 +1,8 @@
 # API de órdenes de compra de Purchasing
 
-**Estado:** implementada en `v0.4.0-SNAPSHOT` (V23). Solo administra **borradores y
-partidas**; la emisión y la cancelación llegan en un incremento posterior.
+**Estado:** implementada en `v0.4.0-SNAPSHOT` (V23). Administra **borradores,
+partidas** y las transiciones de estado **emisión** (`issue`) y **cancelación**
+(`cancel`). La recepción de mercancía llega en un incremento posterior.
 
 El contrato técnico se genera desde las anotaciones OpenAPI y está disponible en
 `/v3/api-docs` y Swagger UI en desarrollo. Esta guía explica cómo consumir las
@@ -10,9 +11,29 @@ rutas sin sustituir la especificación generada.
 ## Alcance
 
 Una orden de compra pertenece a una organización y apunta a una sucursal de
-destino. En V23 solo existe el estado `DRAFT`: crear la orden, editar la cabecera y
-gestionar partidas. No hay recepción de mercancía, ni movimientos de inventario,
-ni costeo, ni cuentas por pagar.
+destino. Una orden nace en `DRAFT`, puede **emitirse** (`DRAFT → ORDERED`) y puede
+**cancelarse** (`DRAFT|ORDERED → CANCELLED`, irreversible). No hay recepción de
+mercancía, ni movimientos de inventario, ni costeo, ni cuentas por pagar: emitir o
+cancelar **no** modifican existencias.
+
+## Máquina de estados
+
+```text
+DRAFT ───── issue ─────> ORDERED
+  │                        │
+cancel                   cancel
+  │                        │
+  ▼                        ▼
+CANCELLED              CANCELLED
+```
+
+- `issue` solo desde `DRAFT`.
+- `cancel` desde `DRAFT` u `ORDERED`; es irreversible.
+- Una orden `ORDERED` no puede volver a emitirse; una `CANCELLED` no puede
+  emitirse ni volver a cancelarse.
+- El estado **nunca** se acepta desde el cliente ni se modifica por `PATCH`.
+- `PARTIALLY_RECEIVED` y `RECEIVED` pertenecen a la recepción de mercancía
+  (incremento posterior) y todavía no son alcanzables.
 
 ## Autenticación y permisos
 
@@ -24,8 +45,8 @@ organization-wide o una membership activa de esa sucursal):
 | --- | --- |
 | Listar o consultar órdenes | `purchasing.order.read` |
 | Crear borrador, editar cabecera y gestionar partidas | `purchasing.order.write` |
-| Emitir una orden (pendiente) | `purchasing.order.issue` |
-| Cancelar una orden (pendiente) | `purchasing.order.cancel` |
+| Emitir una orden | `purchasing.order.issue` |
+| Cancelar una orden | `purchasing.order.cancel` |
 
 La migración V23 agrega los cuatro permisos al catálogo, pero **no** los concede a
 ningún rol existente; deben asignarse mediante la administración RBAC. Un bootstrap
@@ -45,13 +66,15 @@ historial siga consultable aunque la sucursal se desactive.
 | `POST` | `.../purchase-orders/{purchaseOrderId}/lines` | `201` |
 | `PATCH` | `.../purchase-orders/{purchaseOrderId}/lines/{purchaseOrderLineId}` | `200` |
 | `POST` | `.../purchase-orders/{purchaseOrderId}/lines/{purchaseOrderLineId}/remove` | `200` |
+| `POST` | `.../purchase-orders/{purchaseOrderId}/issue` | `200` |
+| `POST` | `.../purchase-orders/{purchaseOrderId}/cancel` | `200` |
 
 La colección usa la envoltura estándar [PageResponse](pagination.md): `page` base
 cero (default `0`), `size` default `20` y máximo `100`. El orden es fijo:
 `createdAt DESC, id DESC`.
 
-`GET` de la colección acepta los filtros opcionales `status` (`DRAFT`), `supplierId`
-y `q` (búsqueda por `code`, sin distinguir mayúsculas).
+`GET` de la colección acepta los filtros opcionales `status` (`DRAFT`, `ORDERED` o
+`CANCELLED`), `supplierId` y `q` (búsqueda por `code`, sin distinguir mayúsculas).
 
 ## Crear un borrador
 
@@ -121,6 +144,51 @@ requiere `expectedVersion`.
 sincroniza en la fila de cabecera): tras agregar una partida a un borrador nuevo,
 `version` pasa de `0` a `1`.
 
+## Emitir una orden (`issue`)
+
+`POST .../purchase-orders/{purchaseOrderId}/issue` con el permiso
+`purchasing.order.issue`. Solo válido desde `DRAFT`.
+
+```json
+{
+  "expectedVersion": 1
+}
+```
+
+Resultado `200` con `{ purchaseOrder: {...}, lines: [...] }`, `status: "ORDERED"`
+y `version` incrementada. Antes de emitir el servidor exige:
+
+1. La orden existe en la organización y la sucursal de la ruta (`404` si no).
+2. `expectedVersion` coincide (`409 CONCURRENT_MODIFICATION`).
+3. La orden está en `DRAFT` (`409 PURCHASE_ORDER_NOT_DRAFT` en otro caso).
+4. Al menos una partida (`409 PURCHASE_ORDER_EMPTY`).
+5. El proveedor sigue `ACTIVE` (`409 SUPPLIER_INACTIVE`).
+6. Los artículos siguen `ACTIVE` (`409 INVENTORY_ITEM_INACTIVE`).
+7. La unidad base actual de cada artículo coincide con el `unitSnapshot` de la
+   partida (`409 PURCHASE_ORDER_UNIT_CHANGED`).
+
+El servidor registra `issuedByUserId` e `issuedAt` (nunca se envían). Emitir es un
+registro interno: **no** envía correos ni documentos al proveedor y **no** modifica
+existencias. Emitir dos veces responde `409 PURCHASE_ORDER_NOT_DRAFT`.
+
+## Cancelar una orden (`cancel`)
+
+`POST .../purchase-orders/{purchaseOrderId}/cancel` con el permiso
+`purchasing.order.cancel`. Válido desde `DRAFT` u `ORDERED`.
+
+```json
+{
+  "expectedVersion": 1
+}
+```
+
+Resultado `200` con `status: "CANCELLED"` y `version` incrementada. El servidor
+registra `cancelledByUserId` y `cancelledAt`. Si la orden ya estaba emitida,
+**conserva** `issuedAt` e `issuedByUserId`; si era un borrador, esos campos
+permanecen ausentes. Cancelar **no** modifica existencias ni elimina partidas.
+Cancelar dos veces responde `409 PURCHASE_ORDER_ALREADY_CANCELLED` (con
+`expectedVersion` obsoleto, `409 CONCURRENT_MODIFICATION`).
+
 ## Concurrencia
 
 `expectedVersion` es obligatorio en toda mutación de un recurso existente. Si no
@@ -146,7 +214,10 @@ Todas las respuestas de error usan [ApiError](errors.md).
 | `404` | `PURCHASE_ORDER_LINE_NOT_FOUND` | La partida no existe o no pertenece a la orden. |
 | `409` | `PURCHASE_ORDER_CODE_ALREADY_EXISTS` | El código ya existe en la organización (incluso en creación concurrente). |
 | `409` | `PURCHASE_ORDER_LINE_DUPLICATE_ITEM` | Ya existe una partida de ese artículo en la orden. |
-| `409` | `PURCHASE_ORDER_NOT_DRAFT` | La orden no está en `DRAFT` y no admite edición. |
+| `409` | `PURCHASE_ORDER_NOT_DRAFT` | La orden no está en `DRAFT` y no admite edición (ni una nueva emisión). |
+| `409` | `PURCHASE_ORDER_EMPTY` | Se intentó emitir una orden sin partidas. |
+| `409` | `PURCHASE_ORDER_UNIT_CHANGED` | La unidad base actual de un artículo difiere del snapshot de la partida. |
+| `409` | `PURCHASE_ORDER_ALREADY_CANCELLED` | Se intentó cancelar una orden ya cancelada. |
 | `409` | `SUPPLIER_INACTIVE` / `INVENTORY_ITEM_INACTIVE` / `BRANCH_INACTIVE` | El recurso referenciado está inactivo. |
 | `409` | `CONCURRENT_MODIFICATION` | `expectedVersion` no coincide con la versión actual. |
 
