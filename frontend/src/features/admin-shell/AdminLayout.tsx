@@ -5,6 +5,7 @@ import Divider from '@mui/material/Divider'
 import Drawer from '@mui/material/Drawer'
 import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
+import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
@@ -13,11 +14,11 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuthSession } from '../auth/model/useAuthSession'
 
 const NAV_ITEMS = [
-  { label: 'Artículos', to: '/admin/inventory/items' },
-  { label: 'Existencias por sucursal', to: '/admin/inventory/stock' },
-  { label: 'Recetas', to: '/admin/inventory/recipes' },
-  { label: 'Efectos de modificadores', to: '/admin/inventory/modifier-effects' },
-  { label: 'Configuración', to: '/admin/inventory/settings' },
+  { label: 'Artículos', icon: 'inventory', to: '/admin/inventory/items' },
+  { label: 'Existencias por sucursal', icon: 'storefront', to: '/admin/inventory/stock' },
+  { label: 'Recetas', icon: 'kitchen', to: '/admin/inventory/recipes' },
+  { label: 'Efectos de modificadores', icon: 'settings-applications', to: '/admin/inventory/modifier-effects' },
+  { label: 'Configuración', icon: 'settings', to: '/admin/inventory/settings' },
 ]
 
 const DRAWER_WIDTH = 240
@@ -47,8 +48,20 @@ function DrawerNavigation({ onNavigate }: { onNavigate?: () => void }) {
             to={item.to}
             selected={location.pathname.startsWith(item.to)}
             onClick={onNavigate}
-            sx={{ borderRadius: 1 }}
+            sx={{ borderRadius: 1, p: 0.75 }}
           >
+            <ListItemIcon
+              sx={{ minWidth: { xs: 32, md: 36 }, color: 'action.active', display: 'flex', alignItems: 'center' }}
+              aria-hidden="true"
+            >
+              <Box sx={{ fontSize: 18 }}>
+                {item.icon === 'inventory' && '📦'}
+                {item.icon === 'storefront' && '🏪'}
+                {item.icon === 'kitchen' && '👨‍🍳'}
+                {item.icon === 'settings-applications' && '⚙️'}
+                {item.icon === 'settings' && '⚙️'}
+              </Box>
+            </ListItemIcon>
             <ListItemText primary={item.label} />
           </ListItemButton>
         ))}
@@ -90,7 +103,7 @@ export function AdminLayout() {
       </Drawer>
 
       <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <AppBar position="static" color="default" elevation={0} sx={{ borderBottom: 1, borderColor: 'divider' }}>
+        <AppBar position="static">
           <Toolbar sx={{ gap: 1 }}>
             <Button
               color="inherit"

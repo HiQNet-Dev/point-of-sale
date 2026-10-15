@@ -143,6 +143,11 @@ test('cashier can recover POS, configure products and complete sales without pay
   await expect(page.getByText('No hay ventas abiertas.')).toBeVisible()
 
   await newSale(page, saleCreates)
+
+  // Atajo F2: enfoca la búsqueda de productos sin interferir con el resto del flujo.
+  await page.keyboard.press('F2')
+  await expect(page.getByRole('textbox', { name: 'Buscar productos' })).toBeFocused()
+
   await addProduct(page, fixtures.simpleProductName)
   await page.getByRole('button', { name: 'Agregar a la venta' }).click()
   await expect(page.getByText(new RegExp(`1 × ${fixtures.simpleProductName}`))).toBeVisible()
@@ -197,6 +202,36 @@ test('cashier can recover POS, configure products and complete sales without pay
   await page.getByRole('option', { name: /E2E Register A1/ }).click()
   await expect(page.getByText('TURNO ACTIVO')).toBeVisible()
   await expect(page.getByText(new RegExp(`1 × ${fixtures.simpleProductName}`))).toBeVisible()
+
+  // Modo caja en escritorio (1280 × 800 y 1440 × 900): el catálogo y el carrito
+  // conviven en dos columnas, no hay desbordamiento horizontal y el total con la
+  // acción de cobro quedan dentro del viewport sin desplazar la página.
+  for (const viewport of [
+    { name: 'laptop-1280x800', width: 1280, height: 800 },
+    { name: 'desktop-1440x900', width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+    await expect(page.getByRole('button', { name: 'Cobrar' })).toBeVisible()
+    await expect(page.getByLabel('Total de la venta')).toBeVisible()
+    const overflow = await page.evaluate(() =>
+      document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    expect(overflow).toBeLessThanOrEqual(1)
+    const cobrar = await page.getByRole('button', { name: 'Cobrar' }).boundingBox()
+    const total = await page.getByLabel('Total de la venta').boundingBox()
+    expect(cobrar).not.toBeNull()
+    expect(total).not.toBeNull()
+    expect(cobrar!.y).toBeGreaterThanOrEqual(0)
+    expect(cobrar!.y + cobrar!.height).toBeLessThanOrEqual(viewport.height)
+    expect(total!.y + total!.height).toBeLessThanOrEqual(viewport.height)
+  }
+
+  // Modo caja en móvil (390 × 844): una sola columna, sin desbordamiento horizontal.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.getByLabel('Total de la venta')).toBeVisible()
+  const mobileOverflow = await page.evaluate(() =>
+    document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  expect(mobileOverflow).toBeLessThanOrEqual(1)
+  await page.setViewportSize({ width: 1280, height: 720 })
 
   await page.getByRole('button', { name: 'Cobrar' }).click()
   await page.getByRole('combobox', { name: 'Método de pago' }).click()
@@ -342,7 +377,15 @@ test('cashier can recover POS, configure products and complete sales without pay
     movement.type === 'SALE_CONSUMPTION' && movement.quantityDelta === '-25.000000' && Boolean(movement.saleId))).toBe(true)
 
   // Responsive smoke against the running POS, not a mocked DOM.
-  for (const viewport of [{ width: 360, height: 800 }, { width: 768, height: 1024 }, { width: 1920, height: 1080 }]) {
+  for (const viewport of [
+    { width: 360, height: 800 },
+    { width: 390, height: 844 },
+    { width: 768, height: 1024 },
+    { width: 1280, height: 800 },
+    { width: 1366, height: 768 },
+    { width: 1440, height: 900 },
+    { width: 1920, height: 1080 },
+  ]) {
     await page.setViewportSize(viewport)
     const dimensions = await page.evaluate(() => ({
       viewport: document.documentElement.clientWidth,
