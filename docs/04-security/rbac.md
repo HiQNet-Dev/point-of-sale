@@ -11,7 +11,7 @@ User
   ↓ user_organization_roles (organization_id, user_id, role_id)     [ORGANIZATION scope]
 Role  (per Organization; code slug único e inmutable; status ACTIVE|INACTIVE)
   ↓ role_permissions (role_id, permission_code)
-Permission (catálogo, sembrado por V5/V6/V7/V9/V10/V11/V12/V13/V14/V15/V16/V17/V18/V22; sin CRUD de cliente)
+Permission (catálogo, sembrado por V5/V6/V7/V9/V10/V11/V12/V13/V14/V15/V16/V17/V18/V22/V23; sin CRUD de cliente)
 
 User
   ↓ branch_memberships (organization_id, branch_id, user_id, status)  [BRANCH scope]
@@ -20,7 +20,7 @@ Role   (mismas definiciones de roles; sin modelo BranchRole separado)
 ```
 
 - **Permissions**: catálogo del SISTEMA (`permissions.code` PK natural).
-  Se crean únicamente vía Flyway (`V5`/`V6`/`V7`/`V9`/`V10`/`V11`/`V12`/`V13`/`V14`/`V15`/`V16`/`V17`/`V18`/`V22`). Orden `code ASC`.
+  Se crean únicamente vía Flyway (`V5`/`V6`/`V7`/`V9`/`V10`/`V11`/`V12`/`V13`/`V14`/`V15`/`V16`/`V17`/`V18`/`V22`/`V23`). Orden `code ASC`.
 - **Role**: pertenece a una organización; `code` normalizado (trim+lowercase,
   slug) único por organización e inmutable; `name` editable; sin DELETE
   (baja = `status INACTIVE`).
@@ -117,6 +117,10 @@ avala en una sola `EXISTS` (`BranchMembershipRoleRepository`
 | GET /organizations/{id}/suppliers[/{supplierId}] | `purchasing.supplier.read` (organization scope) |
 | POST /organizations/{id}/suppliers | `purchasing.supplier.write` (organization scope) |
 | PATCH /organizations/{id}/suppliers/{supplierId} | `purchasing.supplier.write` (organization scope) |
+| GET /organizations/{id}/branches/{branchId}/purchase-orders[/{purchaseOrderId}] | `purchasing.order.read` (branch context) |
+| POST /organizations/{id}/branches/{branchId}/purchase-orders | `purchasing.order.write` (branch context) |
+| PATCH /organizations/{id}/branches/{branchId}/purchase-orders/{purchaseOrderId} | `purchasing.order.write` (branch context) |
+| POST/PATCH/remove de `.../purchase-orders/{purchaseOrderId}/lines[/{lineId}]` | `purchasing.order.write` (branch context) |
 | GET /organizations/{id}/inventory-items[/{inventoryItemId}] | `inventory.item.read` (organization scope) |
 | POST /organizations/{id}/inventory-items | `inventory.item.write` (organization scope) |
 | PATCH /organizations/{id}/inventory-items/{inventoryItemId} | `inventory.item.write` (organization scope) |
@@ -178,7 +182,7 @@ el mismo JWT (ADR-0005). Los access JWTs no se blacklistean (stateless, 10m).
 
 Promovido de decisión pendiente a contrato v0.1.x: **`expectedVersion`**
 (requerido, `>= 0`) en PATCH de Organization, Branch, User, Role, Membership,
-Category, Product, ModifierGroup, ModifierOption, CashRegister y Supplier, y en los `PUT` de
+Category, Product, ModifierGroup, ModifierOption, CashRegister, Supplier y PurchaseOrder, y en los `PUT` de
 reemplazo producto↔modifier-group, Product Inventory Recipe y ModifierOption Inventory Effects. El servidor
 compara con `@Version`; mismatch → `409 CONCURRENT_MODIFICATION`. Sin ETag /
 If-Match todavía.
@@ -240,6 +244,27 @@ permisos del catálogo. No se agregan claims JWT ni permisos branch-scoped.
   `/organizations/{id}/suppliers/{supplierId}`: `purchasing.supplier.read`.
 - POST `/organizations/{id}/suppliers` y PATCH
   `/organizations/{id}/suppliers/{supplierId}`: `purchasing.supplier.write`.
+
+## Permisos de órdenes de compra Purchasing (V23)
+
+`purchasing.order.read`, `purchasing.order.write`, `purchasing.order.issue` y
+`purchasing.order.cancel` son permisos **branch-scoped** (organización-wide o
+membership activa de la sucursal). V23 añade los cuatro códigos: el catálogo pasa
+de 53 a 57 y los grants existentes permanecen en 53; ningún rol recibe acceso de
+forma automática. El bootstrap seguro nuevo concede los 57 permisos del catálogo.
+No se agregan claims JWT.
+
+- GET `.../branches/{branchId}/purchase-orders[/{purchaseOrderId}]`:
+  `purchasing.order.read` (con `IgnoringBranchStatus`, para que el historial siga
+  consultable si la sucursal se desactiva).
+- POST de la colección, PATCH de la cabecera y las operaciones sobre partidas:
+  `purchasing.order.write`.
+- `purchasing.order.issue` y `purchasing.order.cancel` quedan reservados para la
+  emisión y cancelación de órdenes, que se implementan en un incremento posterior:
+  en V23 ningún endpoint los consume todavía.
+
+Una orden de otra sucursal de la misma organización responde `404`, porque la
+sucursal forma parte del ámbito del recurso.
 
 ## Inventory recipe permissions (V18)
 

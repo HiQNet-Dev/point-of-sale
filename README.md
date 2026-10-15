@@ -22,7 +22,7 @@ La fundación actual ya es operativa como backend administrativo seguro:
 - **Organization / Branch / Users** — administración completa scoped por organización.
 - **Authentication** — login, refresh rotativo (30d, familia 30d), logout en
   familia, `logout-all`, `/me`; JWT identity-only, PostgreSQL autoritativa.
-- **Roles / Permissions / RBAC** — catálogo de 53 permisos sembrado por Flyway,
+- **Roles / Permissions / RBAC** — catálogo de 57 permisos sembrado por Flyway,
   roles por organización, assignments, `@PreAuthorize` database-authoritative.
 - **Branch Memberships** — usuarios por sucursal con roles branch-scoped y
   `hasBranchPermission` (org-wide UNION membership ACTIVE de esa branch).
@@ -50,8 +50,11 @@ La release `v0.3.0` no incluye Purchasing, Expenses, Reports, returns/reversal n
 - Suppliers organization-owned (`V22`): código comercial inmutable y único,
   datos de contacto opcionales, baja lógica `INACTIVE`, RBAC y auditoría
   transaccional.
-- Órdenes de compra, recepciones, movimientos de inventario, costeo, cuentas por
-  pagar y pagos a proveedores siguen pendientes.
+- Órdenes de compra en borrador (`V23`): cabecera con sucursal de destino y
+  snapshots del proveedor, partidas con snapshots de artículo y unidad, moneda
+  tomada de la organización, concurrencia optimista del agregado y RBAC. La
+  emisión, la cancelación y la recepción de mercancía siguen pendientes, igual que
+  los movimientos de inventario, el costeo, las cuentas por pagar y los pagos.
 
 ## Filosofía del producto
 

@@ -34,6 +34,9 @@ class OpenApiEnabledIntegrationTest {
 
     private static final String SUPPLIERS_PATH = "/api/v1/organizations/{organizationId}/suppliers";
 
+    private static final String PURCHASE_ORDERS_PATH =
+            "/api/v1/organizations/{organizationId}/branches/{branchId}/purchase-orders";
+
     private static final String CHECKOUT_PATH =
             "/api/v1/organizations/{organizationId}/branches/{branchId}/cash-registers/{cashRegisterId}"
                     + "/cash-shifts/{cashShiftId}/sales/{saleId}/checkout";
@@ -88,6 +91,12 @@ class OpenApiEnabledIntegrationTest {
         assertThat(paths.path(INVENTORY_ITEMS_PATH).has("get")).isTrue();
         assertThat(paths.has(SUPPLIERS_PATH)).isTrue();
         assertThat(paths.path(SUPPLIERS_PATH).has("post")).isTrue();
+        assertThat(paths.has(PURCHASE_ORDERS_PATH)).isTrue();
+        assertThat(paths.path(PURCHASE_ORDERS_PATH).has("post")).isTrue();
+        assertThat(paths.path(PURCHASE_ORDERS_PATH + "/{purchaseOrderId}/lines").has("post")).isTrue();
+        assertThat(paths.path(PURCHASE_ORDERS_PATH + "/{purchaseOrderId}/lines/{purchaseOrderLineId}")
+                        .has("patch"))
+                .isTrue();
         assertThat(paths.has(CHECKOUT_PATH)).isTrue();
         assertThat(paths.path(CHECKOUT_PATH).has("post")).isTrue();
     }
@@ -111,6 +120,11 @@ class OpenApiEnabledIntegrationTest {
                                 .path("type")
                                 .asText())
                 .isEqualTo("string");
+        JsonNode updateLineUnitCost = schemas.path("UpdatePurchaseOrderLineRequest")
+                .path("properties")
+                .path("unitCost");
+        assertThat(updateLineUnitCost.path("type").asText()).isEqualTo("string");
+        assertThat(updateLineUnitCost.path("description").asText()).contains("null");
     }
 
     @Test
@@ -152,6 +166,9 @@ class OpenApiEnabledIntegrationTest {
         JsonNode suppliersResponses = paths.path(SUPPLIERS_PATH).path("post").path("responses");
         assertApiErrorRef(suppliersResponses.path("409"));
         assertApiErrorRef(suppliersResponses.path("403"));
+        JsonNode orderResponses = paths.path(PURCHASE_ORDERS_PATH).path("post").path("responses");
+        assertApiErrorRef(orderResponses.path("409"));
+        assertApiErrorRef(orderResponses.path("403"));
     }
 
     private static void assertApiErrorRef(JsonNode response) {
