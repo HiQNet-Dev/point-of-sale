@@ -346,7 +346,7 @@ public class PurchaseOrderController {
         @ApiResponse(responseCode = "400", description = "VALIDATION_ERROR / MALFORMED_REQUEST", content = @Content),
         @ApiResponse(responseCode = "401", description = "AUTHENTICATION_REQUIRED / TOKEN_INVALID / TOKEN_EXPIRED", content = @Content),
         @ApiResponse(responseCode = "403", description = "Sin el permiso `purchasing.order.issue` (FORBIDDEN)", content = @Content),
-        @ApiResponse(responseCode = "404", description = "Orden o artículo inexistente o ajeno (PURCHASE_ORDER_NOT_FOUND / INVENTORY_ITEM_NOT_FOUND)", content = @Content),
+        @ApiResponse(responseCode = "404", description = "Orden, artículo o proveedor inexistente o ajeno (PURCHASE_ORDER_NOT_FOUND / INVENTORY_ITEM_NOT_FOUND / SUPPLIER_NOT_FOUND)", content = @Content),
         @ApiResponse(responseCode = "409", description = "PURCHASE_ORDER_NOT_DRAFT / PURCHASE_ORDER_EMPTY / SUPPLIER_INACTIVE / INVENTORY_ITEM_INACTIVE / PURCHASE_ORDER_UNIT_CHANGED / CONCURRENT_MODIFICATION", content = @Content)
     })
     @PreAuthorize("@authorizationService.hasBranchPermission(authentication, #organizationId, #branchId, 'purchasing.order.issue')")

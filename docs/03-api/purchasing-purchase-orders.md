@@ -167,6 +167,12 @@ y `version` incrementada. Antes de emitir el servidor exige:
 7. La unidad base actual de cada artículo coincide con el `unitSnapshot` de la
    partida (`409 PURCHASE_ORDER_UNIT_CHANGED`).
 
+La validación es una **transición atómica** frente a la desactivación concurrente
+del proveedor o de los artículos: la emisión toma el bloqueo pesimista de esas
+filas (proveedor y luego artículos en `id` ascendente) antes de leer su estado. Así
+o la emisión observa el estado ya desactivado y responde `409`, o emite y confirma
+antes de que la desactivación prosiga; nunca emite sobre un estado obsoleto.
+
 El servidor registra `issuedByUserId` e `issuedAt` (nunca se envían). Emitir es un
 registro interno: **no** envía correos ni documentos al proveedor y **no** modifica
 existencias. Emitir dos veces responde `409 PURCHASE_ORDER_NOT_DRAFT`.
@@ -195,6 +201,12 @@ Cancelar dos veces responde `409 PURCHASE_ORDER_ALREADY_CANCELLED` (con
 coincide con la versión actual, la respuesta es `409 CONCURRENT_MODIFICATION` y el
 cliente debe releer la orden antes de reintentar. Dos escrituras concurrentes sobre
 la misma orden se serializan: solo una gana y la otra recibe `409`.
+
+La **emisión** es además atómica frente a cambios administrativos concurrentes: se
+serializa con la desactivación del proveedor (`409 SUPPLIER_INACTIVE`) y de los
+artículos (`409 INVENTORY_ITEM_INACTIVE`) mediante el bloqueo pesimista de esas
+filas, en el orden `PurchaseOrder → Supplier → InventoryItem` (artículos en `id`
+ascendente).
 
 ## Errores relevantes
 

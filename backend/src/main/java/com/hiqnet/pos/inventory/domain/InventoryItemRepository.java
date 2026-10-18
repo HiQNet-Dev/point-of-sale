@@ -45,6 +45,42 @@ public interface InventoryItemRepository
             @Param("organizationId") UUID organizationId, @Param("ids") Collection<UUID> ids);
 
     /**
+     * Bloquea ({@code FOR NO KEY UPDATE}) los artículos indicados en orden
+     * determinista por {@code id} y devuelve su estado y unidad base vigentes como
+     * proyección escalar.
+     *
+     * <p>Es una lectura bloqueada nativa que no usa el Persistence Context: la
+     * consulta de entidad equivalente podría devolver una instancia ya administrada
+     * (por ejemplo al emitir una orden, que ya referenció el artículo) sin reflejar
+     * una desactivación o un cambio de unidad base ya confirmados por otra
+     * transacción. La proyección escalar bajo el bloqueo lee el valor vigente al
+     * confirmar y cierra esa ventana TOCTOU. El orden ascendente por {@code id}
+     * mantiene el orden global de bloqueos y evita interbloqueos.</p>
+     *
+     * @param organizationId organización propietaria (scope del bloqueo)
+     * @param ids identificadores de los artículos referenciados
+     * @return estado y unidad base vigentes por artículo, en orden ascendente por {@code id}
+     */
+    @Query(
+            value = "select id as \"id\", status as \"status\", base_unit as \"baseUnit\" "
+                    + "from inventory_items "
+                    + "where organization_id = :organizationId and id in (:ids) "
+                    + "order by id asc for no key update",
+            nativeQuery = true)
+    List<IssuableItemState> lockIssuableStatesByIdIn(
+            @Param("organizationId") UUID organizationId, @Param("ids") Collection<UUID> ids);
+
+    /** Estado vigente de un artículo leído bajo bloqueo, sin pasar por el Persistence Context. */
+    interface IssuableItemState {
+
+        UUID getId();
+
+        String getStatus();
+
+        String getBaseUnit();
+    }
+
+    /**
      * Marca la unidad base como inmutable sin incrementar {@code @Version} y sin
      * auditar (es parte de la creación de la dependencia que lo motiva).
      *

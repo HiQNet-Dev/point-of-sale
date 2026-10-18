@@ -36,6 +36,27 @@ public interface SupplierRepository extends JpaRepository<Supplier, UUID>, JpaSp
             @Param("id") UUID id, @Param("organizationId") UUID organizationId);
 
     /**
+     * Bloquea la fila del proveedor ({@code FOR NO KEY UPDATE}) y devuelve su
+     * estado vigente como valor escalar.
+     *
+     * <p>Es una lectura bloqueada nativa: no usa el Persistence Context. La orden
+     * carga su proveedor de forma {@code EAGER}, de modo que una consulta de
+     * entidad podría devolver la instancia ya administrada y no reflejar la
+     * desactivación ya confirmada por otra transacción (lectura obsoleta). La
+     * proyección escalar bajo el bloqueo lee el valor vigente al confirmar y cierra
+     * esa ventana TOCTOU.</p>
+     *
+     * @param id identificador del proveedor
+     * @param organizationId identificador de la organización autorizada
+     * @return estado vigente del proveedor, o {@code null} si no existe en el ámbito
+     */
+    @Query(
+            value = "select status from suppliers where id = :id and organization_id = :organizationId "
+                    + "for no key update",
+            nativeQuery = true)
+    String lockStatusByIdAndOrganizationId(@Param("id") UUID id, @Param("organizationId") UUID organizationId);
+
+    /**
      * Indica si el código comercial ya está ocupado dentro de la organización.
      *
      * @param organizationId identificador de la organización

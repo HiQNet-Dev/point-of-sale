@@ -29,15 +29,28 @@ El siguiente paso es ejecutar la máquina de estados
    `Clock`; el estado nunca se acepta por `PATCH` ni desde el cliente.
 3. **Se reutiliza el contrato de concurrencia existente.** Ambas transiciones
    toman el mismo bloqueo pesimista scoped de la cabecera y validan
-   `expectedVersion`; ninguna crea un mecanismo de concurrencia alternativo. El
-   orden de bloqueo sigue siendo `PurchaseOrder → PurchaseOrderLine`; **no** se
-   bloquea `BranchInventory` en este incremento.
+   `expectedVersion`; ninguna crea un mecanismo de concurrencia alternativo. La
+   emisión amplía el orden de bloqueo a `PurchaseOrder → Supplier → InventoryItem`
+   (los artículos en `id` ascendente); la cancelación sigue en
+   `PurchaseOrder → PurchaseOrderLine` y las mutaciones de partida añaden el
+   bloqueo de `InventoryItem` (el alta de partida bloquea el artículo vía el
+   guard de unidad). **No** se bloquea
+   `BranchInventory` en este incremento.
 4. **Validación en la emisión.** Antes de emitir se exige al menos una partida
    (`409 PURCHASE_ORDER_EMPTY`), proveedor `ACTIVE` (`409 SUPPLIER_INACTIVE`),
    artículos `ACTIVE` (`409 INVENTORY_ITEM_INACTIVE`) y que la **unidad base
    actual** de cada artículo coincida con el `unit_snapshot` capturado
    (`409 PURCHASE_ORDER_UNIT_CHANGED`). La captura de la partida congela el
-   snapshot; la emisión es el punto donde se exige que siga siendo válido.
+   snapshot; la emisión es el punto donde se exige que siga siendo válido. La
+   validación es una **transición atómica** frente a los cambios administrativos
+   concurrentes: la emisión bloquea el proveedor y después los artículos
+   (`SELECT ... FOR NO KEY UPDATE`) tomando bloqueos de fila que conflictúan con
+   los `FOR UPDATE` de `SupplierService.update` e `InventoryItemService.update`. Así, o la
+   desactivación gana el bloqueo y la emisión observa `INACTIVE` y falla, o la
+   emisión gana y confirma antes de que la desactivación prosiga; nunca emite
+   sobre un estado obsoleto del Persistence Context (el proveedor se carga de
+   forma `EAGER` con la orden; el proveedor y los artículos se releen como
+   proyección escalar bajo el bloqueo).
 5. **Emitir es un registro interno.** `ORDERED` no implica envío de correos ni
    documentos al proveedor, y **ni emitir ni cancelar** modifican existencias: no
    hay escrituras en `branch_inventory` ni en `inventory_movements`.
@@ -58,18 +71,25 @@ El siguiente paso es ejecutar la máquina de estados
   concurrencia, aislamiento multiempresa y auditoría de la fundación.
 - Una orden emitida es **inmutable**: `PATCH` de cabecera y mutaciones de partida
   responden `409 PURCHASE_ORDER_NOT_DRAFT`.
+- La emisión queda **serializada** con la desactivación del proveedor y de los
+  artículos: se cierra la carrera TOCTOU de emisión que ADR-0018 §6 dejaba como
+  residual, con el mismo bloqueo pesimista de fila y el orden
+  `PurchaseOrder → Supplier → InventoryItem`.
 - Las carreras (dos emisiones, dos cancelaciones, emisión vs cancelación, emisión
   vs mutación de partidas) se resuelven en la fila de cabecera: una gana y las
   demás reciben `409`, sin mutaciones parciales ni eventos de auditoría extra.
 - **Sin migración nueva**: `V23` ya contiene el `CHECK` de estados y los permisos;
   este incremento no altera V1–V23.
-- `InventoryItem.baseUnit` sigue siendo una **dependencia pendiente** (ADR-0009 §4):
-  hoy la emisión detecta el cambio de unidad, pero el guard global de inmutabilidad
-  del catálogo se aborda antes de las recepciones.
+- **Sin endpoints ni permisos nuevos**: la emisión y la cancelación ya existían en
+  el contrato (`POST .../issue`, `POST .../cancel`) y en el catálogo de permisos;
+  no se añaden rutas, DTOs ni permisos.
+- El guard de inmutabilidad de `InventoryItem.baseUnit` **ya está integrado**
+  (PR #59: `InventoryItemUnitGuard`); **no** es una dependencia pendiente. Este
+  incremento solo añade su detección en la emisión bajo bloqueo. La **recepción de
+  mercancía** sigue pendiente y queda fuera de alcance.
 
 ## Decisiones diferidas
 
 - Recepción de mercancía: `PARTIALLY_RECEIVED`/`RECEIVED`, cantidades recibidas,
   idempotencia y el movimiento `PURCHASE_RECEIPT`.
-- Volver inmutable `InventoryItem.baseUnit` (ADR-0009 §4).
 - Guard global de Inventory y costeo/valoración; cuentas por pagar y pagos.

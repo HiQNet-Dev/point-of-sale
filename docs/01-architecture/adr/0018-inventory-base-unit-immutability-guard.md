@@ -60,21 +60,23 @@ so "no rows today" does not mean "never used".
      (`base_unit`, `unit_locked`) bypass `@Version`; the guard's marker update is a
      bulk statement that does not bump the item version.
 5. **Documented global lock order** to avoid deadlocks:
-   `CashShift → PurchaseOrder → InventoryItem → {BranchInventory,
+   `CashShift → PurchaseOrder → Supplier → InventoryItem → {BranchInventory,
    ProductInventoryRecipe, ModifierOptionInventoryConfig}`. Items are always locked
    by ascending `id`. In particular, checkout consumption locks the consumed items
    before the branch balances, matching manual stock mutations, so the
    `inventory_movements` foreign-key `FOR KEY SHARE` on the parent item cannot form
    a lock cycle with a concurrent manual adjustment.
 6. **Scope of the guarantee.** This increment protects the base-unit invariant, i.e.
-   a concurrent `base_unit` change versus dependency creation. It does **not**
-   resolve the purchase-order *issue-time* TOCTOU (ADR-0017), which remains a
-   separate, documented residual for these concurrent operations:
+   a concurrent `base_unit` change versus dependency creation. The purchase-order
+   *issue-time* TOCTOU (ADR-0017) was a separate, documented residual that a
+   follow-up increment (Purchasing Issuance Consistency) now closes:
    - concurrent `base_unit` change — **protected here**: the guard serializes it with
      the purchase-order line and any other dependency;
-   - concurrent deactivation of the `InventoryItem` (`status = INACTIVE`) — **not
-     protected** at issue time;
-   - concurrent deactivation of the `Supplier` — **not protected** at issue time.
+   - concurrent deactivation of the `InventoryItem` (`status = INACTIVE`) — **now
+     protected at issue time**: the emission locks the items by ascending `id` and
+     reads their fresh state (ADR-0017 §4);
+   - concurrent deactivation of the `Supplier` — **now protected at issue time**: the
+     emission locks the supplier row and reads its fresh state (ADR-0017 §4).
 
 ## Consequences
 
