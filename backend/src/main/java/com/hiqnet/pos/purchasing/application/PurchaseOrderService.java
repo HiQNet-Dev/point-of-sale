@@ -4,6 +4,7 @@ import com.hiqnet.pos.branch.domain.Branch;
 import com.hiqnet.pos.branch.domain.BranchRepository;
 import com.hiqnet.pos.branch.domain.BranchStatus;
 import com.hiqnet.pos.inventory.application.InventoryItemUnitGuard;
+import com.hiqnet.pos.inventory.domain.InventoryBaseUnit;
 import com.hiqnet.pos.inventory.domain.InventoryItem;
 import com.hiqnet.pos.inventory.domain.InventoryItemRepository;
 import com.hiqnet.pos.inventory.domain.InventoryItemStatus;
@@ -51,7 +52,7 @@ import org.springframework.transaction.annotation.Transactional;
  * concurrentes sobre la misma orden se serializan (la segunda observa la versión
  * nueva y responde {@code 409 CONCURRENT_MODIFICATION}) y no se pierde ninguna
  * actualización. El orden de adquisición de bloqueos es siempre
- * {@code PurchaseOrder → InventoryItem → PurchaseOrderLine → (futuro)
+ * {@code PurchaseOrder → Supplier → InventoryItem → PurchaseOrderLine → (futuro)
  * BranchInventory}, igual que la convención de Sales.</p>
  *
  * <p>La emisión ({@code issue}) y la cancelación ({@code cancel}) son
@@ -370,6 +371,15 @@ public class PurchaseOrderService {
      * coincida con el snapshot capturado en la partida. Emitir no modifica
      * existencias.</p>
      *
+     * <p>La validación es una transición atómica frente a los cambios
+     * administrativos concurrentes: tras bloquear la orden se bloquea el proveedor
+     * y luego los artículos en orden determinista por {@code id}
+     * ({@code PurchaseOrder → Supplier → InventoryItem}). Como
+     * {@code SupplierService.update} y {@code InventoryItemService.update} toman
+     * esos mismos bloqueos de fila, o la emisión observa el estado ya desactivado
+     * y falla, o emite y confirma antes de que la desactivación prosiga; nunca
+     * emite sobre un estado obsoleto del Persistence Context.</p>
+     *
      * @param organizationId organización propietaria
      * @param branchId sucursal de destino de la ruta
      * @param purchaseOrderId identificador de la orden
@@ -394,8 +404,8 @@ public class PurchaseOrderService {
                     ErrorCodes.PURCHASE_ORDER_EMPTY,
                     "The purchase order cannot be issued without lines");
         }
-        requireActiveSupplier(order.getSupplier());
-        requireIssuableLines(organizationId, lines);
+        lockActiveSupplier(organizationId, order.getSupplier().getId());
+        lockIssuableItems(organizationId, lines);
 
         order.issue(actorUserId, clock.instant());
         PurchaseOrder saved = purchaseOrderRepository.saveAndFlush(order);
@@ -443,27 +453,70 @@ public class PurchaseOrderService {
     }
 
     /**
-     * Exige que todos los artículos de las partidas sigan activos y que su unidad
-     * base actual coincida con la capturada en la partida.
+     * Bloquea el proveedor de la orden y verifica su estado vigente.
+     *
+     * <p>El bloqueo pesimista de la fila serializa la emisión con la desactivación
+     * administrativa ({@code SupplierService.update}) y el estado se lee de forma
+     * escalar y nativa bajo ese bloqueo. Es necesario porque la orden ya cargó el
+     * proveedor de forma {@code EAGER}: una consulta de entidad podría devolver esa
+     * instancia administrada sin reflejar la desactivación ya confirmada, mientras
+     * que la proyección escalar lee el estado vigente bajo el bloqueo.</p>
+     *
+     * @param organizationId organización propietaria
+     * @param supplierId proveedor de la orden
+     * @throws BusinessException si el proveedor no existe en el ámbito o ya no está activo
+     */
+    private void lockActiveSupplier(UUID organizationId, UUID supplierId) {
+        String status = supplierRepository.lockStatusByIdAndOrganizationId(supplierId, organizationId);
+        if (status == null) {
+            throw supplierNotFound();
+        }
+        if (!SupplierStatus.ACTIVE.name().equals(status)) {
+            throw supplierInactive();
+        }
+    }
+
+    /**
+     * Bloquea en orden determinista por {@code id} los artículos de las partidas y
+     * verifica que sigan activos y que su unidad base coincida con el snapshot.
+     *
+     * <p>El bloqueo pesimista serializa la emisión con la desactivación y con el
+     * cambio de unidad administrativos ({@code InventoryItemService.update}), de
+     * modo que el estado observado es el vigente al confirmar. El orden ascendente
+     * por {@code id} mantiene el orden global de bloqueos y evita interbloqueos con
+     * otros escritores de dependencias.</p>
+     *
+     * <p>El estado y la unidad base se leen como proyección escalar nativa bajo el
+     * bloqueo, no desde una consulta de entidad: la emisión puede haber cargado ya
+     * el artículo en el Persistence Context y una consulta de entidad devolvería
+     * esa instancia administrada sin reflejar la desactivación confirmada.</p>
      *
      * @param organizationId organización propietaria
      * @param lines partidas de la orden
-     * @throws BusinessException si un artículo está inactivo o su unidad base cambió
+     * @throws BusinessException si un artículo no existe, está inactivo o su unidad base cambió
      */
-    private void requireIssuableLines(UUID organizationId, List<PurchaseOrderLine> lines) {
-        List<UUID> itemIds = lines.stream().map(PurchaseOrderLine::getInventoryItemId).toList();
-        Map<UUID, InventoryItem> items = inventoryItemRepository
-                .findByOrganizationIdAndIdIn(organizationId, itemIds)
+    private void lockIssuableItems(UUID organizationId, List<PurchaseOrderLine> lines) {
+        List<UUID> itemIds = lines.stream()
+                .map(PurchaseOrderLine::getInventoryItemId)
+                .distinct()
+                .sorted()
+                .toList();
+        Map<UUID, InventoryItemRepository.IssuableItemState> items = inventoryItemRepository
+                .lockIssuableStatesByIdIn(organizationId, itemIds)
                 .stream()
-                .collect(Collectors.toMap(InventoryItem::getId, Function.identity()));
+                .collect(Collectors.toMap(
+                        InventoryItemRepository.IssuableItemState::getId, Function.identity()));
         for (PurchaseOrderLine line : lines) {
-            InventoryItem item = items.get(line.getInventoryItemId());
+            InventoryItemRepository.IssuableItemState item = items.get(line.getInventoryItemId());
             if (item == null) {
                 throw new BusinessException(
                         HttpStatus.NOT_FOUND, ErrorCodes.INVENTORY_ITEM_NOT_FOUND, "Inventory item not found");
             }
-            requireActiveInventoryItem(item);
-            if (line.getUnitSnapshot() != item.getBaseUnit()) {
+            if (!InventoryItemStatus.ACTIVE.name().equals(item.getStatus())) {
+                throw new BusinessException(
+                        HttpStatus.CONFLICT, ErrorCodes.INVENTORY_ITEM_INACTIVE, "The inventory item is inactive");
+            }
+            if (line.getUnitSnapshot() != InventoryBaseUnit.valueOf(item.getBaseUnit())) {
                 throw new BusinessException(
                         HttpStatus.CONFLICT,
                         ErrorCodes.PURCHASE_ORDER_UNIT_CHANGED,
@@ -543,7 +596,7 @@ public class PurchaseOrderService {
 
     private static void requireActiveSupplier(Supplier supplier) {
         if (supplier.getStatus() != SupplierStatus.ACTIVE) {
-            throw new BusinessException(HttpStatus.CONFLICT, ErrorCodes.SUPPLIER_INACTIVE, "The supplier is inactive");
+            throw supplierInactive();
         }
     }
 
@@ -566,6 +619,14 @@ public class PurchaseOrderService {
     private static BusinessException notFound() {
         return new BusinessException(
                 HttpStatus.NOT_FOUND, ErrorCodes.PURCHASE_ORDER_NOT_FOUND, "Purchase order not found");
+    }
+
+    private static BusinessException supplierNotFound() {
+        return new BusinessException(HttpStatus.NOT_FOUND, ErrorCodes.SUPPLIER_NOT_FOUND, "Supplier not found");
+    }
+
+    private static BusinessException supplierInactive() {
+        return new BusinessException(HttpStatus.CONFLICT, ErrorCodes.SUPPLIER_INACTIVE, "The supplier is inactive");
     }
 
     private static BusinessException duplicateCode() {

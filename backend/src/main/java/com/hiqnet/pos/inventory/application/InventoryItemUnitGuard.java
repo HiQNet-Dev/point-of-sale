@@ -32,9 +32,10 @@ import org.springframework.transaction.annotation.Transactional;
  * de partidas en borrador) sin que el artículo deje de haber sido utilizado; una
  * comprobación dinámica de filas perdería esa evidencia.</p>
  *
- * <p>Orden global de bloqueos: {@code CashShift → PurchaseOrder → InventoryItem
- * → {BranchInventory, ProductInventoryRecipe, ModifierOptionInventoryConfig}}.
- * Los artículos siempre se bloquean por {@code id} ascendente.</p>
+ * <p>Orden global de bloqueos: {@code CashShift → PurchaseOrder → Supplier →
+ * InventoryItem → {BranchInventory, ProductInventoryRecipe,
+ * ModifierOptionInventoryConfig}}. Los artículos siempre se bloquean por
+ * {@code id} ascendente.</p>
  */
 @Service
 public class InventoryItemUnitGuard {
