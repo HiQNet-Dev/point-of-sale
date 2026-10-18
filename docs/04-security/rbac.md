@@ -123,6 +123,8 @@ avala en una sola `EXISTS` (`BranchMembershipRoleRepository`
 | POST/PATCH/remove de `.../purchase-orders/{purchaseOrderId}/lines[/{lineId}]` | `purchasing.order.write` (branch context) |
 | POST `.../purchase-orders/{purchaseOrderId}/issue` | `purchasing.order.issue` (branch context) |
 | POST `.../purchase-orders/{purchaseOrderId}/cancel` | `purchasing.order.cancel` (branch context) |
+| GET `.../purchase-orders/{purchaseOrderId}/receipts[/{purchaseReceiptId}]` y `.../receipt-status` | `purchasing.receipt.read` (branch context; historial con `IgnoringBranchStatus`) |
+| POST `.../purchase-orders/{purchaseOrderId}/receipts` | `purchasing.receipt.write` (branch context; Branch ACTIVE) |
 | GET /organizations/{id}/inventory-items[/{inventoryItemId}] | `inventory.item.read` (organization scope) |
 | POST /organizations/{id}/inventory-items | `inventory.item.write` (organization scope) |
 | PATCH /organizations/{id}/inventory-items/{inventoryItemId} | `inventory.item.write` (organization scope) |
@@ -268,6 +270,20 @@ No se agregan claims JWT.
 
 Una orden de otra sucursal de la misma organización responde `404`, porque la
 sucursal forma parte del ámbito del recurso.
+
+## Permisos de recepción de mercancía Purchasing (V25)
+
+`purchasing.receipt.read` y `purchasing.receipt.write` son permisos
+**branch-scoped**. V25 añade los dos códigos: el catálogo pasa de 57 a 59 y los
+grants existentes permanecen en 57; ningún rol recibe acceso de forma automática.
+El bootstrap seguro nuevo concede los 59 permisos del catálogo. No se agregan
+claims JWT.
+
+- GET `.../purchase-orders/{purchaseOrderId}/receipts[/{purchaseReceiptId}]` y
+  `.../receipt-status`: `purchasing.receipt.read` (con `IgnoringBranchStatus`, para
+  que el historial siga consultable si la sucursal se desactiva).
+- POST `.../purchase-orders/{purchaseOrderId}/receipts`:
+  `purchasing.receipt.write` (exige `Branch` ACTIVE porque la recepción muta stock).
 
 ## Inventory recipe permissions (V18)
 

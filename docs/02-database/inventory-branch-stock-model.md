@@ -8,7 +8,7 @@
 
 `branch_inventory` mantiene una fila como máximo por `(branch_id, inventory_item_id)`. No se materializa el producto Branch × InventoryItem: una fila ausente significa quantity `0.000000`, version virtual `0`; las lecturas nunca insertan filas.
 
-`inventory_movements` conserva `quantity_delta`, `resulting_quantity`, tipo, motivo, actor y hora UTC. PostgreSQL bloquea `UPDATE` y `DELETE` mediante trigger. En V17 los únicos tipos son `OPENING` y `ADJUSTMENT`; no hay endpoint genérico de movimientos.
+`inventory_movements` conserva `quantity_delta`, `resulting_quantity`, tipo, motivo, actor y hora UTC. PostgreSQL bloquea `UPDATE` y `DELETE` mediante trigger. En V17 los únicos tipos son `OPENING` y `ADJUSTMENT`; `V21` añade `SALE_CONSUMPTION` (ligado a `sale_id`) y `V25` añade `PURCHASE_RECEIPT` (positivo, ligado a `purchase_receipt_line_id`, con índice único parcial de un movimiento por línea). La FK compuesta `(purchase_receipt_line_id, organization_id, branch_id, inventory_item_id)` obliga a que un movimiento `PURCHASE_RECEIPT` comparta organización, sucursal y artículo con su línea de recepción. No hay endpoint genérico de movimientos.
 
 ## Cantidades exactas
 

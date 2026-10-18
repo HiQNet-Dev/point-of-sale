@@ -14,6 +14,11 @@ En esta migración solo puede persistirse el estado `DRAFT`; `ORDERED` y
 incremento posterior. No existe eliminación física de órdenes: la baja será
 `CANCELLED`.
 
+Ampliación V25: `status` pasa a `VARCHAR(24)` y el `CHECK` admite además
+`PARTIALLY_RECEIVED` y `RECEIVED`, alcanzables solo por recepción de mercancía.
+Los estados `ORDERED`, `PARTIALLY_RECEIVED` y `RECEIVED` conservan la emisión
+(`issued_at`/`issued_by_user_id` no nulos, sin cancelación).
+
 ## `purchase_orders`
 
 | Columna | Regla |
@@ -23,7 +28,7 @@ incremento posterior. No existe eliminación física de órdenes: la baja será
 | `branch_id` | Sucursal de destino; FK compuesta con `organization_id`. |
 | `supplier_id` | Proveedor; FK compuesta con `organization_id`. |
 | `code` | `VARCHAR(64)`, slug en minúsculas, inmutable y único por organización. |
-| `status` | `DRAFT` / `ORDERED` / `CANCELLED`. |
+| `status` | `DRAFT` / `ORDERED` / `PARTIALLY_RECEIVED` / `RECEIVED` / `CANCELLED`. |
 | `currency` | `VARCHAR(3)` ISO 4217, copiada de la organización al crear. |
 | `supplier_code_snapshot`, `supplier_name_snapshot` | Snapshots del proveedor. |
 | `created_by_user_id`, `issued_by_user_id`, `cancelled_by_user_id` | Actores; FK compuesta con `organization_id`. |

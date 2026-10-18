@@ -35,9 +35,11 @@ import org.springframework.http.HttpStatus;
  *
  * <p>El ciclo de vida lo gobierna el propio agregado: una orden nace en
  * {@link PurchaseOrderStatus#DRAFT} y solo puede emitirse ({@link #issue}) desde
- * DRAFT, o cancelarse ({@link #cancel}) desde DRAFT u ORDERED. La cancelación es
- * irreversible y conserva los datos históricos de emisión cuando la orden ya
- * estaba emitida. La orden nunca genera movimientos de inventario.</p>
+ * DRAFT, recibir mercancía ({@link #applyReceipt}) desde ORDERED o
+ * PARTIALLY_RECEIVED, o cancelarse ({@link #cancel}) desde DRAFT u ORDERED. La
+ * cancelación es irreversible y conserva los datos históricos de emisión cuando
+ * la orden ya estaba emitida. La orden nunca genera movimientos de inventario por
+ * sí misma: los movimientos los produce la recepción de mercancía.</p>
  */
 @Entity
 @Table(
@@ -69,7 +71,7 @@ public class PurchaseOrder {
     private String code;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 16)
+    @Column(nullable = false, length = 24)
     private PurchaseOrderStatus status;
 
     @Column(nullable = false, length = 3, updatable = false)
@@ -272,6 +274,34 @@ public class PurchaseOrder {
         this.status = PurchaseOrderStatus.CANCELLED;
         this.cancelledByUserId = actorUserId;
         this.cancelledAt = when;
+        this.updatedAt = when;
+    }
+
+    /**
+     * Aplica el resultado de una recepción confirmada: {@code ORDERED →
+     * PARTIALLY_RECEIVED} o {@code → RECEIVED}.
+     *
+     * <p>Solo es válido desde {@link PurchaseOrderStatus#ORDERED} o
+     * {@link PurchaseOrderStatus#PARTIALLY_RECEIVED}; una orden cancelada o ya
+     * completamente recibida no admite más mercancía. Conserva intactos los datos
+     * históricos de emisión y toca {@code updatedAt} para que {@code @Version}
+     * incremente la versión del agregado.</p>
+     *
+     * @param newStatus estado resultante tras la recepción
+     * @param when instante del cambio, fijado por el servidor
+     * @throws BusinessException si la orden no admite recepciones o el estado es inválido
+     */
+    public void applyReceipt(PurchaseOrderStatus newStatus, Instant when) {
+        if (newStatus != PurchaseOrderStatus.PARTIALLY_RECEIVED && newStatus != PurchaseOrderStatus.RECEIVED) {
+            throw new IllegalArgumentException("applyReceipt status must be PARTIALLY_RECEIVED or RECEIVED");
+        }
+        if (!status.isReceivable()) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.PURCHASE_ORDER_NOT_RECEIVABLE,
+                    "The purchase order cannot receive goods in its current status");
+        }
+        this.status = newStatus;
         this.updatedAt = when;
     }
 

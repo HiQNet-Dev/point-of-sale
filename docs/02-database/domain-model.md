@@ -66,9 +66,10 @@ Organization (organización / empresa)  ✔ implementado
 | Stock | **sucursal** | Existencias por ingrediente/producto en cada branch |
 | Sale / SaleLine / Payment | sucursal | Dinero siempre en `BigDecimal` |
 | Supplier | organización | **implementado (`V22`)** — datos maestros organization-owned; `code` slug único por org e inmutable; contacto/razón social/identificador fiscal opcionales; `status ACTIVE/INACTIVE` sin DELETE; `@Version`; ver `docs/02-database/purchasing-suppliers-model.md` |
-| PurchaseOrder | organización+sucursal | **implementada (`V23`)** — cabecera con `branch_id` de destino, `code` slug único por org e inmutable, moneda copiada de la organización, snapshots del proveedor, estados DRAFT/ORDERED/CANCELLED (solo DRAFT alcanzable en V23) y `@Version` del agregado; ver `docs/02-database/purchase-orders-model.md` |
+| PurchaseOrder | organización+sucursal | **implementada (`V23`)** — cabecera con `branch_id` de destino, `code` slug único por org e inmutable, moneda copiada de la organización, snapshots del proveedor, estados DRAFT/ORDERED/PARTIALLY_RECEIVED/RECEIVED/CANCELLED (`V25` añade los dos de recepción) y `@Version` del agregado; ver `docs/02-database/purchase-orders-model.md` |
 | PurchaseOrderLine | organización | **implementada (`V23`)** — partida con snapshots inmutables de `code`/`name`/`baseUnit` del `InventoryItem`, `line_number` único por orden, `quantity NUMERIC(19,6) > 0` y `unit_cost NUMERIC(19,4) >= 0` opcional |
-| PurchaseReceipt | organización+sucursal | Recepción de mercancía (futuro) |
+| PurchaseReceipt | organización+sucursal | **implementada (`V25`)** — recepción inmutable de una orden emitida, con `idempotency_key` única por organización+orden y `payload_fingerprint`; ver `docs/02-database/purchase-receipts-model.md` |
+| PurchaseReceiptLine | organización | **implementada (`V25`)** — línea con `quantity_received NUMERIC(19,6) > 0` en la unidad base de la partida; origina un movimiento `PURCHASE_RECEIPT` |
 | Expense | sucursal u organización | Gastos (futuro) |
 
 ## Regla clave (repetida)

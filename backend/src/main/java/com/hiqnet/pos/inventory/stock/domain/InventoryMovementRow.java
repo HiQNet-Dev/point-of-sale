@@ -12,4 +12,5 @@ public record InventoryMovementRow(
         String reason,
         UUID actorUserId,
         UUID saleId,
+        UUID purchaseReceiptLineId,
         Instant occurredAt) {}

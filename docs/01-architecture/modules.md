@@ -24,7 +24,7 @@ implementado** hasta que llegue su milestone (ver
 | `payment` | Pagos inmutables de checkout | CASH/CARD, split tender, tendered/change, historical reads | **implementado** |
 | `cash` | Turnos de caja y arqueos | shifts, arqueos (cash registers viven en `cashregister`) | **no implementado** |
 | `inventory` | Definiciones y consumo teórico de inventario; existencias operativas por sucursal | `InventoryItem` organization-owned (V16); Branch balances and immutable movements (V17); Product recipes and ModifierOption effects organization-owned (V18); base-unit immutability guard (V24) | **Inventory foundation in progress** |
-| `purchasing` | Compras | suppliers Organization-owned (`V22`); órdenes de compra en borrador con partidas y snapshots (`V23`); recepción pendiente | **parcial: Suppliers y borradores de órdenes implementados; emisión, cancelación y recepción pendientes** |
+| `purchasing` | Compras | suppliers Organization-owned (`V22`); órdenes de compra con partidas y snapshots (`V23`); emisión/cancelación (ADR-0017) y recepción atómica de stock con idempotencia (`V25`, ADR-0019) | **parcial: Suppliers, órdenes (emisión/cancelación) y recepción implementados; devoluciones y cuentas por pagar pendientes** |
 | `expenses` | Gastos del negocio | expenses, categorías | **no implementado** |
 | `reporting` | Reportes | ventas, inventario, caja | **no implementado** |
 | `shared` | Utilidades transversales | config, error (`ApiError`, `BusinessException`, `ErrorCodes`) | **parcial (fundación)** |
@@ -168,7 +168,9 @@ com.hiqnet.pos.<modulo>[.domain|.application|.infrastructure|.api]
   de lectura `purchasing -> organization, branch, inventory` y `shared`. Las
   transiciones de emisión (`DRAFT → ORDERED`) y cancelación (`DRAFT|ORDERED →
   CANCELLED`) están implementadas sobre el mismo bloqueo de cabecera; la recepción
-  sigue pendiente (ver ADR-0015, ADR-0016 y ADR-0017).
+  de mercancía (`ORDERED|PARTIALLY_RECEIVED → PARTIALLY_RECEIVED|RECEIVED`) aplica
+  stock de forma atómica, idempotente y auditada bajo ese mismo bloqueo (ver
+  ADR-0015, ADR-0016, ADR-0017 y ADR-0019).
 - Dependencia entre módulos (lectura): `branch` usa
   `OrganizationRepository` de `organization` para validar existencia y
   resolución de timezone; `auth` usa `User`/`UserRepository` de `users` y

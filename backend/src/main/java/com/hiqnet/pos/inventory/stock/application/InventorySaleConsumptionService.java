@@ -113,7 +113,8 @@ public class InventorySaleConsumptionService {
                     resulting,
                     null,
                     actorUserId,
-                    saleId));
+                    saleId,
+                    null));
         }
         branchInventoryRepository.saveAll(locked);
         branchInventoryRepository.flush();

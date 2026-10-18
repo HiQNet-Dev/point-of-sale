@@ -11,29 +11,35 @@ rutas sin sustituir la especificación generada.
 ## Alcance
 
 Una orden de compra pertenece a una organización y apunta a una sucursal de
-destino. Una orden nace en `DRAFT`, puede **emitirse** (`DRAFT → ORDERED`) y puede
-**cancelarse** (`DRAFT|ORDERED → CANCELLED`, irreversible). No hay recepción de
-mercancía, ni movimientos de inventario, ni costeo, ni cuentas por pagar: emitir o
-cancelar **no** modifican existencias.
+destino. Una orden nace en `DRAFT`, puede **emitirse** (`DRAFT → ORDERED`),
+**recibirse** total o parcialmente (`ORDERED|PARTIALLY_RECEIVED →
+PARTIALLY_RECEIVED|RECEIVED`) y **cancelarse** (`DRAFT|ORDERED → CANCELLED`,
+irreversible). La recepción de mercancía —con actualización atómica e idempotente
+de existencias— se documenta en
+[`purchasing-purchase-receipts.md`](purchasing-purchase-receipts.md). Emitir o
+cancelar **no** modifican existencias; la recepción sí, porque es la que confirma
+stock real. No hay, todavía, devoluciones, valoración de inventario ni cuentas por
+pagar.
 
 ## Máquina de estados
 
 ```text
-DRAFT ───── issue ─────> ORDERED
-  │                        │
-cancel                   cancel
-  │                        │
-  ▼                        ▼
-CANCELLED              CANCELLED
+DRAFT ── issue ──> ORDERED ── receive ──> PARTIALLY_RECEIVED ── receive ──> RECEIVED
+  │                   │                              │
+cancel              cancel                         cancel
+  │                   │                              │ (prohibido: 409
+  ▼                   ▼                              ▼  PURCHASE_ORDER_HAS_RECEIPTS)
+CANCELLED         CANCELLED                      CANCELLED
 ```
 
 - `issue` solo desde `DRAFT`.
-- `cancel` desde `DRAFT` u `ORDERED`; es irreversible.
-- Una orden `ORDERED` no puede volver a emitirse; una `CANCELLED` no puede
-  emitirse ni volver a cancelarse.
+- `receive` (recepción de mercancía) desde `ORDERED` o `PARTIALLY_RECEIVED`;
+  consume las cantidades pendientes hasta alcanzar `RECEIVED`.
+- `cancel` desde `DRAFT` u `ORDERED`; es irreversible y se **rechaza** si la orden
+  ya tiene recepciones confirmadas.
+- Una orden `ORDERED`/`PARTIALLY_RECEIVED`/`RECEIVED` no puede volver a emitirse;
+  una `CANCELLED` no puede emitirse, recibirse ni volver a cancelarse.
 - El estado **nunca** se acepta desde el cliente ni se modifica por `PATCH`.
-- `PARTIALLY_RECEIVED` y `RECEIVED` pertenecen a la recepción de mercancía
-  (incremento posterior) y todavía no son alcanzables.
 
 ## Autenticación y permisos
 
@@ -73,8 +79,9 @@ La colección usa la envoltura estándar [PageResponse](pagination.md): `page` b
 cero (default `0`), `size` default `20` y máximo `100`. El orden es fijo:
 `createdAt DESC, id DESC`.
 
-`GET` de la colección acepta los filtros opcionales `status` (`DRAFT`, `ORDERED` o
-`CANCELLED`), `supplierId` y `q` (búsqueda por `code`, sin distinguir mayúsculas).
+`GET` de la colección acepta los filtros opcionales `status` (`DRAFT`, `ORDERED`,
+`PARTIALLY_RECEIVED`, `RECEIVED` o `CANCELLED`), `supplierId` y `q` (búsqueda por
+`code`, sin distinguir mayúsculas).
 
 ## Crear un borrador
 
