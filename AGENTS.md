@@ -48,3 +48,33 @@ Complementan el flujo humano en `docs/05-development/git-workflow.md` y
   (`apiErrorSchemaCustomizer`); no dupliques el schema a mano.
 - Un PR que cambia el contrato sin actualizar la especificación y su
   documentación es un cambio incompleto.
+
+## Onboarding incremental para agentes
+
+Estas reglas aplican a agentes de Zed y OpenCode. Reducen lecturas repetidas sin
+sustituir las fuentes de verdad.
+
+1. **Git primero.** Antes de editar, revisa `git status` y el diff de los archivos
+   que vas a tocar. Conserva cambios y configuraciones existentes.
+2. **Mapa antes que exploración.** Empieza por
+   `docs/agent-context/PROJECT_MAP.md`; es el índice de rutas y fuentes de
+   verdad. No recorras el repositorio completo en cada sesión.
+3. **Búsqueda dirigida.** Localiza símbolos con LSP/Serena y lee sólo la
+   implementación, las interfaces y las pruebas relacionadas. Amplía la búsqueda
+   únicamente si falta evidencia.
+4. **No re-descubras.** Reutiliza el mapa y los documentos canónicos; no releas
+   todo el repo ni los documentos completos si el mapa ya apunta a la sección
+   necesaria.
+5. **Mapa mantenible.** Actualiza `docs/agent-context/PROJECT_MAP.md` sólo cuando
+   cambien de forma estable la arquitectura, los comandos o las fuentes de
+   verdad. No lo conviertas en bitácora ni en copia del repositorio.
+6. **Salida concisa.** Entrega primero un plan breve y, al terminar, un resumen
+   de archivos, validaciones y riesgos. Sin razonamiento interno extenso.
+7. **Configuración de agentes.** Las reglas compartidas viven aquí; las
+   instrucciones reutilizables de tarea viven en Skills
+   (`.agents/skills/` o la Skill global). Los perfiles de Zed sólo controlan
+   herramientas/modelo.
+
+Planes por defecto: OpenCode usa los agentes de `.opencode/agents/`; Zed usa los
+perfiles de `.zed/settings.json`. Ambos comparten estos roles: `planning`,
+`implementation`, `testing`, `review`, `efficient`.

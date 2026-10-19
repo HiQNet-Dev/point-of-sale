@@ -1,0 +1,5 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "build",
+  "instructions": ["docs/agent-context/PROJECT_MAP.md"]
+}

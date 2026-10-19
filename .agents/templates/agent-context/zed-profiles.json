@@ -1,0 +1,121 @@
+{
+  "agent": {
+    "profiles": {
+      "planning": {
+        "name": "Planning",
+        "tools": {
+          "read_file": true,
+          "grep": true,
+          "find_path": true,
+          "list_directory": true,
+          "diagnostics": true,
+          "fetch": true,
+          "search_web": false,
+          "terminal": true,
+          "edit_file": false,
+          "write_file": false,
+          "create_directory": false,
+          "delete_path": false,
+          "move_path": false,
+          "copy_path": false,
+          "spawn_agent": false,
+          "skill": true
+        },
+        "enable_all_context_servers": false,
+        "context_servers": {}
+      },
+      "implementation": {
+        "name": "Implementation",
+        "tools": {
+          "read_file": true,
+          "grep": true,
+          "find_path": true,
+          "list_directory": true,
+          "diagnostics": true,
+          "fetch": true,
+          "search_web": true,
+          "terminal": true,
+          "edit_file": true,
+          "write_file": true,
+          "create_directory": true,
+          "delete_path": true,
+          "move_path": true,
+          "copy_path": true,
+          "spawn_agent": false,
+          "skill": true
+        },
+        "enable_all_context_servers": false,
+        "context_servers": {}
+      },
+      "testing": {
+        "name": "Testing",
+        "tools": {
+          "read_file": true,
+          "grep": true,
+          "find_path": true,
+          "list_directory": true,
+          "diagnostics": true,
+          "fetch": true,
+          "search_web": true,
+          "terminal": true,
+          "edit_file": true,
+          "write_file": true,
+          "create_directory": true,
+          "delete_path": false,
+          "move_path": true,
+          "copy_path": true,
+          "spawn_agent": false,
+          "skill": true
+        },
+        "enable_all_context_servers": false,
+        "context_servers": {}
+      },
+      "review": {
+        "name": "Review",
+        "tools": {
+          "read_file": true,
+          "grep": true,
+          "find_path": true,
+          "list_directory": true,
+          "diagnostics": true,
+          "fetch": true,
+          "search_web": false,
+          "terminal": true,
+          "edit_file": false,
+          "write_file": false,
+          "create_directory": false,
+          "delete_path": false,
+          "move_path": false,
+          "copy_path": false,
+          "spawn_agent": false,
+          "skill": true
+        },
+        "enable_all_context_servers": false,
+        "context_servers": {}
+      },
+      "efficient": {
+        "name": "Efficient",
+        "tools": {
+          "read_file": true,
+          "grep": true,
+          "find_path": true,
+          "list_directory": true,
+          "diagnostics": false,
+          "fetch": false,
+          "search_web": false,
+          "terminal": false,
+          "edit_file": false,
+          "write_file": false,
+          "create_directory": false,
+          "delete_path": false,
+          "move_path": false,
+          "copy_path": false,
+          "spawn_agent": false,
+          "skill": true
+        },
+        "enable_all_context_servers": false,
+        "context_servers": {}
+      }
+    }
+  }
+}
