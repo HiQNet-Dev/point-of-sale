@@ -1,6 +1,6 @@
 # Visión de producto — HiQNet POS
 
-**Estado:** Inventory publicado (`v0.3.0`); Purchasing, Expenses, Reports y hardware siguen pendientes.
+**Estado:** Purchasing publicado (`v0.4.0`); Expenses, Reports, returns/reversal y hardware siguen pendientes.
 
 ## Qué es
 
@@ -54,7 +54,8 @@ migraciones, ni su código. HiQNet POS parte de cero con su propia arquitectura.
 - **Repositorio:** privado.
 - **Uso por clientes/terceros:** únicamente mediante acuerdos comerciales
   escritos separados con HiQNet.
-- Las releases técnicas privadas `v0.1.0` (Foundation), `v0.2.0` (POS Core) y
-  `v0.3.0` (Inventory) no sustituyen los acuerdos comerciales de clientes.
+- Las releases técnicas privadas `v0.1.0` (Foundation), `v0.2.0` (POS Core),
+  `v0.3.0` (Inventory) y `v0.4.0` (Purchasing) no sustituyen los acuerdos
+  comerciales de clientes.
 
 Detalle: `LICENSE` y `docs/05-development/legal-status.md`.

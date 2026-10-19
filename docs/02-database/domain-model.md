@@ -5,11 +5,12 @@ administración), `RefreshSession`, RBAC, memberships, auditoría, bootstrap, el
 catálogo POS, Sales Foundation y Payments + Atomic Checkout están implementados
 (V1–V15). `InventoryItem` organization-owned (V16), Branch stock y movements
 (V17), recipes y modifier effects (V18) y snapshots + consumo de checkout
-(V19–V21) están implementados. `Supplier` organization-owned (V22) y las órdenes
-de compra en borrador con sus partidas (V23) son los incrementos de Purchasing
-implementados.
+(V19–V21) están implementados. Purchasing está implementado (V22–V25):
+`Supplier` organization-owned (V22), órdenes de compra con sus partidas (V23),
+la guarda de inmutabilidad de la unidad base del `InventoryItem` (V24) y las
+recepciones de mercancía con ledger `PURCHASE_RECEIPT` (V25).
 
-Versión en desarrollo: `0.4.0-SNAPSHOT`.
+Versión de esta release: `0.4.0`.
 
 ## Jerarquía principal
 

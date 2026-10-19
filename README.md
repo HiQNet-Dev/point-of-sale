@@ -5,15 +5,15 @@ principalmente a **pequeños negocios de alimentos** (cafeterías, juguerías, r
 pequeños) y **retail ligero**.
 
 > **Estado:** HiQNet POS está en desarrollo activo y todavía **no es una release
-> comercial estable**. La release técnica privada más reciente es **`v0.3.0`
-> (Inventory)**; la versión en desarrollo es `0.4.0-SNAPSHOT` (ver `VERSION`) y
-> el milestone previo es
-> **`v0.2.0` (POS Core)**. Inventory incluye catálogo de artículos y stock por
-> sucursal con ledger, apertura y ajustes, recipes y efectos de modificadores, UI
-> de administración (incluida la política de stock negativo a nivel de
-> organización), consumo de inventario en checkout y E2E integrado de inventario
-> (E2E-D). No representa el POS comercial completo: Purchasing, Expenses, Reports,
-> returns/reversal y hardware siguen pendientes.
+> comercial estable**. La release técnica privada más reciente es **`v0.4.0`
+> (Purchasing)**; la versión actual es `0.4.0` (ver `VERSION`) y el milestone
+> previo es
+> **`v0.3.0` (Inventory)**. Purchasing incluye proveedores, órdenes de compra
+> (borradores, partidas, emisión y cancelación), la guarda de inmutabilidad de la
+> unidad base del inventario y la recepción atómica e idempotente de mercancía con
+> ledger `PURCHASE_RECEIPT` y auditoría. No representa el POS comercial completo:
+> Expenses, Reports, returns/reversal, cuentas por pagar y hardware siguen
+> pendientes.
 
 ## Foundation implementada (v0.1.x)
 
@@ -22,7 +22,7 @@ La fundación actual ya es operativa como backend administrativo seguro:
 - **Organization / Branch / Users** — administración completa scoped por organización.
 - **Authentication** — login, refresh rotativo (30d, familia 30d), logout en
   familia, `logout-all`, `/me`; JWT identity-only, PostgreSQL autoritativa.
-- **Roles / Permissions / RBAC** — catálogo de 57 permisos sembrado por Flyway,
+- **Roles / Permissions / RBAC** — catálogo de 59 permisos sembrado por Flyway,
   roles por organización, assignments, `@PreAuthorize` database-authoritative.
 - **Branch Memberships** — usuarios por sucursal con roles branch-scoped y
   `hasBranchPermission` (org-wide UNION membership ACTIVE de esa branch).
@@ -45,16 +45,26 @@ y `docs/04-security/secure-bootstrap.md`. El roadmap completo en
 
 La release `v0.3.0` no incluye Purchasing, Expenses, Reports, returns/reversal ni hardware.
 
-## Purchasing en desarrollo (v0.4.x)
+## Purchasing publicado (v0.4.0)
 
-- Suppliers organization-owned (`V22`): código comercial inmutable y único,
-  datos de contacto opcionales, baja lógica `INACTIVE`, RBAC y auditoría
-  transaccional.
-- Órdenes de compra en borrador (`V23`): cabecera con sucursal de destino y
-  snapshots del proveedor, partidas con snapshots de artículo y unidad, moneda
-  tomada de la organización, concurrencia optimista del agregado y RBAC. La
-  emisión, la cancelación y la recepción de mercancía siguen pendientes, igual que
-  los movimientos de inventario, el costeo, las cuentas por pagar y los pagos.
+- Catálogo de proveedores organization-owned (`V22`): código comercial inmutable y
+  único, razón social y contacto opcionales, baja lógica `INACTIVE`, aislamiento
+  multiempresa, RBAC y auditoría transaccional.
+- Órdenes de compra (`V23`): borradores con partidas (snapshots de artículo y
+  unidad, moneda tomada de la organización, concurrencia optimista
+  `expectedVersion`), más las transiciones de emisión (`DRAFT → ORDERED`) y
+  cancelación.
+- Guarda de inmutabilidad de la unidad base del `InventoryItem` (`V24`,
+  `unit_locked`): la unidad base queda bloqueada cuando el artículo ya tiene
+  dependencias (existencias, partidas, recetas o efectos de modificador).
+- Recepción de mercancía (`V25`): recepciones parciales y completas, atómicas e
+  idempotentes, con control de cantidades pendientes, movimiento
+  `PURCHASE_RECEIPT` append-only por línea, actualización atómica de existencias
+  de la sucursal, transición `PARTIALLY_RECEIVED`/`RECEIVED` y auditoría.
+
+La release `v0.4.0` no incluye UI de Purchasing, devoluciones ni anulación de
+recepciones, costeo, cuentas por pagar, pagos a proveedores, Expenses, Reports,
+returns/reversal ni hardware.
 
 ## Filosofía del producto
 
@@ -121,7 +131,7 @@ point-of-sale/
 ├── README.md
 ├── CONTRIBUTING.md
 ├── SECURITY.md
-└── VERSION             0.3.0
+└── VERSION             0.4.0
 ```
 
 ## Requisitos
@@ -223,7 +233,7 @@ completa incluyen E2E. Ver la estrategia detallada en
 v0.1.x Foundation      ✓ RELEASED (privada, 2026-10-10)
 v0.2.x POS Core        ✓ RELEASED (privada, 2026-10-12)
 v0.3.x Inventory       ✓ RELEASED (privada, 2026-10-14)
-v0.4.x Purchasing
+v0.4.x Purchasing      ✓ RELEASED (privada, 2026-10-18)
 v0.5.x Expenses & Management
 v0.6.x Reporting
 v0.7.x Hardware (Electron: impresora térmica, cajón, lectores)
@@ -277,6 +287,6 @@ Los derechos de uso para clientes, instalaciones o terceros se otorgarán
 
 Consulta `LICENSE` y `docs/05-development/legal-status.md`.
 
-La release `v0.3.0` añade Inventory a la Foundation y POS Core, pero no
-representa el POS comercial completo ni incluye Purchasing, Expenses, Reports,
-returns/reversal ni hardware.
+La release `v0.4.0` añade Purchasing a la Foundation, POS Core e Inventory, pero
+no representa el POS comercial completo ni incluye UI de Purchasing, devoluciones,
+costeo, cuentas por pagar, Expenses, Reports, returns/reversal ni hardware.

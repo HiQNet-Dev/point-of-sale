@@ -1,5 +1,7 @@
 # API de recepción de mercancía de Purchasing
 
+**Estado:** implementada en `v0.4.0` (V25).
+
 ## Alcance
 
 Una **recepción** confirma stock real de una orden de compra **emitida**

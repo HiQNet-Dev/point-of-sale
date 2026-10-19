@@ -2,10 +2,10 @@
 
 **Importante:** este documento describe el alcance objetivo para una futura
 **v1.0.0 comercial**; no es un inventario del estado actual. La Foundation, POS
-Core e Inventory ya están implementados en milestones previos. Consulta
-`docs/00-product/roadmap.md` para el estado real de cada área.
+Core, Inventory y Purchasing ya están implementados en milestones previos.
+Consulta `docs/00-product/roadmap.md` para el estado real de cada área.
 
-Versión publicada: `0.3.0` (Inventory). La v1.0.0 **no está alcanzada**.
+Versión publicada: `0.4.0` (Purchasing). La v1.0.0 **no está alcanzada**.
 
 ## Áreas objetivo de v1 (incluye capacidades ya entregadas en milestones previos)
 

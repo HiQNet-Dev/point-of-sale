@@ -1,8 +1,8 @@
 # API de órdenes de compra de Purchasing
 
-**Estado:** implementada en `v0.4.0-SNAPSHOT` (V23). Administra **borradores,
+**Estado:** implementada en `v0.4.0` (V23). Administra **borradores,
 partidas** y las transiciones de estado **emisión** (`issue`) y **cancelación**
-(`cancel`). La recepción de mercancía llega en un incremento posterior.
+(`cancel`). La recepción de mercancía está implementada en `v0.4.0` (V25).
 
 El contrato técnico se genera desde las anotaciones OpenAPI y está disponible en
 `/v3/api-docs` y Swagger UI en desarrollo. Esta guía explica cómo consumir las
