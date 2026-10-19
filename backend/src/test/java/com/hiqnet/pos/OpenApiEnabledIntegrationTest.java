@@ -101,6 +101,14 @@ class OpenApiEnabledIntegrationTest {
                 .isTrue();
         assertThat(paths.path(PURCHASE_ORDERS_PATH + "/{purchaseOrderId}/issue").has("post")).isTrue();
         assertThat(paths.path(PURCHASE_ORDERS_PATH + "/{purchaseOrderId}/cancel").has("post")).isTrue();
+        assertThat(paths.path(PURCHASE_ORDERS_PATH + "/{purchaseOrderId}/receipts").has("post")).isTrue();
+        assertThat(paths.path(PURCHASE_ORDERS_PATH + "/{purchaseOrderId}/receipts").has("get")).isTrue();
+        assertThat(
+                        paths.path(PURCHASE_ORDERS_PATH + "/{purchaseOrderId}/receipts/{purchaseReceiptId}")
+                                .has("get"))
+                .isTrue();
+        assertThat(paths.path(PURCHASE_ORDERS_PATH + "/{purchaseOrderId}/receipt-status").has("get"))
+                .isTrue();
         assertThat(paths.has(CHECKOUT_PATH)).isTrue();
         assertThat(paths.path(CHECKOUT_PATH).has("post")).isTrue();
     }

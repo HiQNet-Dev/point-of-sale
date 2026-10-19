@@ -15,6 +15,7 @@ import com.hiqnet.pos.purchasing.domain.PurchaseOrderLine;
 import com.hiqnet.pos.purchasing.domain.PurchaseOrderLineRepository;
 import com.hiqnet.pos.purchasing.domain.PurchaseOrderRepository;
 import com.hiqnet.pos.purchasing.domain.PurchaseOrderStatus;
+import com.hiqnet.pos.purchasing.domain.PurchaseReceiptRepository;
 import com.hiqnet.pos.purchasing.domain.Supplier;
 import com.hiqnet.pos.purchasing.domain.SupplierRepository;
 import com.hiqnet.pos.purchasing.domain.SupplierStatus;
@@ -73,6 +74,7 @@ public class PurchaseOrderService {
     private final SupplierRepository supplierRepository;
     private final InventoryItemRepository inventoryItemRepository;
     private final InventoryItemUnitGuard inventoryItemUnitGuard;
+    private final PurchaseReceiptRepository purchaseReceiptRepository;
     private final AuditPort auditPort;
     private final Clock clock;
 
@@ -84,6 +86,7 @@ public class PurchaseOrderService {
             SupplierRepository supplierRepository,
             InventoryItemRepository inventoryItemRepository,
             InventoryItemUnitGuard inventoryItemUnitGuard,
+            PurchaseReceiptRepository purchaseReceiptRepository,
             AuditPort auditPort,
             Clock clock) {
         this.purchaseOrderRepository = purchaseOrderRepository;
@@ -93,6 +96,7 @@ public class PurchaseOrderService {
         this.supplierRepository = supplierRepository;
         this.inventoryItemRepository = inventoryItemRepository;
         this.inventoryItemUnitGuard = inventoryItemUnitGuard;
+        this.purchaseReceiptRepository = purchaseReceiptRepository;
         this.auditPort = auditPort;
         this.clock = clock;
     }
@@ -424,7 +428,9 @@ public class PurchaseOrderService {
      * <p>Reutiliza el bloqueo pesimista scoped de la cabecera y la validación de
      * {@code expectedVersion}. La cancelación es irreversible y conserva el
      * historial de emisión cuando la orden ya estaba emitida. Cancelar no modifica
-     * existencias.</p>
+     * existencias. Una orden con recepciones confirmadas no puede cancelarse: el
+     * stock ya ingresado no se compensa en este incremento, así que la prohibición
+     * se comprueba bajo el mismo bloqueo de cabecera que usa la recepción.</p>
      *
      * @param organizationId organización propietaria
      * @param branchId sucursal de destino de la ruta
@@ -432,13 +438,15 @@ public class PurchaseOrderService {
      * @param expectedVersion versión del agregado leída por el cliente
      * @param actorUserId usuario autenticado que cancela la orden
      * @return orden cancelada con sus partidas
-     * @throws BusinessException si la orden no existe, la versión es obsoleta o ya estaba cancelada
+     * @throws BusinessException si la orden no existe, la versión es obsoleta, ya
+     *         estaba cancelada o ya tiene recepciones confirmadas
      */
     @Transactional
     public PurchaseOrderDetail cancel(
             UUID organizationId, UUID branchId, UUID purchaseOrderId, long expectedVersion, UUID actorUserId) {
         PurchaseOrder order = lockOrder(organizationId, branchId, purchaseOrderId);
         requireExpectedVersion(order, expectedVersion);
+        requireNoConfirmedReceipts(organizationId, purchaseOrderId);
 
         String previousStatus = order.getStatus().name();
         order.cancel(actorUserId, clock.instant());
@@ -634,6 +642,27 @@ public class PurchaseOrderService {
                 HttpStatus.CONFLICT,
                 ErrorCodes.PURCHASE_ORDER_CODE_ALREADY_EXISTS,
                 "A purchase order with this code already exists in the organization");
+    }
+
+    /**
+     * Prohíbe cancelar una orden que ya tiene recepciones confirmadas.
+     *
+     * <p>El negocio de cancelar cantidades pendientes o devolver mercancía se
+     * abordará con movimientos compensatorios explícitos en un incremento
+     * posterior; hasta entonces, una orden con stock ya ingresado permanece emitida
+     * o recibida.</p>
+     *
+     * @param organizationId organización propietaria
+     * @param purchaseOrderId orden consultada
+     * @throws BusinessException {@code 409 PURCHASE_ORDER_HAS_RECEIPTS} si existe al menos una recepción
+     */
+    private void requireNoConfirmedReceipts(UUID organizationId, UUID purchaseOrderId) {
+        if (purchaseReceiptRepository.countByOrganizationIdAndPurchaseOrderId(organizationId, purchaseOrderId) > 0) {
+            throw new BusinessException(
+                    HttpStatus.CONFLICT,
+                    ErrorCodes.PURCHASE_ORDER_HAS_RECEIPTS,
+                    "A purchase order with confirmed receipts cannot be cancelled");
+        }
     }
 
     private static BusinessException duplicateLine() {

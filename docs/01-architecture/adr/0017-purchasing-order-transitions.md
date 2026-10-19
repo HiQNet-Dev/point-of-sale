@@ -93,3 +93,12 @@ El siguiente paso es ejecutar la máquina de estados
 - Recepción de mercancía: `PARTIALLY_RECEIVED`/`RECEIVED`, cantidades recibidas,
   idempotencia y el movimiento `PURCHASE_RECEIPT`.
 - Guard global de Inventory y costeo/valoración; cuentas por pagar y pagos.
+
+## Actualización (ADR-0019 / `V25`)
+
+La **recepción de mercancía** diferida aquí quedó implementada en `V25`
+(ADR-0019): `PARTIALLY_RECEIVED` y `RECEIVED` son ahora alcanzables solo por
+recepción, el agregado expone `applyReceipt(...)` bajo el mismo bloqueo de
+cabecera, y cancelar una orden con recepciones confirmadas responde
+`409 PURCHASE_ORDER_HAS_RECEIPTS`. Siguen diferidos las devoluciones, la
+valoración de inventario y las cuentas por pagar.

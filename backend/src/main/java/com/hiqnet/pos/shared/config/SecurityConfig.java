@@ -125,6 +125,10 @@ public class SecurityConfig {
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/purchase-orders/*/lines/*/remove").authenticated();
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/purchase-orders/*/issue").authenticated();
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/purchase-orders/*/cancel").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/purchase-orders/*/receipts").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/purchase-orders/*/receipts").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/purchase-orders/*/receipts/*").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/purchase-orders/*/receipt-status").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/inventory-items").authenticated();
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/inventory-items").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/inventory-items/*").authenticated();

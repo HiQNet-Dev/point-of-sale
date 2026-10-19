@@ -55,8 +55,8 @@ public class JdbcInventoryMovementRepository implements InventoryMovementReposit
         if (movements.isEmpty()) return;
         jdbcTemplate.batchUpdate(
                 "insert into inventory_movements "
-                        + "(id,organization_id,branch_id,inventory_item_id,type,quantity_delta,resulting_quantity,reason,actor_user_id,sale_id,occurred_at) "
-                        + "values (?,?,?,?,?,?,?,?,?,?,now())",
+                        + "(id,organization_id,branch_id,inventory_item_id,type,quantity_delta,resulting_quantity,reason,actor_user_id,sale_id,purchase_receipt_line_id,occurred_at) "
+                        + "values (?,?,?,?,?,?,?,?,?,?,?,now())",
                 movements,
                 movements.size(),
                 (statement, movement) -> {
@@ -70,6 +70,7 @@ public class JdbcInventoryMovementRepository implements InventoryMovementReposit
                     statement.setString(8, movement.reason());
                     statement.setObject(9, movement.actorUserId());
                     statement.setObject(10, movement.saleId());
+                    statement.setObject(11, movement.purchaseReceiptLineId());
                 });
     }
 
@@ -89,7 +90,7 @@ public class JdbcInventoryMovementRepository implements InventoryMovementReposit
     public Page<InventoryMovementRow> findHistory(
             UUID organizationId, UUID branchId, UUID inventoryItemId, Pageable pageable) {
         var rows = jdbcTemplate.query(
-                "select id,type,quantity_delta,resulting_quantity,reason,actor_user_id,sale_id,occurred_at "
+                "select id,type,quantity_delta,resulting_quantity,reason,actor_user_id,sale_id,purchase_receipt_line_id,occurred_at "
                         + "from inventory_movements where organization_id=? and branch_id=? and inventory_item_id=? "
                         + "order by occurred_at desc,id desc limit ? offset ?",
                 (resultSet, rowNumber) -> map(resultSet),
@@ -117,6 +118,7 @@ public class JdbcInventoryMovementRepository implements InventoryMovementReposit
                 resultSet.getString("reason"),
                 resultSet.getObject("actor_user_id", UUID.class),
                 resultSet.getObject("sale_id", UUID.class),
+                resultSet.getObject("purchase_receipt_line_id", UUID.class),
                 resultSet.getTimestamp("occurred_at").toInstant());
     }
 }

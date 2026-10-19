@@ -82,6 +82,7 @@ dominio. Rutas base relativas a `/api/v1`:
 | Inventory Effects | `/organizations/{organizationId}/modifier-options/{modifierOptionId}/inventory-effects` | `inventory.recipe.read` / `inventory.recipe.write` |
 | Purchasing Suppliers | `/organizations/{organizationId}/suppliers` | `purchasing.supplier.read` / `purchasing.supplier.write` |
 | Purchasing Purchase Orders | `/organizations/{organizationId}/branches/{branchId}/purchase-orders` | `purchasing.order.read` / `purchasing.order.write` |
+| Purchasing Purchase Receipts | `.../purchase-orders/{purchaseOrderId}/receipts` | `purchasing.receipt.read` / `purchasing.receipt.write` |
 | Audit | `/organizations/{organizationId}/audit-events` | `audit.read` (solo lectura) |
 
 ## Ciclo de una petición
