@@ -4,7 +4,7 @@ Estado: **implementado** (identidad en `V3__create_users_and_auth_sessions.sql`,
 hardening `V4__harden_user_identity.sql`, módulos `users` + `auth`). La
 **autenticación** y la **autorización (RBAC + Branch Memberships)** también
 están implementadas (`V5`/`V6`).
-Versión `0.3.0`.
+Versión `0.4.0`.
 
 ## Entidad `users`
 

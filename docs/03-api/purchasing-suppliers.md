@@ -1,6 +1,6 @@
 # API de proveedores de Purchasing
 
-**Estado:** implementada en `v0.4.0-SNAPSHOT` (V22).
+**Estado:** implementada en `v0.4.0` (V22).
 
 El contrato técnico se genera desde las anotaciones OpenAPI y está disponible en
 `/v3/api-docs` y Swagger UI en desarrollo. Esta guía explica cómo consumir las

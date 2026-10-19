@@ -16,7 +16,7 @@ este directorio es la capa humana que explica cómo usarlo.
   (activo en el perfil `dev`; **desactivado en producción** por
   deny-by-default, que responde `401 AUTHENTICATION_REQUIRED`). Ver
   `docs/04-security/authentication.md`.
-- Título: **`HiQNet POS API`**. Versión: la del artefacto (hoy `0.4.0-SNAPSHOT`, tomada de
+- Título: **`HiQNet POS API`**. Versión: la del artefacto (hoy `0.4.0`, tomada de
   `backend/pom.xml` vía filtrado Maven).
 - `/swagger-ui.html` redirige a `/swagger-ui/index.html`.
 - Para probar endpoints autenticados en Swagger: pulsar **Authorize**, pegar el
@@ -44,6 +44,7 @@ este directorio es la capa humana que explica cómo usarlo.
 | `inventory-recipes.md` | Recipes y efectos de inventario (detalle de dominio, V18). |
 | [`purchasing-suppliers.md`](purchasing-suppliers.md) | Proveedores de Purchasing (V22): permisos, rutas, filtros, concurrencia y ejemplos. |
 | [`purchasing-purchase-orders.md`](purchasing-purchase-orders.md) | Órdenes de compra (V23): borradores, partidas, snapshots, permisos, concurrencia y ejemplos. |
+| [`purchasing-purchase-receipts.md`](purchasing-purchase-receipts.md) | Recepciones de mercancía (V25): idempotencia, ledger `PURCHASE_RECEIPT`, atomicidad, estados y códigos de error. |
 
 ## Convenciones base
 

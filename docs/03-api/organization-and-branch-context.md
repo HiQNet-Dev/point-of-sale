@@ -75,7 +75,7 @@ organization-wide (`branch.membership.*`), nunca branch-scoped
 Un id de otra organización **nunca** se filtra en silencio a una página vacía:
 responde `404`. Ver `api-guidelines.md`.
 
-## Catálogo de permisos (51)
+## Catálogo de permisos (59)
 
 Se siembran por Flyway y son la autoridad. Agrupados por dominio:
 
@@ -93,6 +93,9 @@ Se siembran por Flyway y son la autoridad. Agrupados por dominio:
 | Turnos | `cash-shift.read`, `cash-shift.open`, `cash-shift.close` |
 | Ventas | `sale.read`, `sale.create`, `sale.update`, `sale.checkout`, `sale.cancel`, `payment.read` |
 | Inventario | `inventory.item.read`, `inventory.item.write`, `inventory.stock.read`, `inventory.stock.adjust`, `inventory.recipe.read`, `inventory.recipe.write` |
+| Proveedores | `purchasing.supplier.read`, `purchasing.supplier.write` |
+| Órdenes de compra | `purchasing.order.read`, `purchasing.order.write`, `purchasing.order.issue`, `purchasing.order.cancel` |
+| Recepciones de compra | `purchasing.receipt.read`, `purchasing.receipt.write` |
 | Auditoría | `audit.read` |
 
 - `POST /api/v1/organizations` **no** tiene permiso: permanece cerrado
