@@ -2,6 +2,29 @@
 
 All notable changes to HiQNet POS are documented in this file.
 
+## [0.4.0] - 2026-10-19
+
+### Purchasing — v0.4
+
+- Añadido el catálogo de proveedores (`V22`, ADR-0015): datos maestros organization-owned con `code` comercial inmutable y único por organización, razón social y datos de contacto opcionales, baja lógica `status = INACTIVE` sin hard delete, aislamiento multiempresa por `organization_id`, `@Version` y auditoría transaccional; permisos `purchasing.supplier.read` / `purchasing.supplier.write`.
+- Añadidas las órdenes de compra en borrador (`V23`, ADR-0016): cabecera organization-owned con `branch_id` de destino, snapshots del proveedor, moneda tomada de la organización y `code` inmutable y único por organización; partidas con snapshots inmutables de `code`/`name`/`baseUnit` del `InventoryItem`, `line_number` único por orden, `quantity NUMERIC(19,6) > 0` y `unit_cost NUMERIC(19,4) >= 0`; concurrencia optimista del agregado con `expectedVersion`; permisos `purchasing.order.read` / `purchasing.order.write`.
+- Implementadas las transiciones de emisión (`issue`) y cancelación (`cancel`) de la orden (`V23`, ADR-0017): `DRAFT → ORDERED` y `DRAFT|ORDERED → CANCELLED`, con bloqueo transaccional de la orden y validación del estado `ACTIVE` del proveedor, la sucursal y los artículos frente a lecturas obsoletas (`SUPPLIER_INACTIVE` / `INVENTORY_ITEM_INACTIVE` / `PURCHASE_ORDER_UNIT_CHANGED`).
+- Añadida la guarda de inmutabilidad de la unidad base del `InventoryItem` (`V24`, ADR-0018, `unit_locked`): la unidad base no puede modificarse una vez que el artículo tiene dependencias (existencias, partidas de orden, recetas o efectos de modificador), protegiendo las referencias históricas.
+- Implementadas las recepciones de mercancía (`V25`, ADR-0019): recepciones parciales y completas de una orden emitida (`ORDERED` / `PARTIALLY_RECEIVED`) en una sola transacción atómica, con control de cantidades pendientes; idempotencia estricta por `idempotency_key` (única por organización + orden) verificada con `payload_fingerprint`; escritura de un movimiento `PURCHASE_RECEIPT` append-only por línea y actualización atómica de las existencias de la sucursal; transición a `PARTIALLY_RECEIVED` / `RECEIVED`; auditoría transaccional; permisos `purchasing.receipt.read` / `purchasing.receipt.write`. Códigos de error estables: `PURCHASE_RECEIPT_IDEMPOTENCY_CONFLICT`, `PURCHASE_ORDER_ALREADY_RECEIVED`, `PURCHASE_ORDER_NOT_ISSUED`, `PURCHASE_RECEIPT_EXCEEDS_ORDERED`, `PURCHASE_ORDER_HAS_RECEIPTS`.
+- Restricciones PostgreSQL de integridad e inmutabilidad en `V22`–`V25` (FKs compuestas same-org, triggers append-only, checks de estado y cantidades). El catálogo de permisos pasa de 51 a 59; las nuevas concesiones no se otorgan automáticamente a roles existentes y el bootstrap fresco recibe el catálogo completo.
+
+### Base de datos
+
+- `V22` Suppliers, `V23` Purchase Orders, `V24` Inventory Base Unit Guard, `V25` Purchase Receipts. `V1`–`V21` permanecen inmutables; clean install y upgrade validados de forma limpia hasta `v25`.
+
+### Limitaciones conocidas de v0.4.0
+
+- No existe UI de Purchasing (esta release es de backend/API).
+- Sin devoluciones ni anulación de recepciones.
+- Sin valoración ni costeo de existencias.
+- Sin cuentas por pagar ni pagos a proveedores.
+- No representa una versión comercial estable.
+
 ## [0.3.0] - 2026-10-14
 
 ### Ramas y release

@@ -61,7 +61,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> {
                     auth.requestMatchers(HEALTH_AND_DOCS).permitAll();
                     if (permitOpenDoc) {
-                        auth.requestMatchers("/v3/api-docs/**", "/swagger-ui/**").permitAll();
+                        auth.requestMatchers("/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**")
+                                .permitAll();
                     }
                     auth.requestMatchers(HttpMethod.POST, PUBLIC_AUTH).permitAll();
                     // One-shot bootstrap: the route is reachable ONLY while a
@@ -111,6 +112,23 @@ public class SecurityConfig {
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/categories").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/categories/*").authenticated();
                     auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*/categories/*").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/suppliers").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/suppliers").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/suppliers/*").authenticated();
+                    auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*/suppliers/*").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/purchase-orders").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/purchase-orders").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/purchase-orders/*").authenticated();
+                    auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*/branches/*/purchase-orders/*").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/purchase-orders/*/lines").authenticated();
+                    auth.requestMatchers(HttpMethod.PATCH, "/api/v1/organizations/*/branches/*/purchase-orders/*/lines/*").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/purchase-orders/*/lines/*/remove").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/purchase-orders/*/issue").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/purchase-orders/*/cancel").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/purchase-orders/*/receipts").authenticated();
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/branches/*/purchase-orders/*/receipts").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/purchase-orders/*/receipts/*").authenticated();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/branches/*/purchase-orders/*/receipt-status").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/inventory-items").authenticated();
                     auth.requestMatchers(HttpMethod.POST, "/api/v1/organizations/*/inventory-items").authenticated();
                     auth.requestMatchers(HttpMethod.GET, "/api/v1/organizations/*/inventory-items/*").authenticated();

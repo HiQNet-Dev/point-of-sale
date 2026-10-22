@@ -5,8 +5,9 @@ import java.util.UUID;
 
 /**
  * One append-only stock fact to persist in a single batch. {@code saleId} is
- * required for SALE_CONSUMPTION and null for OPENING/ADJUSTMENT, mirroring the
- * database coupling constraint.
+ * required for SALE_CONSUMPTION and {@code purchaseReceiptLineId} for
+ * PURCHASE_RECEIPT; both are null for the other types, mirroring the database
+ * coupling constraint.
  */
 public record InventoryMovementInsert(
         UUID id,
@@ -18,4 +19,5 @@ public record InventoryMovementInsert(
         BigDecimal resultingQuantity,
         String reason,
         UUID actorUserId,
-        UUID saleId) {}
+        UUID saleId,
+        UUID purchaseReceiptLineId) {}

@@ -23,8 +23,8 @@ implementado** hasta que llegue su milestone (ver
 | `sales` | Venta operacional | sales, sale_items, modifier snapshots, pricing server-authoritative, OPEN→CANCELLED/COMPLETED | **implementado** |
 | `payment` | Pagos inmutables de checkout | CASH/CARD, split tender, tendered/change, historical reads | **implementado** |
 | `cash` | Turnos de caja y arqueos | shifts, arqueos (cash registers viven en `cashregister`) | **no implementado** |
-| `inventory` | Definiciones y consumo teórico de inventario; existencias operativas por sucursal | `InventoryItem` organization-owned (V16); Branch balances and immutable movements (V17); Product recipes and ModifierOption effects organization-owned (V18) | **Inventory foundation in progress** |
-| `purchasing` | Compras | suppliers, órdenes, recepción | **no implementado** |
+| `inventory` | Definiciones y consumo teórico de inventario; existencias operativas por sucursal | `InventoryItem` organization-owned (V16); Branch balances and immutable movements (V17); Product recipes and ModifierOption effects organization-owned (V18); base-unit immutability guard (V24) | **Inventory foundation in progress** |
+| `purchasing` | Compras | suppliers Organization-owned (`V22`); órdenes de compra con partidas y snapshots (`V23`); emisión/cancelación (ADR-0017) y recepción atómica de stock con idempotencia (`V25`, ADR-0019) | **parcial: Suppliers, órdenes (emisión/cancelación) y recepción implementados; devoluciones y cuentas por pagar pendientes** |
 | `expenses` | Gastos del negocio | expenses, categorías | **no implementado** |
 | `reporting` | Reportes | ventas, inventario, caja | **no implementado** |
 | `shared` | Utilidades transversales | config, error (`ApiError`, `BusinessException`, `ErrorCodes`) | **parcial (fundación)** |
@@ -158,6 +158,19 @@ com.hiqnet.pos.<modulo>[.domain|.application|.infrastructure|.api]
   `organization_id` de la branch) y `shared`; el recurso es **branch-owned**.
 - `cashshift` usa `domain` (`CashShift`, `CashShiftStatus` + `CashShiftRepository`), `application` (`CashShiftService`, `OpenSalesForCashShiftPort`) y `api` (`CashShiftController` + DTOs). `sales` implementa el port de guard para evitar que cashshift dependa de un repositorio concreto de Sales.
 - `sales` usa `domain` (`Sale`, `SaleItem`, `SaleItemModifier`, estados y repositorios), `application` (`SaleService`, adaptador del guard de turno) y `api` (`SaleController` y DTOs). Depende de catálogo para cotizar snapshots y de los recursos operacionales para scope; create, checkout and close share the scoped CashShift coordination lock (ADR-0007/0008), while regular mutations retain `Sale.version` optimistic. `payment` contains only immutable Payment facts/repository and response DTO; it has no independent write API.
+- `purchasing` usa `domain` (`Supplier`, `SupplierStatus` + `SupplierRepository`
+  con `JpaSpecificationExecutor`; `PurchaseOrder`, `PurchaseOrderStatus`,
+  `PurchaseOrderLine` + repositorios, con bloqueo pesimista scoped de la cabecera),
+  `application` (`SupplierService`, `PurchaseOrderService`, commands) y `api`
+  (`SupplierController`, `PurchaseOrderController` + DTOs). Sin
+  `infrastructure`. `Supplier` es **organization-owned**; `PurchaseOrder` es
+  organization-owned con sucursal de destino y rutas branch-nested. Dependencias
+  de lectura `purchasing -> organization, branch, inventory` y `shared`. Las
+  transiciones de emisión (`DRAFT → ORDERED`) y cancelación (`DRAFT|ORDERED →
+  CANCELLED`) están implementadas sobre el mismo bloqueo de cabecera; la recepción
+  de mercancía (`ORDERED|PARTIALLY_RECEIVED → PARTIALLY_RECEIVED|RECEIVED`) aplica
+  stock de forma atómica, idempotente y auditada bajo ese mismo bloqueo (ver
+  ADR-0015, ADR-0016, ADR-0017 y ADR-0019).
 - Dependencia entre módulos (lectura): `branch` usa
   `OrganizationRepository` de `organization` para validar existencia y
   resolución de timezone; `auth` usa `User`/`UserRepository` de `users` y
@@ -236,4 +249,4 @@ gated por `BOOTSTRAP_SECRET`; véase
 `docs/02-database/cash-register-model.md` y
 `docs/02-database/cash-shift-model.md`).
 
-Inventory V16–V21 owns InventoryItem definitions, branch stock/ledger, organization-owned Product recipes, modifier effects, the per-unit consumption resolver and the organization-scoped negative stock policy. Sales consumes that resolver through its application service and owns the V19 `SaleItemInventoryComponent` history; Inventory has no Sales dependency. The snapshot freezes resolved metadata and exact per-unit/total quantities, and atomic checkout consumption (V21) deducts tracked stock from those snapshots and writes `SALE_CONSUMPTION` movements; reservations remain deferred.
+Inventory V16–V21 owns InventoryItem definitions, branch stock/ledger, organization-owned Product recipes, modifier effects, the per-unit consumption resolver and the organization-scoped negative stock policy. Sales consumes that resolver through its application service and owns the V19 `SaleItemInventoryComponent` history; Inventory has no Sales dependency. The snapshot freezes resolved metadata and exact per-unit/total quantities, and atomic checkout consumption (V21) deducts tracked stock from those snapshots and writes `SALE_CONSUMPTION` movements; reservations remain deferred. V24 adds the base-unit immutability guard: `InventoryItemUnitGuard` pessimistically locks the referenced items (deterministic id order) and marks `unit_locked` before any dependency writer persists a recipe component, modifier effect, branch balance/movement or purchase-order line, serializing those writes with the `base_unit` update (see ADR-0018).

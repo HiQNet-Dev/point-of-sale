@@ -1,9 +1,10 @@
 # Proceso de release
 
-**Estado: release técnica privada publicada — `v0.3.0` (Inventory,
-2026-10-14).** La release se valida sobre el corte de `dev` y añade Inventory
-sobre `v0.2.0` (POS Core). La secuencia sigue el proceso verificado previamente:
-commit dedicado, CI verde, tag anotado y GitHub Release con notas revisadas.
+**Estado: candidato de release técnica privada en preparación — `v0.4.0`
+(Purchasing, 2026-10-19).** La última release publicada es `v0.3.0` (Inventory).
+El candidato se valida sobre el corte de `dev` y añade Purchasing sobre `v0.3.0`.
+La secuencia sigue el proceso verificado previamente: commit dedicado, CI verde,
+tag anotado y GitHub Release con notas revisadas.
 
 ## Versionado: SemVer
 
@@ -22,7 +23,8 @@ commit dedicado, CI verde, tag anotado y GitHub Release con notas revisadas.
    releases y snapshots; no define la versión de release.
 
 En un release, el bump se hace en el ORDEN: `VERSION` → `pom.xml` →
-`package.json` (mismo valor), en un commit dedicado (`chore(release): vX.Y.Z`).
+`package.json` (mismo valor), en un commit dedicado
+(`chore(release): prepare vX.Y.Z`).
 
 ## Release gate v0.1.0 (checklist de autorización)
 
@@ -64,9 +66,9 @@ comerciales** correspondientes (EULA/acuerdos de servicio, futuros).
    `backend/target/hiqnet-pos-backend-0.1.0.jar` del build validado si el
    workflow de release lo justifica. No existe pipeline de imágenes OCI, npm
    package ni instaladores todavía (nada que inventar).
-8. **Post-release**: cuando HiQNet lo defina, abrir el ciclo siguiente
-   (`0.4.0-SNAPSHOT` en `VERSION`, `pom.xml` y `package.json`) después de
-   publicar `v0.3.0`. La sincronización `dev = main` posterior no cambia la versión.
+8. **Post-release**: el ciclo posterior a `v0.4.0` se abrirá como
+   `0.5.0-SNAPSHOT` en `VERSION`, `pom.xml` y `package.json` cuando HiQNet lo
+   defina. La sincronización `dev = main` posterior no cambia la versión.
 
 ## Rollback / corrección
 
@@ -78,8 +80,9 @@ comerciales** correspondientes (EULA/acuerdos de servicio, futuros).
 
 ## Hoy
 
-- **Última release: `v0.3.0`** (Inventory, release técnica privada desde el corte
-  de `dev`; `main` y `dev` quedan sincronizadas en el mismo commit).
+- **Última release publicada: `v0.3.0`** (Inventory). **Candidato en
+  preparación: `v0.4.0`** (Purchasing), pendiente de merge, tag y publicación. El
+  ciclo siguiente (`0.5.0-SNAPSHOT`) se abrirá con autorización separada.
 - Producto **no comercialmente estable**; sin garantías entre snapshots.
 - **Distribución legal del repositorio resuelta**: propietario / All Rights
   Reserved, `LICENSE` presente, repo privado (no open-source).

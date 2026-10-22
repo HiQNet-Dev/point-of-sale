@@ -2,9 +2,9 @@ package com.hiqnet.pos.inventory.recipe.application;
 
 import com.hiqnet.pos.catalog.domain.Product;
 import com.hiqnet.pos.catalog.domain.ProductRepository;
+import com.hiqnet.pos.inventory.application.InventoryItemUnitGuard;
 import com.hiqnet.pos.inventory.domain.InventoryBaseUnit;
 import com.hiqnet.pos.inventory.domain.InventoryItem;
-import com.hiqnet.pos.inventory.domain.InventoryItemRepository;
 import com.hiqnet.pos.inventory.domain.InventoryItemStatus;
 import com.hiqnet.pos.inventory.recipe.api.InventoryRecipeComponentResponse;
 import com.hiqnet.pos.inventory.recipe.api.ProductInventoryRecipeResponse;
@@ -36,19 +36,19 @@ import org.springframework.transaction.annotation.Transactional;
 public class InventoryRecipeService {
     private final OrganizationRepository organizationRepository;
     private final ProductRepository productRepository;
-    private final InventoryItemRepository inventoryItemRepository;
+    private final InventoryItemUnitGuard inventoryItemUnitGuard;
     private final ProductInventoryRecipeRepository recipeRepository;
     private final ProductInventoryRecipeStore recipeStore;
     private final InventoryRecipeComponentRepository componentRepository;
     private final AuditPort auditPort;
 
     public InventoryRecipeService(OrganizationRepository organizationRepository, ProductRepository productRepository,
-            InventoryItemRepository inventoryItemRepository, ProductInventoryRecipeRepository recipeRepository,
+            InventoryItemUnitGuard inventoryItemUnitGuard, ProductInventoryRecipeRepository recipeRepository,
             ProductInventoryRecipeStore recipeStore, InventoryRecipeComponentRepository componentRepository,
             AuditPort auditPort) {
         this.organizationRepository = organizationRepository;
         this.productRepository = productRepository;
-        this.inventoryItemRepository = inventoryItemRepository;
+        this.inventoryItemUnitGuard = inventoryItemUnitGuard;
         this.recipeRepository = recipeRepository;
         this.recipeStore = recipeStore;
         this.componentRepository = componentRepository;
@@ -124,15 +124,7 @@ public class InventoryRecipeService {
     }
 
     private Map<UUID, InventoryItem> resolveItems(UUID organizationId, List<UUID> ids) {
-        if (ids.isEmpty()) return Map.of();
-        List<InventoryItem> found = inventoryItemRepository.findByOrganizationIdAndIdIn(organizationId, ids);
-        if (found.size() != ids.size()) {
-            throw notFound(ErrorCodes.INVENTORY_ITEM_NOT_FOUND,
-                    "One or more inventory items were not found in the organization");
-        }
-        Map<UUID, InventoryItem> result = new HashMap<>();
-        found.forEach(item -> result.put(item.getId(), item));
-        return result;
+        return inventoryItemUnitGuard.lockAndMarkReferenced(organizationId, ids);
     }
 
     private void validateItemStatus(List<RecipeComponentData> desired, List<RecipeComponentData> existing,

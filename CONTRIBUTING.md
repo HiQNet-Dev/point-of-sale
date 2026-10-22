@@ -1,5 +1,9 @@
 # Cómo contribuir a HiQNet POS
 
+¿Es tu primera vez? Empieza por la guía visual de onboarding:
+[`docs/05-development/collaborator-onboarding.md`](docs/05-development/collaborator-onboarding.md).
+Este documento sigue siendo la referencia de las reglas formales de contribución.
+
 Gracias por contribuir. Reglas cortas, mantenemos el repo limpio:
 
 ## Flujo de trabajo
@@ -61,6 +65,10 @@ dominio financiero/transaccional):
 - Schema solo vía Flyway; nunca `ddl-auto=update`.
 - Sin lógica de negocio en controllers; sin lógica crítica en React.
 - Validación y autorización siempre del lado servidor.
+- Contrato de API: si cambias un endpoint, request, response, código de estado o
+  código de error, actualiza la especificación OpenAPI (`/v3/api-docs`) en el
+  **mismo** cambio — anotaciones (`@Operation`/`@Schema`/`@ApiResponse`) y
+  `docs/03-api`. Un contrato sin su doc es un cambio incompleto.
 
 ## Estado del repositorio
 

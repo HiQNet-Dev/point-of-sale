@@ -10,7 +10,7 @@
 	</parent>
 	<groupId>com.hiqnet</groupId>
 	<artifactId>hiqnet-pos-backend</artifactId>
-	<version>0.3.0</version>
+	<version>0.4.0</version>
 	<name>HiQNet POS Backend</name>
 	<description>Modular monolith backend for HiQNet POS</description>
 	<properties>

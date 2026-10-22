@@ -34,3 +34,17 @@ Complementan el flujo humano en `docs/05-development/git-workflow.md` y
   release o sincronización controlada), ni force-push, ni reescribir historia
   publicada.
 - Nunca commitear secretos ni `.env` reales.
+
+## Contrato de API y documentación
+
+- La especificación OpenAPI (`/v3/api-docs`; Swagger UI solo en `dev` con
+  `app.security.permit-opendoc=true`) es la **fuente de verdad** del contrato
+  HTTP.
+- Todo cambio de contrato de API (endpoint, request, response, código de estado,
+  permiso o código de error estable) debe actualizar OpenAPI **en el mismo
+  cambio**: anotaciones (`@Operation`, `@Schema`, `@ApiResponse`) y los
+  documentos de `docs/03-api` que apliquen.
+- La forma del error (`ApiError`) se genera una sola vez en `OpenApiConfig`
+  (`apiErrorSchemaCustomizer`); no dupliques el schema a mano.
+- Un PR que cambia el contrato sin actualizar la especificación y su
+  documentación es un cambio incompleto.

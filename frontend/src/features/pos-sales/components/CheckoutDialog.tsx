@@ -213,11 +213,40 @@ export function CheckoutDialog({
       <DialogTitle id="checkout-dialog-title">Cobrar venta</DialogTitle>
       <DialogContent dividers>
         <Stack spacing={2}>
-          <Box>
-            <Typography variant="body2" color="text.secondary">Total de la venta</Typography>
-            <Typography variant="h4" aria-label="Total a cobrar">
-              {total === null ? 'Monto de venta inválido' : formatExactMoneyUnits(total, locale, currency)}
-            </Typography>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: '1fr auto' },
+              gap: 1.5,
+              alignItems: 'center',
+              p: 1.5,
+              border: 1,
+              borderColor: 'divider',
+              borderRadius: 1,
+              bgcolor: 'background.default',
+            }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="body2" color="text.secondary">Total de la venta</Typography>
+              <Typography variant="h4" aria-label="Total a cobrar">
+                {total === null ? 'Monto de venta inválido' : formatExactMoneyUnits(total, locale, currency)}
+              </Typography>
+            </Box>
+            <Box sx={{ textAlign: { xs: 'left', sm: 'right' } }}>
+              <Typography variant="body2" color="text.secondary">Restante</Typography>
+              <Typography
+                variant="h5"
+                aria-label="Restante por cubrir"
+                sx={{
+                  fontWeight: 700,
+                  color: remaining !== null && remaining < 0n
+                    ? 'error.main'
+                    : remaining === 0n ? 'success.main' : 'text.primary',
+                }}
+              >
+                {remainingText}
+              </Typography>
+            </Box>
           </Box>
 
           {!operationalParentsActive && (
@@ -322,9 +351,6 @@ export function CheckoutDialog({
             <Stack spacing={0.75}>
               <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
                 <Typography>Aplicado</Typography><Typography>{appliedText}</Typography>
-              </Stack>
-              <Stack direction="row" sx={{ justifyContent: 'space-between' }}>
-                <Typography>Restante</Typography><Typography aria-label="Restante por cubrir">{remainingText}</Typography>
               </Stack>
               {!zeroTotal && remaining !== null && remaining < 0n && (
                 <Alert severity="error">El monto aplicado excede el total.</Alert>

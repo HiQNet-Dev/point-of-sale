@@ -139,6 +139,7 @@ interface HarnessOptions {
   failFirstSaleDetail?: boolean
   configurationError?: { status: number; code: string }
   parents?: { branch?: Branch; register?: CashRegister; shift?: CashShift }
+  fillHeight?: boolean
 }
 
 function setup(options: HarnessOptions = {}) {
@@ -259,6 +260,7 @@ function setup(options: HarnessOptions = {}) {
         shift={options.parents?.shift ?? shift}
         locale="es-MX"
         currency="MXN"
+        fillHeight={options.fillHeight}
       />
     </QueryClientProvider>,
   )
@@ -610,6 +612,43 @@ describe('POS sales workspace', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Bebidas calientes' }))
     await waitFor(() => expect(backend.requests.some((request) => request.url.pathname.endsWith('/pos/catalog/products')
       && request.url.searchParams.get('categoryId') === 'category-1')).toBe(true))
+  })
+
+  it('enfoca la búsqueda de productos con el atajo F2 en el modo caja', async () => {
+    setup({ initialSales: [summary] })
+    const search = await screen.findByRole('textbox', { name: 'Buscar productos' })
+    expect(search.getAttribute('aria-keyshortcuts')).toBe('F2')
+
+    fireEvent.keyDown(window, { key: 'F2' })
+    expect(document.activeElement).toBe(search)
+  })
+
+  it('ignora F2 cuando el foco está en un campo editable', async () => {
+    setup({ initialSales: [summary] })
+    const search = await screen.findByRole('textbox', { name: 'Buscar productos' })
+    const productButton = await screen.findByRole('button', { name: /Café de olla/ })
+    productButton.focus()
+    expect(document.activeElement).toBe(productButton)
+
+    fireEvent.keyDown(search, { key: 'F2' })
+    expect(document.activeElement).toBe(productButton)
+  })
+
+  it('ignora F2 mientras hay un diálogo abierto', async () => {
+    setup({ initialSales: [summary] })
+    const search = await screen.findByRole('textbox', { name: 'Buscar productos' })
+    fireEvent.click(await screen.findByRole('button', { name: /Café de olla/ }))
+    await screen.findByRole('dialog', { name: 'Agregar producto' })
+
+    fireEvent.keyDown(window, { key: 'F2' })
+    expect(document.activeElement).not.toBe(search)
+  })
+
+  it('mantiene el total y el cobro visibles en el panel del carrito con altura completa', async () => {
+    setup({ initialSales: [summary], initialDetail: { sale: summary, items: [item()] }, fillHeight: true })
+    expect(await screen.findByRole('button', { name: 'Cobrar' })).toBeTruthy()
+    expect(screen.getByLabelText('Total de la venta').textContent).toContain('18.50')
+    expect(screen.getByText(/Café histórico/)).toBeTruthy()
   })
 
   it('refreshes Product discovery when configuration reports that Product became inactive', async () => {

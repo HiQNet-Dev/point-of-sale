@@ -3,7 +3,7 @@
 **Orientación, no contrato.** Los hitos y fechas pueden cambiar según aprendizajes.
 Ningún milestone posterior al actual está garantizado en contenido ni fecha.
 
-Release publicada: `v0.3.0` Inventory. Próximo milestone: `v0.4.x` Purchasing.
+Release publicada: `v0.3.0` Inventory. Candidato en preparación: `v0.4.0` Purchasing. Próximo milestone: `v0.5.x` Expenses & Management.
 
 ## Hitos
 
@@ -12,7 +12,7 @@ Release publicada: `v0.3.0` Inventory. Próximo milestone: `v0.4.x` Purchasing.
 | **v0.1.x Foundation** | Estructura backend + frontend, config, seguridad base, documentación, **Organization + Branch (implementado)**, **Authentication (implementado)**, **Users administration (implementado)**, **Roles/Permissions/RBAC (implementado)**, **Branch Memberships (implementado)**, **Audit Foundation (implementado)**, **Secure Admin Bootstrap (implementado)**, **Foundation Hardening**, **estado legal propietario** | **RELEASED — `v0.1.0` (2026-10-10, release técnica privada)** |
 | v0.2.x POS Core | Catálogo, Modifiers, Operational POS Catalog, Cash Registers/Shifts, Sales, Payments + Atomic Checkout, persisted cart, checkout UI, integrated E2E verified 3/3 | **RELEASED — `v0.2.0` (2026-10-12, release técnica privada)** |
 | **v0.3.x Inventory** | Inventory Item Catalog, branch balances, immutable `OPENING`/`ADJUSTMENT` ledger y movement history (`V16`/`V17`); Product Recipes y ModifierOption inventory effects (`V18`); SaleItem consumption snapshots (C2); Organization negative stock policy (`STRICT`/`ALLOW_NEGATIVE`, `V20`); atomic checkout inventory consumption (`SALE_CONSUMPTION`, `V21`); Inventory administration UI (UI-A/UI-B/UI-C) y E2E integrado de Inventory (E2E-D); returns/reversal siguen diferidos | **RELEASED — `v0.3.0` (2026-10-14, release técnica privada)** |
-| v0.4.x Purchasing | Proveedores, órdenes de compra, recepción | Futuro / pendiente |
+| v0.4.x Purchasing | Proveedores, órdenes de compra, recepción; Suppliers (`V22`), órdenes (`V23`) con transiciones de emisión/cancelación; guarda de inmutabilidad de la unidad base del InventoryItem (`V24`); recepción atómica de stock con ledger `PURCHASE_RECEIPT`, idempotencia estricta y auditoría (`V25`) | **RELEASE CANDIDATE — `v0.4.0` (en preparación, pendiente de tag)** |
 | v0.5.x Expenses & Management | Gastos, mermas/pérdidas, auditoría | Futuro / pendiente |
 | v0.6.x Reporting | Reportes de ventas, inventario y caja | Futuro / pendiente |
 | v0.7.x Hardware | Shell desktop Electron (impresora térmica, cajón, lectores) | Futuro / pendiente |
@@ -35,8 +35,9 @@ Release publicada: `v0.3.0` Inventory. Próximo milestone: `v0.4.x` Purchasing.
   procesamiento real de tarjetas, historial de pagos, tickets, inventario ni precios branch-specific.
 
 - Los tags `v0.1.0` (Foundation), `v0.2.0` (POS Core) y `v0.3.0` (Inventory)
-  existen como releases técnicas privadas; `v1.0.0` sigue siendo la primera
-  release comercial estable. La siguiente versión en desarrollo se definirá al
-  abrir el ciclo posterior a v0.3.0.
+  existen como releases técnicas privadas; el candidato `v0.4.0` (Purchasing)
+  está en preparación y pendiente de tag/publicación. `v1.0.0` sigue siendo la
+  primera release comercial estable. El ciclo posterior a `v0.4.0` se definirá al
+  abrirlo.
 - Alcance futuro de v1 en `docs/00-product/scope-v1.md`; el estado implementado se registra en este roadmap.
 - Versiones y proceso en `docs/05-development/release-process.md`.

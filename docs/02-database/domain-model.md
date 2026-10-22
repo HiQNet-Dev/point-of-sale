@@ -5,9 +5,12 @@ administración), `RefreshSession`, RBAC, memberships, auditoría, bootstrap, el
 catálogo POS, Sales Foundation y Payments + Atomic Checkout están implementados
 (V1–V15). `InventoryItem` organization-owned (V16), Branch stock y movements
 (V17), recipes y modifier effects (V18) y snapshots + consumo de checkout
-(V19–V21) están implementados.
+(V19–V21) están implementados. Purchasing está implementado (V22–V25):
+`Supplier` organization-owned (V22), órdenes de compra con sus partidas (V23),
+la guarda de inmutabilidad de la unidad base del `InventoryItem` (V24) y las
+recepciones de mercancía con ledger `PURCHASE_RECEIPT` (V25).
 
-Versión de esta release: `0.3.0`.
+Versión del candidato de release: `0.4.0`.
 
 ## Jerarquía principal
 
@@ -19,6 +22,9 @@ Organization (organización / empresa)  ✔ implementado
  ├── AuditEvent (historial append-only)  ✔ implementado (V7)
  ├── Category / Product (catálogo)     ✔ implementado (V9)
  ├── InventoryItem (definición)         ✔ implementado (V16), organization-owned
+ ├── Supplier (proveedor)               ✔ implementado (V22), organization-owned
+ ├── PurchaseOrder (orden de compra)    ✔ implementado (V23), organization-owned + Branch destino
+ │    └── PurchaseOrderLine (partida)   ✔ implementado (V23); referencia InventoryItem
  ├── ModifierGroup / ModifierOption (modifiers)  ✔ implementado (V10)
  │    └── ProductModifierGroup (producto ↔ grupo, ordenado)  ✔ implementado (V10)
  └── Branch (sucursal)                 ✔ implementado
@@ -60,7 +66,11 @@ Organization (organización / empresa)  ✔ implementado
 | Recipe | **organización** | Producto → ingredientes + cantidades |
 | Stock | **sucursal** | Existencias por ingrediente/producto en cada branch |
 | Sale / SaleLine / Payment | sucursal | Dinero siempre en `BigDecimal` |
-| Supplier / PurchaseOrder | organización | Compras (futuro) |
+| Supplier | organización | **implementado (`V22`)** — datos maestros organization-owned; `code` slug único por org e inmutable; contacto/razón social/identificador fiscal opcionales; `status ACTIVE/INACTIVE` sin DELETE; `@Version`; ver `docs/02-database/purchasing-suppliers-model.md` |
+| PurchaseOrder | organización+sucursal | **implementada (`V23`)** — cabecera con `branch_id` de destino, `code` slug único por org e inmutable, moneda copiada de la organización, snapshots del proveedor, estados DRAFT/ORDERED/PARTIALLY_RECEIVED/RECEIVED/CANCELLED (`V25` añade los dos de recepción) y `@Version` del agregado; ver `docs/02-database/purchase-orders-model.md` |
+| PurchaseOrderLine | organización | **implementada (`V23`)** — partida con snapshots inmutables de `code`/`name`/`baseUnit` del `InventoryItem`, `line_number` único por orden, `quantity NUMERIC(19,6) > 0` y `unit_cost NUMERIC(19,4) >= 0` opcional |
+| PurchaseReceipt | organización+sucursal | **implementada (`V25`)** — recepción inmutable de una orden emitida, con `idempotency_key` única por organización+orden y `payload_fingerprint`; ver `docs/02-database/purchase-receipts-model.md` |
+| PurchaseReceiptLine | organización | **implementada (`V25`)** — línea con `quantity_received NUMERIC(19,6) > 0` en la unidad base de la partida; origina un movimiento `PURCHASE_RECEIPT` |
 | Expense | sucursal u organización | Gastos (futuro) |
 
 ## Regla clave (repetida)
@@ -94,6 +104,11 @@ operación pasa por `organization_id` (`findByIdAndOrganizationId`).
 - Organization 1—N ModifierGroup ✔ (`V10`); ModifierGroup 1—N ModifierOption ✔
   (`V10`); Product N—M ModifierGroup (vía `product_modifier_groups`, ordenada) ✔
   (`V10`).
+- Organization 1—N Supplier ✔ (`V22`); un mismo proveedor puede ser referenciado
+  por órdenes de cualquier Branch de la organización.
+- Organization 1—N PurchaseOrder ✔ (`V23`); PurchaseOrder N—1 Branch (destino) y
+  N—1 Supplier; PurchaseOrder 1—N PurchaseOrderLine, que referencia un
+  InventoryItem organization-owned y congela sus snapshots.
 - Branch 1—N CashRegister ✔ (`V11`); CashRegister 1—N CashShift ✔ (`V12`).
 - User 1—N RefreshSession ✔; User N—M Role (vía `user_organization_roles`, ✔).
 - Branch 1—N BranchMembership ✔ (`V6`); BranchMembership N—M Role (vía

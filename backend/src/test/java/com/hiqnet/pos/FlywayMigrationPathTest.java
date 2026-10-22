@@ -21,8 +21,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * contexts that reuse a Testcontainers DB across the suite):
  *
  * <ul>
- * <li><b>Clean install</b>: V1 → V21 applies completely and validates, leaving
- *       the expected seed state (permission catalog = 51, bootstrap singleton = 1,
+ * <li><b>Clean install</b>: V1 → V25 applies completely and validates, leaving
+ *       the expected seed state (permission catalog = 59, bootstrap singleton = 1,
  *       catalog/modifier/cash-register/cash-shift/sales and inventory-item tables present).</li>
  *   <li><b>Upgrade path (V7)</b>: a database migrated up to V7 (the state before
  *       the Secure Admin Bootstrap slice) applies V8 through V12 correctly
@@ -41,14 +41,14 @@ class FlywayMigrationPathTest {
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:17-alpine");
 
     @Test
-    void cleanInstallationMigratesV1ThroughV21AndValidates() {
+    void cleanInstallationMigratesV1ThroughV25AndValidates() {
         Flyway flyway = flyway("clean_foundation");
 
         MigrateResult result = flyway.migrate();
 
-        assertThat(result.migrationsExecuted).isEqualTo(21);
+        assertThat(result.migrationsExecuted).isEqualTo(25);
         flyway.validate();
-        assertThat(countRows("clean_foundation", "permissions")).isEqualTo(51);
+        assertThat(countRows("clean_foundation", "permissions")).isEqualTo(59);
         assertThat(countRows("clean_foundation", "installation_bootstrap")).isEqualTo(1);
         assertThat(tableExists("clean_foundation", "categories")).isTrue();
         assertThat(tableExists("clean_foundation", "products")).isTrue();
@@ -72,6 +72,35 @@ class FlywayMigrationPathTest {
         assertThat(columnExists("clean_foundation", "organizations", "inventory_negative_stock_policy"))
                 .isTrue();
         assertThat(columnExists("clean_foundation", "inventory_movements", "sale_id")).isTrue();
+        assertThat(columnExists("clean_foundation", "inventory_items", "unit_locked")).isTrue();
+        assertThat(tableExists("clean_foundation", "suppliers")).isTrue();
+        assertThat(tableExists("clean_foundation", "purchase_orders")).isTrue();
+        assertThat(tableExists("clean_foundation", "purchase_order_lines")).isTrue();
+        assertThat(tableExists("clean_foundation", "purchase_receipts")).isTrue();
+        assertThat(tableExists("clean_foundation", "purchase_receipt_lines")).isTrue();
+        assertThat(columnExists("clean_foundation", "inventory_movements", "purchase_receipt_line_id"))
+                .isTrue();
+    }
+
+    @Test
+    void cleanInstallationEnforcesPurchaseReceiptIntegrityInTheCatalog() {
+        Flyway flyway = flyway("clean_receipt_integrity");
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(25);
+
+        // La recepción es inmutable: ambos triggers existen y están habilitados.
+        assertThat(triggerExists("clean_receipt_integrity", "purchase_receipts", "purchase_receipts_immutable"))
+                .isTrue();
+        assertThat(triggerExists("clean_receipt_integrity", "purchase_receipt_lines", "purchase_receipt_lines_immutable"))
+                .isTrue();
+
+        // La FK de identidad liga el movimiento a su línea por artículo y alcance.
+        assertThat(foreignKeyColumns(
+                        "clean_receipt_integrity", "inventory_movements", "inventory_movements_purchase_receipt_line_fk"))
+                .containsExactly("purchase_receipt_line_id", "organization_id", "branch_id", "inventory_item_id");
+        // La línea pertenece a la misma sucursal que su cabecera.
+        assertThat(foreignKeyColumns(
+                        "clean_receipt_integrity", "purchase_receipt_lines", "purchase_receipt_lines_receipt_branch_fk"))
+                .containsExactly("purchase_receipt_id", "organization_id", "branch_id");
     }
 
     @Test
@@ -538,15 +567,19 @@ class FlywayMigrationPathTest {
                 .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .schemas(schema)
                 .load();
-        assertThat(latest.migrate().migrationsExecuted).isEqualTo(3);
+        assertThat(latest.migrate().migrationsExecuted).isEqualTo(7);
         latest.validate();
-        assertThat(countRows(schema, "permissions")).isEqualTo(51);
+        assertThat(countRows(schema, "permissions")).isEqualTo(59);
         assertThat(countRows(schema, "role_permissions")).isEqualTo(49);
         assertThat(tableExists(schema, "sale_item_inventory_components")).isTrue();
         assertThat(countRows(schema, "sale_item_inventory_components")).isZero();
         assertThat(columnExists(schema, "organizations", "inventory_negative_stock_policy"))
                 .isTrue();
         assertThat(columnExists(schema, "inventory_movements", "sale_id")).isTrue();
+        assertThat(columnExists(schema, "inventory_items", "unit_locked")).isTrue();
+        assertThat(tableExists(schema, "purchase_receipts")).isTrue();
+        assertThat(tableExists(schema, "purchase_receipt_lines")).isTrue();
+        assertThat(columnExists(schema, "inventory_movements", "purchase_receipt_line_id")).isTrue();
     }
 
     @Test
@@ -703,6 +736,77 @@ class FlywayMigrationPathTest {
                 .isInstanceOf(IllegalStateException.class);
     }
 
+    @Test
+    void upgradeFromV21AddsSupplierPermissionsWithoutChangingExistingRoleGrants() {
+        String schema = "upgrade_purchasing_suppliers";
+        Flyway upToV21 = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema)
+                .target(MigrationVersion.fromVersion("21"))
+                .load();
+        assertThat(upToV21.migrate().migrationsExecuted).isEqualTo(21);
+        assertThat(countRows(schema, "permissions")).isEqualTo(51);
+
+        UUID organizationId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        execute("insert into " + schema + ".organizations (id,name,code,timezone,currency,locale,created_at,updated_at) values ('"
+                + organizationId + "','Existing Org','existing-suppliers','UTC','MXN','es-MX',now(),now())");
+        execute("insert into " + schema + ".roles (id,organization_id,code,name,created_at,updated_at) values ('"
+                + roleId + "','" + organizationId + "','existing-role','Existing role',now(),now())");
+        execute("insert into " + schema + ".role_permissions (role_id,permission_code) select '"
+                + roleId + "',code from " + schema + ".permissions");
+        assertThat(countRows(schema, "role_permissions")).isEqualTo(51);
+
+        Flyway latest = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema)
+                .target(MigrationVersion.fromVersion("22"))
+                .load();
+        assertThat(latest.migrate().migrationsExecuted).isEqualTo(1);
+        latest.validate();
+
+        assertThat(countRows(schema, "permissions")).isEqualTo(53);
+        assertThat(countRows(schema, "role_permissions")).isEqualTo(51);
+        assertThat(tableExists(schema, "suppliers")).isTrue();
+    }
+
+    @Test
+    void upgradeFromV22AddsPurchaseOrderPermissionsWithoutChangingExistingRoleGrants() {
+        String schema = "upgrade_purchasing_orders";
+        Flyway upToV22 = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema)
+                .target(MigrationVersion.fromVersion("22"))
+                .load();
+        assertThat(upToV22.migrate().migrationsExecuted).isEqualTo(22);
+        assertThat(countRows(schema, "permissions")).isEqualTo(53);
+
+        UUID organizationId = UUID.randomUUID();
+        UUID roleId = UUID.randomUUID();
+        execute("insert into " + schema + ".organizations (id,name,code,timezone,currency,locale,created_at,updated_at) values ('"
+                + organizationId + "','Existing Org','existing-orders','UTC','MXN','es-MX',now(),now())");
+        execute("insert into " + schema + ".roles (id,organization_id,code,name,created_at,updated_at) values ('"
+                + roleId + "','" + organizationId + "','existing-role','Existing role',now(),now())");
+        execute("insert into " + schema + ".role_permissions (role_id,permission_code) select '"
+                + roleId + "',code from " + schema + ".permissions");
+        assertThat(countRows(schema, "role_permissions")).isEqualTo(53);
+
+        Flyway latest = Flyway.configure()
+                .dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .schemas(schema)
+                .load();
+        assertThat(latest.migrate().migrationsExecuted).isEqualTo(3);
+        latest.validate();
+
+        assertThat(countRows(schema, "permissions")).isEqualTo(59);
+        assertThat(countRows(schema, "role_permissions")).isEqualTo(53);
+        assertThat(tableExists(schema, "purchase_orders")).isTrue();
+        assertThat(tableExists(schema, "purchase_order_lines")).isTrue();
+        assertThat(tableExists(schema, "purchase_receipts")).isTrue();
+        assertThat(tableExists(schema, "purchase_receipt_lines")).isTrue();
+        assertThat(columnExists(schema, "inventory_items", "unit_locked")).isTrue();
+    }
+
     private static String valueOfString(String schema, String table, String column, UUID id) {
         try (Connection connection = connect();
                 PreparedStatement statement = connection.prepareStatement(
@@ -760,6 +864,44 @@ class FlywayMigrationPathTest {
             try (ResultSet resultSet = statement.executeQuery()) {
                 resultSet.next();
                 return resultSet.getLong(1);
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static boolean triggerExists(String schema, String table, String trigger) {
+        try (Connection connection = connect();
+                PreparedStatement statement = connection.prepareStatement(
+                        "select 1 from information_schema.triggers where trigger_schema = ? and event_object_table = ? and trigger_name = ?")) {
+            statement.setString(1, schema);
+            statement.setString(2, table);
+            statement.setString(3, trigger);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next();
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static java.util.List<String> foreignKeyColumns(String schema, String table, String constraint) {
+        try (Connection connection = connect();
+                PreparedStatement statement = connection.prepareStatement(
+                        "select kcu.column_name from information_schema.table_constraints tc "
+                                + "join information_schema.key_column_usage kcu on kcu.constraint_name = tc.constraint_name "
+                                + "and kcu.table_schema = tc.table_schema and kcu.table_name = tc.table_name "
+                                + "where tc.constraint_type = 'FOREIGN KEY' and tc.table_schema = ? and tc.table_name = ? "
+                                + "and tc.constraint_name = ? order by kcu.ordinal_position")) {
+            statement.setString(1, schema);
+            statement.setString(2, table);
+            statement.setString(3, constraint);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                java.util.List<String> columns = new java.util.ArrayList<>();
+                while (resultSet.next()) {
+                    columns.add(resultSet.getString(1));
+                }
+                return columns;
             }
         } catch (Exception e) {
             throw new IllegalStateException(e);

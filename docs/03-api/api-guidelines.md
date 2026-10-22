@@ -64,6 +64,19 @@ GET   /api/v1/organizations/{organizationId}/products                (paginado, 
 GET   /api/v1/organizations/{organizationId}/products/{productId}
 PATCH /api/v1/organizations/{organizationId}/products/{productId}
 
+POST  /api/v1/organizations/{organizationId}/suppliers
+GET   /api/v1/organizations/{organizationId}/suppliers          (paginado, ?page&size&q&status)
+GET   /api/v1/organizations/{organizationId}/suppliers/{supplierId}
+PATCH /api/v1/organizations/{organizationId}/suppliers/{supplierId}
+
+POST  /api/v1/organizations/{organizationId}/branches/{branchId}/purchase-orders
+GET   /api/v1/organizations/{organizationId}/branches/{branchId}/purchase-orders          (paginado, ?page&size&q&status&supplierId)
+GET   /api/v1/organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}
+PATCH /api/v1/organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}
+POST  /api/v1/organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}/lines
+PATCH /api/v1/organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}/lines/{purchaseOrderLineId}
+POST  /api/v1/organizations/{organizationId}/branches/{branchId}/purchase-orders/{purchaseOrderId}/lines/{purchaseOrderLineId}/remove
+
 POST  /api/v1/organizations/{organizationId}/inventory-items
 GET   /api/v1/organizations/{organizationId}/inventory-items    (paginado, ?page&size&q&status&baseUnit)
 GET   /api/v1/organizations/{organizationId}/inventory-items/{inventoryItemId}
@@ -139,9 +152,9 @@ concurrente), 500 (interno).
 ## PATCH (parcial, no PUT disfrazado)
 
 - Solo se actualizan los campos presentes (no nulos) en el body.
-- `code` es **inmutable** tras la creación, tanto en `organizations` como en
-  `branches` (no se expone en PATCH): evita romper futuras referencias y URLs
-  lógicas.
+- `code` es **inmutable** tras la creación en `organizations`, `branches`,
+  `suppliers` y `purchase-orders` (no se expone en PATCH): evita romper futuras
+  referencias y URLs lógicas.
 - `status` permite `ACTIVE`/`INACTIVE` (activar/desactivar).
 - `branch.timezone` tiene semántica tri-estado explícita
   (`PatchField` en `shared.api`): omitir la clave = sin cambios;
@@ -174,7 +187,6 @@ GET /api/v1/organizations/{organizationId}/audit-events   (audit.read, organizat
   → 403 (anti privilege-escalation).
 - Detalle: `docs/04-security/audit.md`.
 
-## Contrato de error
 ## Branch Memberships (scopes de autorización)
 
 La gestión de memberships se autoriza SIEMPRE con permisos **organization-wide**
@@ -269,8 +281,14 @@ inmutable, único por organización. `POST` crea `ACTIVE`; `GET` collection usa
 `expectedVersion`; campos ausentes no cambian. El DTO nullable no distingue un
 campo omitido de JSON `null`: ambos significan “no provisto”. Para `description`,
 `""` o solo whitespace sí limpia el valor a `null`; para `name`, blank es error.
-La unidad base puede corregirse en esta fundación, antes de que existan datos de
-inventario dependientes. Ver `docs/02-database/inventory-item-model.md`.
+La unidad base solo puede corregirse mientras el artículo **no** tenga
+dependencias: balance de sucursal, movimiento, componente de receta, efecto de
+modificador o partida de orden de compra. Si el artículo ya tiene cualquier
+dependencia, `PATCH` con un `baseUnit` distinto responde **409
+`INVENTORY_ITEM_UNIT_LOCKED`** y no modifica el recurso; el campo de lectura
+`unitLocked` de la respuesta indica si la unidad está congelada. Enviar la unidad
+actual es un no-op idempotente. Ver `docs/02-database/inventory-item-model.md` y
+ADR-0018.
 
 ## POS Operational Catalog (lecturas operacionales)
 
@@ -460,6 +478,7 @@ Códigos estables:
 | `MODIFIER_OPTION_CODE_ALREADY_EXISTS` | 409 | `code` de opción duplicado dentro del grupo |
 | `CASH_REGISTER_NOT_FOUND` | 404 | Caja inexistente (o de otra branch/organización) |
 | `CASH_REGISTER_CODE_ALREADY_EXISTS` | 409 | `code` de caja duplicado dentro de la branch |
+| `INVENTORY_ITEM_UNIT_LOCKED` | 409 | Intento de cambiar `baseUnit` de un artículo con dependencias (balance, movimiento, receta, efecto o partida) |
 | `CONCURRENT_MODIFICATION` | 409 | Falló optimistic locking |
 | `INTERNAL_ERROR` | 500 | Error inesperado |
 
@@ -529,6 +548,16 @@ Convención estable desde la administración de usuarios (`shared.api.PageRespon
   `app.security.permit-opendoc=true`, activo únicamente en `dev`).
 - En producción los endpoints de docs siguen **denegados** por
   deny-by-default.
+- La forma del error se expone como schema reutilizable
+  `components.schemas.ApiError`; toda respuesta 4xx/5xx del spec lo referencia.
+  El schema y su referencia se generan en `OpenApiConfig`
+  (`apiErrorSchemaCustomizer`); es **documental** y no altera el contrato en
+  runtime.
+- **Regla del repositorio:** todo cambio de contrato de API (endpoint, request,
+  response, código de estado, permiso o código de error estable) debe actualizar
+  OpenAPI **en el mismo cambio**: anotaciones (`@Operation`, `@Schema`,
+  `@ApiResponse`), descripción global cuando aplique y los documentos de
+  `docs/03-api`. Un contrato sin su doc es un cambio incompleto.
 
 ## Otros
 

@@ -2,6 +2,7 @@ import { Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogConten
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { UseQueryResult } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { RefObject } from 'react'
 import type { Branch, CashRegister, CashShift, PageResponse } from '../../pos-session/api/posSessionApi'
 import { posSessionKeys } from '../../pos-session/model/posSessionKeys'
 import { ApiRequestError } from '../../../shared/api/client'
@@ -30,6 +31,13 @@ type Props = {
   shift: CashShift
   locale: string
   currency: string
+  /**
+   * Cuando es `true` el espacio de venta ocupa la altura disponible del
+   * contenedor (modo caja de escritorio) en lugar de fluir con la página. El
+   * catálogo y el carrito hacen scroll interno y el total/cobro permanecen
+   * visibles.
+   */
+  fillHeight?: boolean
 }
 
 type DialogMode = 'add' | 'edit' | null
@@ -91,7 +99,7 @@ function modifierConfigurationConflict(error: unknown): boolean {
   return errorCode(error) === 'PRODUCT_MODIFIER_CONFIGURATION_UNAVAILABLE'
 }
 
-export function SalesWorkspace({ organizationId, branch, register, shift, locale, currency }: Props) {
+export function SalesWorkspace({ organizationId, branch, register, shift, locale, currency, fillHeight = false }: Props) {
   const queryClient = useQueryClient()
   const [salePage, setSalePage] = useState(0)
   const [productPage, setProductPage] = useState(0)
@@ -501,15 +509,23 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
   }
 
   return (
-    <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mt: 3 }}>
-      <Stack spacing={2.5}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}>
-          <Box>
-            <Typography component="h2" variant="h5">Ventas abiertas</Typography>
-            <Typography color="text.secondary" variant="body2">El carrito se recupera desde la venta guardada en el servidor.</Typography>
+    <Paper
+      variant="outlined"
+      sx={{
+        p: { xs: 1.5, sm: 2 },
+        minWidth: 0,
+        ...(fillHeight ? { flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'column' } : {}),
+      }}
+    >
+      <Stack spacing={1.5} sx={{ minWidth: 0, ...(fillHeight ? { flexGrow: 1, minHeight: 0 } : {}) }}>
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, flexShrink: 0 }}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography component="h2" variant="h6">Ventas abiertas</Typography>
+            <Typography color="text.secondary" variant="caption">El carrito se recupera desde la venta guardada en el servidor.</Typography>
           </Box>
           <Button
             variant="contained"
+            size="small"
             onClick={() => createMutation.mutate()}
             disabled={!operationalParentsActive || createMutation.isPending || salesQuery.isLoading}
           >
@@ -526,6 +542,7 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
             {pageSales.items.map((sale) => (
               <Button
                 key={sale.id}
+                size="small"
                 variant={sale.id === activeSaleId ? 'contained' : 'outlined'}
                 onClick={() => {
                   setCheckoutSaleId('')
@@ -542,9 +559,9 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
         )}
         {pageSales && pageSales.totalElements > 1 && (
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-            <Button disabled={salePage === 0} onClick={() => setSalePage((page) => page - 1)}>Ventas anteriores</Button>
+            <Button size="small" disabled={salePage === 0} onClick={() => setSalePage((page) => page - 1)}>Ventas anteriores</Button>
             <Typography variant="body2">Página {salePage + 1} de {pageSales.totalPages}</Typography>
-            <Button disabled={salePage + 1 >= pageSales.totalPages} onClick={() => setSalePage((page) => page + 1)}>Más ventas</Button>
+            <Button size="small" disabled={salePage + 1 >= pageSales.totalPages} onClick={() => setSalePage((page) => page + 1)}>Más ventas</Button>
           </Stack>
         )}
 
@@ -590,6 +607,7 @@ export function SalesWorkspace({ organizationId, branch, register, shift, locale
             }}
             onRefresh={() => void invalidateSale()}
             pending={addMutation.isPending || updateMutation.isPending || removeMutation.isPending || cancelMutation.isPending}
+            fillHeight={fillHeight}
           />
         )}
       </Stack>
@@ -755,6 +773,31 @@ type CartWorkspaceProps = {
   onExitSale: () => void
   onRefresh: () => void
   pending: boolean
+  fillHeight: boolean
+}
+
+/**
+ * Atajo F2 para enfocar la búsqueda del catálogo. Se ignora cuando el foco está
+ * en un campo editable, cuando hay un diálogo o desplegable abierto, o cuando
+ * la tecla se combina con modificadores, para no robar el foco ni interferir con
+ * la navegación por teclado.
+ */
+function useSearchShortcut(enabled: boolean, target: RefObject<HTMLInputElement | null>) {
+  useEffect(() => {
+    if (!enabled) return
+    function handleShortcut(event: KeyboardEvent) {
+      if (event.key !== 'F2' || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return
+      const element = event.target as HTMLElement | null
+      if (element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA'
+        || element.tagName === 'SELECT' || element.isContentEditable)) return
+      if (document.querySelector('[role="dialog"], [role="listbox"], .MuiPopover-root')) return
+      event.preventDefault()
+      target.current?.focus()
+      target.current?.select()
+    }
+    window.addEventListener('keydown', handleShortcut)
+    return () => window.removeEventListener('keydown', handleShortcut)
+  }, [enabled, target])
 }
 
 function SaleCartWorkspace(props: CartWorkspaceProps) {
@@ -763,14 +806,17 @@ function SaleCartWorkspace(props: CartWorkspaceProps) {
     categories, categoriesQuery, categoryPage, setCategoryPage, categoryId, setCategoryId,
     products, productsQuery, productPage, setProductPage, searchInput, setSearchInput,
     operationMessage, onOpenAdd, onOpenEdit, onRemove, onCancel, onCheckout, onExitSale, onRefresh, pending,
+    fillHeight,
   } = props
   const activeItems = saleDetail?.items.filter((item) => item.status === 'ACTIVE') ?? []
   const removedItems = saleDetail?.items.filter((item) => item.status === 'REMOVED') ?? []
   const showCatalog = catalogEnabled && saleDetail?.sale.status === 'OPEN'
   const saleErrorCode = errorCode(saleError)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  useSearchShortcut(showCatalog, searchInputRef)
 
   return (
-    <Stack spacing={2}>
+    <Stack spacing={2} sx={{ minWidth: 0, ...(fillHeight ? { flexGrow: 1, minHeight: 0 } : {}) }}>
       {saleLoading && <Skeleton variant="rounded" height={140} />}
       {saleError && (
         <Alert severity="warning" action={<Button color="inherit" onClick={onRefresh}>Actualizar</Button>}>
@@ -792,159 +838,280 @@ function SaleCartWorkspace(props: CartWorkspaceProps) {
             <Button onClick={onRefresh}>Actualizar contexto</Button>
           )}
 
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1.4fr) minmax(320px, 1fr)' }, gap: 2 }}>
-            <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2 } }}>
-              <Stack spacing={1.5}>
-                <Typography component="h3" variant="h6">Productos</Typography>
-                {!showCatalog && <Alert severity="info">El catálogo no está disponible para nuevas líneas en este contexto.</Alert>}
-                {showCatalog && (
-                  <>
-                    {categoriesQuery.error && (
-                      <Alert severity="warning">
-                        {errorCode(categoriesQuery.error) === 'FORBIDDEN'
-                          ? 'No tienes permiso para consultar el catálogo de esta sucursal.'
-                          : 'No se pudieron cargar las categorías.'}
-                      </Alert>
-                    )}
-                    <Stack direction="row" spacing={1} sx={{ overflowX: 'auto', pb: 0.5 }}>
-                      <Button size="small" variant={!categoryId ? 'contained' : 'outlined'} onClick={() => setCategoryId('')}>Todas</Button>
-                      {categories.map((category) => (
-                        <Button
-                          key={category.id}
-                          size="small"
-                          variant={categoryId === category.id ? 'contained' : 'outlined'}
-                          onClick={() => setCategoryId(category.id)}
-                          aria-label={category.status === 'INACTIVE' ? `${category.name}, categoría inactiva` : category.name}
-                        >
-                          {category.name}{category.status === 'INACTIVE' ? ' · Inactiva' : ''}
-                        </Button>
-                      ))}
-                    </Stack>
-                    {categoriesQuery.isLoading && <Skeleton variant="rounded" height={36} />}
-                    {categoriesQuery.data && categoriesQuery.data.totalPages > 1 && (
-                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                        <Button size="small" disabled={categoryPage === 0} onClick={() => setCategoryPage(categoryPage - 1)}>Categorías anteriores</Button>
-                        <Typography variant="caption">{categoryPage + 1}/{categoriesQuery.data.totalPages}</Typography>
-                        <Button size="small" disabled={categoryPage + 1 >= categoriesQuery.data.totalPages} onClick={() => setCategoryPage(categoryPage + 1)}>Más categorías</Button>
-                      </Stack>
-                    )}
-                    <TextField
-                      label="Buscar productos"
-                      value={searchInput}
-                      onChange={(event) => setSearchInput(event.target.value)}
-                      fullWidth
-                      size="small"
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(340px, 400px)' },
+              gridTemplateRows: fillHeight ? 'minmax(0, 1fr)' : undefined,
+              gap: 2,
+              minWidth: 0,
+              overflow: fillHeight ? 'hidden' : undefined,
+              ...(fillHeight ? { flexGrow: 1, minHeight: 0, alignItems: 'stretch' } : { alignItems: 'start' }),
+            }}
+          >
+            <ProductCatalogPanel
+              showCatalog={showCatalog}
+              categories={categories}
+              categoriesQuery={categoriesQuery}
+              categoryPage={categoryPage}
+              setCategoryPage={setCategoryPage}
+              categoryId={categoryId}
+              setCategoryId={setCategoryId}
+              searchInput={searchInput}
+              setSearchInput={setSearchInput}
+              searchInputRef={searchInputRef}
+              products={products}
+              productsQuery={productsQuery}
+              productPage={productPage}
+              setProductPage={setProductPage}
+              locale={locale}
+              currency={currency}
+              onOpenAdd={onOpenAdd}
+              pending={pending}
+              fillHeight={fillHeight}
+            />
 
-                    />
-                    {productsQuery.error && (
-                      <Alert severity="warning">
-                        {errorCode(productsQuery.error) === 'FORBIDDEN'
-                          ? 'No tienes permiso para consultar el catálogo de esta sucursal.'
-                          : 'No se pudieron cargar los productos.'}
-                      </Alert>
-                    )}
-                    {productsQuery.isLoading && <Stack spacing={1}><Skeleton variant="rounded" height={76} /><Skeleton variant="rounded" height={76} /></Stack>}
-                    {productsQuery.data?.items.length === 0 && <Alert severity="info">No hay productos que coincidan con esta búsqueda.</Alert>}
-                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 1 }}>
-                      {products.map((product) => (
-                        <Button
-                          key={product.id}
-                          variant="outlined"
-                          onClick={() => onOpenAdd(product)}
-                          disabled={!showCatalog || pending}
-                          sx={{ justifyContent: 'space-between', textAlign: 'left', minHeight: 76, px: 1.5 }}
-                        >
-                          <Stack sx={{ minWidth: 0, alignItems: 'flex-start' }}>
-                            <Typography variant="body2" sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}>{product.name}</Typography>
-                            <Typography variant="caption" color="text.secondary">SKU {product.sku}</Typography>
-                          </Stack>
-                          <Typography variant="body2" sx={{ whiteSpace: 'nowrap', pl: 1 }}>{formatMoney(product.unitPrice, locale, currency)}</Typography>
-                        </Button>
-                      ))}
-                    </Box>
-                    {productsQuery.data && productsQuery.data.totalPages > 1 && (
-                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Button disabled={productPage === 0} onClick={() => setProductPage(productPage - 1)}>Productos anteriores</Button>
-                        <Typography variant="body2">{productPage + 1}/{productsQuery.data.totalPages}</Typography>
-                        <Button disabled={productPage + 1 >= productsQuery.data.totalPages} onClick={() => setProductPage(productPage + 1)}>Más productos</Button>
-                      </Stack>
-                    )}
-                  </>
-                )}
-              </Stack>
-            </Paper>
-
-            <Paper variant="outlined" sx={{ p: { xs: 1.5, sm: 2 } }}>
-              <Stack spacing={1.5}>
-                <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-                  <Box>
-                    <Typography component="h3" variant="h6">Venta {shortSaleId(saleDetail.sale.id)}</Typography>
-                    <Typography variant="caption" color="text.secondary">{saleDetail.sale.status === 'OPEN' ? 'Reanudando venta abierta' : saleDetail.sale.status}</Typography>
-                  </Box>
-                  <Chip label={`v${saleDetail.sale.version}`} size="small" variant="outlined" />
-                </Stack>
-                {activeItems.length === 0 && <Alert severity="info">Tu venta está vacía. Selecciona un producto para comenzar.</Alert>}
-                <Stack spacing={1}>
-                  {activeItems.map((item) => (
-                    <Box key={item.id} sx={{ borderBottom: 1, borderColor: 'divider', pb: 1.25 }}>
-                      <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <Box sx={{ minWidth: 0 }}>
-                          <Typography variant="body2" sx={{ fontWeight: 700 }}>{item.quantity} × {item.productNameSnapshot}</Typography>
-                          {item.modifiers.map((modifier) => (
-                            <Typography key={modifier.id} component="div" variant="caption" color="text.secondary">
-                              {modifier.groupNameSnapshot}: {modifier.optionNameSnapshot}
-                            </Typography>
-                          ))}
-                          <Typography variant="caption" color="text.secondary">{formatMoney(item.effectiveUnitPrice, locale, currency)} c/u</Typography>
-                        </Box>
-                        <Stack sx={{ alignItems: 'flex-end', flexShrink: 0 }}>
-                          <Typography variant="body2" sx={{ fontWeight: 700 }}>{formatMoney(item.lineTotal, locale, currency)}</Typography>
-                          <Stack direction="row" spacing={0.25}>
-                            <Button aria-label={`Editar ${item.productNameSnapshot}`} size="small" disabled={!showCatalog || pending} onClick={() => onOpenEdit(item)}>Editar</Button>
-                            <Button aria-label={`Quitar ${item.productNameSnapshot}`} size="small" color="error" disabled={!showCatalog || pending} onClick={() => onRemove(item)}>Quitar</Button>
-                          </Stack>
-                        </Stack>
-                      </Stack>
-                    </Box>
-                  ))}
-                </Stack>
-                {removedItems.length > 0 && (
-                  <details>
-                    <summary>Elementos retirados ({removedItems.length})</summary>
-                    <Stack spacing={0.5} sx={{ pt: 1 }}>
-                      {removedItems.map((item) => <Typography key={item.id} variant="body2" color="text.secondary">{item.quantity} × {item.productNameSnapshot} · Retirado</Typography>)}
-                    </Stack>
-                  </details>
-                )}
-                <Stack direction="row" sx={{ alignItems: 'baseline', justifyContent: 'space-between', borderTop: 1, borderColor: 'divider', pt: 1.5 }}>
-                  <Typography variant="h6">Total</Typography>
-                  <Typography variant="h5" aria-label="Total de la venta">{formatMoney(saleDetail.sale.totalAmount, locale, currency)}</Typography>
-                </Stack>
-                {saleDetail.sale.status === 'OPEN' && activeItems.length === 0 && (
-                  <Alert severity="info">Agrega al menos un producto antes de cobrar.</Alert>
-                )}
-                {saleDetail.sale.status === 'OPEN' && (
-                  <Button variant="contained" onClick={onCheckout} disabled={!showCatalog || activeItems.length === 0 || pending}>
-                    Cobrar
-                  </Button>
-                )}
-                {saleDetail.sale.status === 'OPEN' && (
-                  <Button
-                    color="error"
-                    variant="outlined"
-
-                    onClick={onCancel}
-                    disabled={pending}
-                  >
-                    Cancelar venta
-                  </Button>
-                )}
-              </Stack>
-            </Paper>
+            <SaleCartPanel
+              saleDetail={saleDetail}
+              activeItems={activeItems}
+              removedItems={removedItems}
+              showCatalog={showCatalog}
+              locale={locale}
+              currency={currency}
+              onOpenEdit={onOpenEdit}
+              onRemove={onRemove}
+              onCheckout={onCheckout}
+              onCancel={onCancel}
+              pending={pending}
+              fillHeight={fillHeight}
+            />
           </Box>
         </>
       )}
     </Stack>
+  )
+}
+
+type ProductCatalogPanelProps = {
+  showCatalog: boolean
+  categories: Category[]
+  categoriesQuery: UseQueryResult<PageResponse<Category>, Error>
+  categoryPage: number
+  setCategoryPage: (page: number) => void
+  categoryId: string
+  setCategoryId: (value: string) => void
+  searchInput: string
+  setSearchInput: (value: string) => void
+  searchInputRef: RefObject<HTMLInputElement | null>
+  products: Product[]
+  productsQuery: UseQueryResult<PageResponse<Product>, Error>
+  productPage: number
+  setProductPage: (page: number) => void
+  locale: string
+  currency: string
+  onOpenAdd: (product: Product) => void
+  pending: boolean
+  fillHeight: boolean
+}
+
+/** Columna izquierda del modo caja: categorías, búsqueda y catálogo de productos. */
+function ProductCatalogPanel({
+  showCatalog, categories, categoriesQuery, categoryPage, setCategoryPage, categoryId, setCategoryId,
+  searchInput, setSearchInput, searchInputRef, products, productsQuery, productPage, setProductPage,
+  locale, currency, onOpenAdd, pending, fillHeight,
+}: ProductCatalogPanelProps) {
+  return (
+    <Paper
+      variant="outlined"
+      sx={{
+        p: { xs: 1.5, sm: 2 },
+        minWidth: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        ...(fillHeight ? { minHeight: 0 } : { maxHeight: { md: 'calc(100dvh - 220px)' } }),
+      }}
+    >
+      <Stack spacing={1.5} sx={{ minWidth: 0, minHeight: 0, flexGrow: 1, overflowY: { md: 'auto' }, pr: { md: 0.5 } }}>
+        <Typography component="h3" variant="h6">Productos</Typography>
+        {!showCatalog && <Alert severity="info">El catálogo no está disponible para nuevas líneas en este contexto.</Alert>}
+        {showCatalog && (
+          <>
+            {categoriesQuery.error && (
+              <Alert severity="warning">
+                {errorCode(categoriesQuery.error) === 'FORBIDDEN'
+                  ? 'No tienes permiso para consultar el catálogo de esta sucursal.'
+                  : 'No se pudieron cargar las categorías.'}
+              </Alert>
+            )}
+            <Stack direction="row" spacing={1} sx={{ overflowX: 'auto', pb: 0.5 }}>
+              <Button size="small" variant={!categoryId ? 'contained' : 'outlined'} onClick={() => setCategoryId('')}>Todas</Button>
+              {categories.map((category) => (
+                <Button
+                  key={category.id}
+                  size="small"
+                  variant={categoryId === category.id ? 'contained' : 'outlined'}
+                  onClick={() => setCategoryId(category.id)}
+                  aria-label={category.status === 'INACTIVE' ? `${category.name}, categoría inactiva` : category.name}
+                >
+                  {category.name}{category.status === 'INACTIVE' ? ' · Inactiva' : ''}
+                </Button>
+              ))}
+            </Stack>
+            {categoriesQuery.isLoading && <Skeleton variant="rounded" height={36} />}
+            {categoriesQuery.data && categoriesQuery.data.totalPages > 1 && (
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                <Button size="small" disabled={categoryPage === 0} onClick={() => setCategoryPage(categoryPage - 1)}>Categorías anteriores</Button>
+                <Typography variant="caption">{categoryPage + 1}/{categoriesQuery.data.totalPages}</Typography>
+                <Button size="small" disabled={categoryPage + 1 >= categoriesQuery.data.totalPages} onClick={() => setCategoryPage(categoryPage + 1)}>Más categorías</Button>
+              </Stack>
+            )}
+            <TextField
+              label="Buscar productos"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              fullWidth
+              size="small"
+              inputRef={searchInputRef}
+              slotProps={{ htmlInput: { 'aria-keyshortcuts': 'F2' } }}
+            />
+            {productsQuery.error && (
+              <Alert severity="warning">
+                {errorCode(productsQuery.error) === 'FORBIDDEN'
+                  ? 'No tienes permiso para consultar el catálogo de esta sucursal.'
+                  : 'No se pudieron cargar los productos.'}
+              </Alert>
+            )}
+            {productsQuery.isLoading && <Stack spacing={1}><Skeleton variant="rounded" height={76} /><Skeleton variant="rounded" height={76} /></Stack>}
+            {productsQuery.data?.items.length === 0 && <Alert severity="info">No hay productos que coincidan con esta búsqueda.</Alert>}
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 1 }}>
+              {products.map((product) => (
+                <Button
+                  key={product.id}
+                  variant="outlined"
+                  onClick={() => onOpenAdd(product)}
+                  disabled={!showCatalog || pending}
+                  sx={{ justifyContent: 'space-between', textAlign: 'left', minHeight: 76, px: 1.5 }}
+                >
+                  <Stack sx={{ minWidth: 0, alignItems: 'flex-start' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}>{product.name}</Typography>
+                    <Typography variant="caption" color="text.secondary">SKU {product.sku}</Typography>
+                  </Stack>
+                  <Typography variant="body2" sx={{ whiteSpace: 'nowrap', pl: 1 }}>{formatMoney(product.unitPrice, locale, currency)}</Typography>
+                </Button>
+              ))}
+            </Box>
+            {productsQuery.data && productsQuery.data.totalPages > 1 && (
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+                <Button size="small" disabled={productPage === 0} onClick={() => setProductPage(productPage - 1)}>Productos anteriores</Button>
+                <Typography variant="body2">{productPage + 1}/{productsQuery.data.totalPages}</Typography>
+                <Button size="small" disabled={productPage + 1 >= productsQuery.data.totalPages} onClick={() => setProductPage(productPage + 1)}>Más productos</Button>
+              </Stack>
+            )}
+          </>
+        )}
+      </Stack>
+    </Paper>
+  )
+}
+
+type SaleCartPanelProps = {
+  saleDetail: SaleDetail
+  activeItems: SaleItem[]
+  removedItems: SaleItem[]
+  showCatalog: boolean
+  locale: string
+  currency: string
+  onOpenEdit: (item: SaleItem) => void
+  onRemove: (item: SaleItem) => void
+  onCheckout: () => void
+  onCancel: () => void
+  pending: boolean
+  fillHeight: boolean
+}
+
+/** Columna derecha del modo caja: líneas de la venta con total y acciones fijas. */
+function SaleCartPanel({
+  saleDetail, activeItems, removedItems, showCatalog, locale, currency,
+  onOpenEdit, onRemove, onCheckout, onCancel, pending, fillHeight,
+}: SaleCartPanelProps) {
+  return (
+    <Paper
+      variant="outlined"
+      sx={{
+        p: { xs: 1.5, sm: 2 },
+        minWidth: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        ...(fillHeight ? { minHeight: 0 } : { maxHeight: { md: 'calc(100dvh - 220px)' } }),
+      }}
+    >
+      <Stack spacing={1.5} sx={{ minWidth: 0, flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', gap: 1, flexShrink: 0 }}>
+          <Box>
+            <Typography component="h3" variant="h6">Venta {shortSaleId(saleDetail.sale.id)}</Typography>
+            <Typography variant="caption" color="text.secondary">{saleDetail.sale.status === 'OPEN' ? 'Reanudando venta abierta' : saleDetail.sale.status}</Typography>
+          </Box>
+          <Chip label={`v${saleDetail.sale.version}`} size="small" variant="outlined" />
+        </Stack>
+        <Stack spacing={1} sx={{ minWidth: 0, minHeight: 0, flexGrow: 1, overflowY: 'auto', pr: 0.5 }}>
+          {activeItems.length === 0 && <Alert severity="info">Tu venta está vacía. Selecciona un producto para comenzar.</Alert>}
+          {activeItems.map((item) => (
+            <Box key={item.id} sx={{ borderBottom: 1, borderColor: 'divider', pb: 1.25 }}>
+              <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>{item.quantity} × {item.productNameSnapshot}</Typography>
+                  {item.modifiers.map((modifier) => (
+                    <Typography key={modifier.id} component="div" variant="caption" color="text.secondary">
+                      {modifier.groupNameSnapshot}: {modifier.optionNameSnapshot}
+                    </Typography>
+                  ))}
+                  <Typography variant="caption" color="text.secondary">{formatMoney(item.effectiveUnitPrice, locale, currency)} c/u</Typography>
+                </Box>
+                <Stack sx={{ alignItems: 'flex-end', flexShrink: 0 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 700 }}>{formatMoney(item.lineTotal, locale, currency)}</Typography>
+                  <Stack direction="row" spacing={0.25}>
+                    <Button aria-label={`Editar ${item.productNameSnapshot}`} size="small" disabled={!showCatalog || pending} onClick={() => onOpenEdit(item)}>Editar</Button>
+                    <Button aria-label={`Quitar ${item.productNameSnapshot}`} size="small" color="error" disabled={!showCatalog || pending} onClick={() => onRemove(item)}>Quitar</Button>
+                  </Stack>
+                </Stack>
+              </Stack>
+            </Box>
+          ))}
+          {removedItems.length > 0 && (
+            <details>
+              <summary>Elementos retirados ({removedItems.length})</summary>
+              <Stack spacing={0.5} sx={{ pt: 1 }}>
+                {removedItems.map((item) => <Typography key={item.id} variant="body2" color="text.secondary">{item.quantity} × {item.productNameSnapshot} · Retirado</Typography>)}
+              </Stack>
+            </details>
+          )}
+        </Stack>
+        <Stack spacing={1.5} sx={{ flexShrink: 0, borderTop: 1, borderColor: 'divider', pt: 1.5 }}>
+          <Stack direction="row" sx={{ alignItems: 'baseline', justifyContent: 'space-between' }}>
+            <Typography variant="h6">Total</Typography>
+            <Typography variant="h5" aria-label="Total de la venta">{formatMoney(saleDetail.sale.totalAmount, locale, currency)}</Typography>
+          </Stack>
+          {saleDetail.sale.status === 'OPEN' && activeItems.length === 0 && (
+            <Alert severity="info">Agrega al menos un producto antes de cobrar.</Alert>
+          )}
+          {saleDetail.sale.status === 'OPEN' && (
+            <Button size="large" variant="contained" onClick={onCheckout} disabled={!showCatalog || activeItems.length === 0 || pending}>
+              Cobrar
+            </Button>
+          )}
+          {saleDetail.sale.status === 'OPEN' && (
+            <Button
+              color="error"
+              variant="outlined"
+              onClick={onCancel}
+              disabled={pending}
+            >
+              Cancelar venta
+            </Button>
+          )}
+        </Stack>
+      </Stack>
+    </Paper>
   )
 }
 
