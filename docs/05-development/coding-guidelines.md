@@ -6,16 +6,21 @@ Reglas numeradas aplicables desde la fundación. Cada regla incluye el porqué.
    Ventas, pagos y movimientos de dinero se dan de baja lógicamente; borrarlos
    destruye auditoría y cuadre contable.
 
-2. **Dinero siempre con `BigDecimal`; nunca `double`/`float`.**
-   Los flotantes pierden centavos; el dinero no admite error de redondeo.
+2. **Dinero exacto: Java `BigDecimal`; Rust `MoneyMinor` y operandos decimales exactos.**
+   Nunca `double`/`float`, `f32`/`f64` ni `REAL` autoritativo. MoneyMinor usa
+   unidades menores, moneda explícita y aritmética checked. Redondeo versionado,
+   no implícito; no alterar cantidades ni dinero históricos para hacerlos caber.
 
 3. **Operaciones monetarias transaccionales.**
    Venta + pagos + descuento de stock se aplican atómicamente; un fallo parcial
    deja el negocio inconsistente.
 
-4. **Esquema solo con Flyway; jamás `ddl-auto=update`.**
-   `update` altera el esquema sin revisión ni registro; Flyway da historial,
-   review y reproducibilidad (ver ADR-0002).
+4. **Esquema versionado por su autoridad; jamás `ddl-auto=update`.**
+   Java/PostgreSQL AS-IS conserva Flyway (ADR-0002) y V1–V25 inmutables.
+   F4–18/F4–21 y ADR-0020 establecen SQLx para Rust con roots Local SQLite,
+   Central PostgreSQL y Control PostgreSQL independientes. No convertir
+   historiales ni reutilizar V1–V25. Los gates de migración deben demostrar
+   clean/upgrade/checksum/failure/restore antes de aprobar su alcance.
 
 5. **No secretos en Git.**
    Todo lo sensible va a variables de entorno por ambiente; Git es público para
@@ -52,7 +57,13 @@ Reglas numeradas aplicables desde la fundación. Cada regla incluye el porqué.
 13. **Commits pequeños + Conventional Commits.**
     Historial legible y changelog automatizable (ver `git-workflow.md`).
 
-Validación mínima antes de dar por terminada una tarea:
+En Rust, documentar APIs públicas con rustdoc en español y comentar decisiones,
+seguridad, invariantes y transacciones no obvias. Sin `unwrap`, `expect` ni
+`panic!` injustificados en producción. `pos-core` no importa infraestructura.
+La [guía Rust](../../backend-rust/README.md) documenta los comandos Cargo y los
+gates todavía bloqueados; no declarar paridad por pasar fixtures técnicas.
+
+Validación mínima Java/React antes de dar por terminada una tarea que los afecte:
 
 ```bash
 cd backend && ./mvnw clean verify     # compila + pruebas (Testcontainers)

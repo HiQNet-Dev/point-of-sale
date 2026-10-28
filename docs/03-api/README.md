@@ -5,6 +5,16 @@ cliente HTTP). El contrato técnico (paths, requests, responses, schemas y
 esquema de seguridad) lo **genera** `springdoc-openapi` a partir del código;
 este directorio es la capa humana que explica cómo usarlo.
 
+## Transición Rust
+
+La foundation Rust todavía **no expone HTTP ni IPC** y no promete compatibilidad
+`/api/v1`. Este contrato Java sigue siendo la referencia oficial; autenticación,
+rutas protegidas y errores se prueban contra Java, no contra un endpoint Rust
+simulado. No se han cambiado rutas, DTOs, permisos ni OpenAPI en este incremento.
+Ver [matriz AS-IS](../05-development/rust-parity-baseline.md) y
+[alcance Rust](../05-development/rust-foundation.md). Las pruebas diferenciales
+quedan pendientes hasta existir el adaptador de transporte y sus casos de uso.
+
 ## Especificación viva (OpenAPI)
 
 | Recurso | URL (desarrollo local) |

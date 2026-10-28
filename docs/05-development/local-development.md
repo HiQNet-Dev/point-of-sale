@@ -5,6 +5,15 @@ Boot backend and the Vite frontend; a hybrid mode keeps the fast frontend loop o
 the host. This document is the single source of truth for local development;
 [`README.md`](../../README.md) only carries a short quick start.
 
+## Foundation Rust (incremento paralelo, no sustitución)
+
+El entorno descrito abajo sigue siendo el **AS-IS Java/React oficial**. La nueva
+foundation está en [`backend-rust/README.md`](../../backend-rust/README.md):
+workspace Rust, SQLite sintético y migration-lab, sin UI nueva ni API compatible.
+No conectar React a Rust ni ejecutar importaciones reales. Sus raíces SQLx son
+independientes de Flyway y su gate normativo permanece bloqueado. Ver
+[`rust-foundation.md`](rust-foundation.md) para evidencia y límites.
+
 ## Architecture
 
 ```text
@@ -14,7 +23,7 @@ Host browser
 frontend container (Vite dev server + HMR)  ──HTTP──▶  backend container (Spring Boot)
                                                               │
                                                               ▼
-                                                   db container (PostgreSQL 17, Flyway V1–V21)
+                                                   db container (PostgreSQL 17, Flyway V1–V25)
 ```
 
 Everything runs inside the Compose network; only the published ports are

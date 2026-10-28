@@ -15,6 +15,18 @@ pequeños) y **retail ligero**.
 > (E2E-D). No representa el POS comercial completo: Purchasing, Expenses, Reports,
 > returns/reversal y hardware siguen pendientes.
 
+## Transición Rust local-first — foundation parcial
+
+`backend-rust/` agrega un workspace verificable y un migration-lab con fixtures
+sintéticas; **no sustituye Java ni React, no habilita datos reales y no representa
+Free Local terminado**. SQLx gobierna únicamente los nuevos contextos Rust;
+Flyway V1–V25 conserva el legado. DDL-13/IMP-01 siguen bloqueados hasta completar
+sus escenarios normativos: CI técnica verde no acredita paridad.
+
+- [Desarrollo Rust y comandos](backend-rust/README.md).
+- [Alcance, diccionario, validación y bloqueos](docs/05-development/rust-foundation.md).
+- [Auditoría AS-IS y matriz de paridad](docs/05-development/rust-parity-baseline.md).
+
 ## Foundation implementada (v0.1.x)
 
 La fundación actual ya es operativa como backend administrativo seguro:
@@ -71,6 +83,7 @@ La release `v0.3.0` no incluye Purchasing, Expenses, Reports, returns/reversal n
 **Modular Monolith** (ver `docs/01-architecture/architecture.md` y ADR-0001):
 
 ```text
+backend-rust/ Foundation Rust + SQLx + lab aislado (parcial; sin cutover)
 backend/   Spring Boot API (REST, JSON) — Java 21, Maven, Spring Security,
            Spring Data JPA, Flyway, PostgreSQL, Actuator, Testcontainers
 frontend/  React SPA — TypeScript estricto, Vite, React Router, TanStack Query, MUI

@@ -60,15 +60,26 @@ Gracias por contribuir. Reglas cortas, mantenemos el repo limpio:
 Ver `docs/05-development/coding-guidelines.md` (obligatorio para cambios de
 dominio financiero/transaccional):
 
-- Dinero siempre con `BigDecimal`.
+- Dinero Java con `BigDecimal`; en Rust, `MoneyMinor` exacto y operandos decimales sin float, según F4–21. No redondear históricos silenciosamente.
 - Operaciones monetarias transaccionales; sin hard delete de operaciones financieras.
-- Schema solo vía Flyway; nunca `ddl-auto=update`.
+- Java/PostgreSQL legado: schema solo vía Flyway; nunca `ddl-auto=update`. Nuevos contextos Rust: SQLx con roots Local/Central/Control independientes (F4–18). No editar V1–V25 ni convertir historiales.
 - Sin lógica de negocio en controllers; sin lógica crítica en React.
 - Validación y autorización siempre del lado servidor.
 - Contrato de API: si cambias un endpoint, request, response, código de estado o
   código de error, actualiza la especificación OpenAPI (`/v3/api-docs`) en el
   **mismo** cambio — anotaciones (`@Operation`/`@Schema`/`@ApiResponse`) y
   `docs/03-api`. Un contrato sin su doc es un cambio incompleto.
+
+## Foundation Rust (parcial, sin datos productivos)
+
+La guía reproducible es [`backend-rust/README.md`](backend-rust/README.md).
+Desde `backend-rust/`: `cargo fmt --all -- --check`,
+`cargo clippy --locked --workspace --all-targets --all-features -- -D warnings`,
+`cargo test --locked --workspace --all-features` y
+`cargo build --locked --workspace --all-features`. El primer esquema Local
+requiere IMP-01/DDL13-01; el gate `--require-complete` permanece bloqueado mientras
+los casos obligatorios no estén implementados y ejecutados. No omitirlos para
+obtener CI verde. Rust no sustituye Java, React ni su OpenAPI.
 
 ## Estado del repositorio
 
