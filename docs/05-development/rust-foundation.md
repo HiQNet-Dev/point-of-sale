@@ -17,7 +17,7 @@ exportador determinista) y gate
 `ebf7a30afc342a31d837a85772c5e85d0bc38efb`, igual al SHA documental y al HEAD
 inicial. No había cambios locales ni commits posteriores. Se creó
 `feat/backend/rust-foundation-migration-lab` desde `origin/dev`, sin worktree.
-Los cambios se conservan en cuatro commits locales de la rama de trabajo. El
+Los cambios se conservan en commits locales de la rama de trabajo. El
 entorno bloqueó `git push` por una regla de seguridad; **no hay PR ni CI remota**.
 El informe 0b registra el estado exacto; un gate rojo no se presenta como PR
 aprobado.

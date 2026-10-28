@@ -2,8 +2,8 @@
 
 **Destino:** `dev`  
 **Rama:** `feat/backend/rust-foundation-migration-lab`  
-**Estado:** cuatro commits locales (`4236fab`, `7de03ed`, `c995bf8`, `6567f87`);
-**push/PR no publicados**. El entorno bloqueó
+**Estado:** commits locales; HEAD final en `git log -1`.
+**Push/PR no publicados**. El entorno bloqueó
 `git push` por una regla de seguridad antes de contactar GitHub. No hay CI remota
 de estos cambios. **Merge bloqueado por gates normativos.**
 
