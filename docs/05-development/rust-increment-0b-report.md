@@ -146,8 +146,9 @@ contienen JSON BLOCKED sin digest inventado.
 
 ## 8. Git y CI
 
-- Commits locales: `4236fab` (foundation), `7de03ed` (migration lab) y
-  `c995bf8` (CI), sobre `origin/dev@ebf7a30`.
+- Commits locales: `4236fab` (foundation), `7de03ed` (migration lab),
+  `c995bf8` (CI) y `6567f87` (evidencia/publicación), sobre
+  `origin/dev@ebf7a30`.
 - `git push -u origin feat/backend/rust-foundation-migration-lab` fue **bloqueado
   por la regla de seguridad del terminal** antes de contactar GitHub. No se creó
   PR remoto ni se ejecutó CI remota de estos cambios. No se eludió la regla.
