@@ -2,6 +2,7 @@
 """Verifica evidencias del laboratorio sin aceptar un verde normativo ficticio."""
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -22,6 +23,58 @@ def load(path):
 def fail(message):
     print(f"verify-evidence: {message}", file=sys.stderr)
     raise SystemExit(1)
+
+
+def verify_snapshot_digests(root):
+    directory = root / "schema-snapshots"
+    if directory.is_symlink():
+        fail("snapshot directory must not be a symlink")
+    manifest_path = directory / "technical-digests.json"
+    if manifest_path.is_symlink():
+        fail("snapshot digest manifest must not be a symlink")
+    try:
+        manifest = load(manifest_path)
+    except (OSError, ValueError):
+        fail("snapshot digest manifest missing or unreadable")
+    snapshots = manifest.get("snapshots") if isinstance(manifest, dict) else None
+    if not isinstance(snapshots, list):
+        fail("snapshot digest manifest must contain a snapshot list")
+
+    # El runner integrado publica estos siete snapshots; una lista truncada no
+    # acredita integridad aunque los digests que sobrevivan sean correctos.
+    expected = {
+        f"schema-snapshots/{name}.json"
+        for name in (
+            "lab-v1",
+            "lab-v2",
+            "storage-local-subset",
+            "postgres-central-clean",
+            "postgres-control-clean",
+            "postgres-central-v2",
+            "postgres-control-v2",
+        )
+    }
+    paths = [item.get("path") if isinstance(item, dict) else None for item in snapshots]
+    if (
+        len(paths) != len(expected)
+        or any(not isinstance(path, str) for path in paths)
+        or set(paths) != expected
+    ):
+        fail("snapshot digest manifest has missing, duplicate or unexpected paths")
+    for item in snapshots:
+        relative = item["path"]
+        digest = item.get("sha256")
+        if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+            fail(f"snapshot SHA-256 missing or invalid: {relative}")
+        path = root / relative
+        if path.is_symlink():
+            fail(f"snapshot must not be a symlink: {relative}")
+        try:
+            observed = hashlib.sha256(path.read_bytes()).hexdigest()
+        except OSError:
+            fail(f"snapshot missing or unreadable: {relative}")
+        if observed != digest:
+            fail(f"snapshot SHA-256 mismatch: {relative}")
 
 
 def main():
@@ -161,6 +214,8 @@ def main():
         fail("Flyway count is not 25")
     if baseline.get("table_inventory", {}).get("observed_count") != 37:
         fail("AS-IS table count is not 37")
+
+    verify_snapshot_digests(root)
 
     if any((root / name).exists() for name in ("bundle-1.json", "bundle-2.json")):
         fail("private source bundles must not be copied to public evidence")

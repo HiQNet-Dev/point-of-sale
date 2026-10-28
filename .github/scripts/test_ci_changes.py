@@ -239,6 +239,7 @@ class RustWorkflowTest(unittest.TestCase):
             "cargo audit --file Cargo.lock",
             "sh tools/migration-lab/scripts/build_postgres.sh",
             "python3 tools/migration-lab/scripts/verify_evidence.py --evidence target/migration-evidence --expect-exit 0",
+            "python3 -B tools/migration-lab/scripts/test_verify_evidence.py",
         ):
             self.assertIn(command, commands)
         self.assertIn("rustup toolchain install 1.99.1", commands)

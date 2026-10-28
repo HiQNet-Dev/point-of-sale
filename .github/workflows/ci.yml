@@ -159,6 +159,9 @@ jobs:
           rustc --version
           cargo --version
 
+      - name: Test evidence verifier integrity checks
+        run: python3 -B tools/migration-lab/scripts/test_verify_evidence.py
+
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
 
