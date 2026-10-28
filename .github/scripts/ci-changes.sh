@@ -8,7 +8,7 @@
 #
 # Reglas:
 #   - workflow_dispatch (y schedule, si se habilitara) -> validación completa.
-#   - cambio de backend / frontend / docker / `.github/**` -> ejecuta el job afín.
+#   - cambio de backend / Rust / frontend / docker / `.github/**` -> ejecuta el job afín.
 #   - solo docs -> no ejecuta nada ejecutable.
 #   - ruta desconocida (no docs y no mapeada) -> fail-safe: validación completa.
 #
@@ -57,9 +57,10 @@ flag() {
 # cambio limitado a ellas no necesita jobs pesados.
 non_exec_re='^docs/|\.md$|^LICENSE$|^SECURITY\.md$|^\.gitignore$|^\.gitattributes$|^\.editorconfig$|^\.serena/|^\.worktrees/'
 # Rutas conocidas que ya mapean a un job concreto.
-known_re='^backend/|^frontend/|^docker-compose\.yml$|^Dockerfile|/Dockerfile|\.dockerignore$|\.env\.example$|^deploy/|^\.github/'
+known_re='^backend/|^backend-rust/|^frontend/|^docker-compose\.yml$|^Dockerfile|/Dockerfile|\.dockerignore$|\.env\.example$|^deploy/|^\.github/'
 
 backend="false"
+rust="false"
 frontend="false"
 docker="false"
 ci="false"
@@ -73,6 +74,7 @@ if [[ "$full" == "false" && -n "$files" ]]; then
       full="true"
     else
       backend=$(flag '^backend/')
+      rust=$(flag '^backend-rust/')
       frontend=$(flag '^frontend/')
       docker=$(flag '^docker-compose\.yml$|^Dockerfile|/Dockerfile|\.dockerignore$|\.env\.example$|^deploy/')
       ci=$(flag '^\.github/')
@@ -81,17 +83,21 @@ if [[ "$full" == "false" && -n "$files" ]]; then
 fi
 
 backend_run="false"
+rust_run="false"
 frontend_run="false"
 compose_run="false"
 if [[ "$full" == "true" || "$backend" == "true" || "$ci" == "true" ]]; then backend_run="true"; fi
+if [[ "$full" == "true" || "$rust" == "true" || "$ci" == "true" ]]; then rust_run="true"; fi
 if [[ "$full" == "true" || "$frontend" == "true" || "$ci" == "true" ]]; then frontend_run="true"; fi
 if [[ "$full" == "true" || "$docker" == "true" || "$ci" == "true" ]]; then compose_run="true"; fi
 
 emit backend "$backend"
+emit rust "$rust"
 emit frontend "$frontend"
 emit docker "$docker"
 emit ci "$ci"
 emit full "$full"
 emit backend_run "$backend_run"
+emit rust_run "$rust_run"
 emit frontend_run "$frontend_run"
 emit compose_run "$compose_run"
