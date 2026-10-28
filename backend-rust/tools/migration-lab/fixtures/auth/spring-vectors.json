@@ -1,0 +1,17 @@
+{"synthetic_only":true,"producer":"Spring Security BCrypt 7.1.1","cost":4,"vectors":[
+{"label":"ordinary","variant":"2a","password":"lab-only-Piñata-42!","utf8_bytes":20,"encoded":"$2a$04$DIJSjuH1q6D05urkMbumY.4TevwCQh/fK.zVUxujnNCt31.sklXaO"},
+{"label":"ascii71","variant":"2a","password":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","utf8_bytes":71,"encoded":"$2a$04$qBBwdLWyzypBkaOIiGGYRuRcKY5OZN0VFOLhql1NrZXFtJqNnNVJC"},
+{"label":"ascii72","variant":"2a","password":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","utf8_bytes":72,"encoded":"$2a$04$dYyaQDLLvOrPpqPdT02KOemdQneeDEr1rdLIhUQPxHxKOsiVKwHAy"},
+{"label":"utf8_71","variant":"2a","password":"éééééééééééééééééééééééééééééééééééa","utf8_bytes":71,"encoded":"$2a$04$EpiP/v696/HsTpQrTVWig.COpGIKAe265bzoklqZQKyCTDmz9aKt6"},
+{"label":"utf8_72","variant":"2a","password":"éééééééééééééééééééééééééééééééééééé","utf8_bytes":72,"encoded":"$2a$04$KBndB5ZBvLROTMTM8uXGpeTXXAAHcgmqis/uRTXDH8c8o/OxiLneS"},
+{"label":"ordinary","variant":"2b","password":"lab-only-Piñata-42!","utf8_bytes":20,"encoded":"$2b$04$WLGfreUeNXWqw6cV3Pq9IOaIeeH/v7O8PxPv/l.Ukazkf8D4nwh.6"},
+{"label":"ascii71","variant":"2b","password":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","utf8_bytes":71,"encoded":"$2b$04$w9vuys.0hoPFCbXmFQwlru2ri0vGnsCvd5EM7d0npqkCGdDx4bgay"},
+{"label":"ascii72","variant":"2b","password":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","utf8_bytes":72,"encoded":"$2b$04$rHZn7dJv0FqmzfCt6C7hoewPszbOEfpTv7tE0/s9sQy.6tNVYXQvm"},
+{"label":"utf8_71","variant":"2b","password":"éééééééééééééééééééééééééééééééééééa","utf8_bytes":71,"encoded":"$2b$04$QycOxd0FxGanim0lyggLr.tJ0ZuDhPuL1LNa4tYNcrB/l67fXkoua"},
+{"label":"utf8_72","variant":"2b","password":"éééééééééééééééééééééééééééééééééééé","utf8_bytes":72,"encoded":"$2b$04$AIbDDsBHJe1YO.UcfvfqC.7mst90Atb8l8f8avjZ59elrR3Xai4Nq"},
+{"label":"ordinary","variant":"2y","password":"lab-only-Piñata-42!","utf8_bytes":20,"encoded":"$2y$04$bisbEwjNQZpIpzl2AmXlIOYpNMCBLI/c93IF02uTOV/y20bNEJLT."},
+{"label":"ascii71","variant":"2y","password":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","utf8_bytes":71,"encoded":"$2y$04$fFAa0jOpadlT/5Lx88wukOyiebxErWvuyNx2ktF6iaGOFLGdmNRPK"},
+{"label":"ascii72","variant":"2y","password":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","utf8_bytes":72,"encoded":"$2y$04$JdmB3yF7Z/h4vaonRwAAquAIMgIJX4TdfueMHJXyGtvQtP6UmOBIW"},
+{"label":"utf8_71","variant":"2y","password":"éééééééééééééééééééééééééééééééééééa","utf8_bytes":71,"encoded":"$2y$04$lKySyTFTjxvLrZ/0rY8/ve.v9xC3bt.w./el9FTDTwyN9ZCUBn5GC"},
+{"label":"utf8_72","variant":"2y","password":"éééééééééééééééééééééééééééééééééééé","utf8_bytes":72,"encoded":"$2y$04$U78hLNnE89ZszJx6s4WuSeOgK.fBxs.vnhyN1pTL.1PjSBv/oBf1."}
+]}
