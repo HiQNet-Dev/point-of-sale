@@ -1,8 +1,10 @@
-# PR — Foundation Rust + Migration Lab DDL-13 (BLOQUEADO)
+# Borrador de PR local — Foundation Rust + Migration Lab DDL-13
 
 **Destino:** `dev`  
 **Rama:** `feat/backend/rust-foundation-migration-lab`  
-**Estado:** listo para revisión técnica; **merge bloqueado por gates normativos**.
+**Estado:** tres commits locales; **push/PR no publicados**. El entorno bloqueó
+`git push` por una regla de seguridad antes de contactar GitHub. No hay CI remota
+de estos cambios. **Merge bloqueado por gates normativos.**
 
 ## Propósito
 
@@ -63,7 +65,9 @@ Evidencia local final:
 - [ ] CI remota verde del SHA publicado y revisión humana independiente.
 
 No se solicita merge. Un gate rojo es evidencia real del bloqueo, no un fallo a
-ocultar con skips, mocks o excepciones.
+ocultar con skips, mocks o excepciones. Cuando el entorno permita publicar, hay
+que hacer push de la rama, abrir el PR draft hacia `dev`, comprobar la CI del SHA
+publicado y actualizar este documento con la URL y el run real.
 
 ## Rollback
 

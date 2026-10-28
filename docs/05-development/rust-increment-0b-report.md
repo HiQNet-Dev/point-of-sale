@@ -144,7 +144,18 @@ logs de fallos esperados, dumps sintéticos, `source-report.json`,
 privados con hashes sintéticos no se copian. Los `.sha256` normativos pendientes
 contienen JSON BLOCKED sin digest inventado.
 
-## 8. Bloqueos materiales y siguiente paso
+## 8. Git y CI
+
+- Commits locales: `4236fab` (foundation), `7de03ed` (migration lab) y
+  `c995bf8` (CI), sobre `origin/dev@ebf7a30`.
+- `git push -u origin feat/backend/rust-foundation-migration-lab` fue **bloqueado
+  por la regla de seguridad del terminal** antes de contactar GitHub. No se creó
+  PR remoto ni se ejecutó CI remota de estos cambios. No se eludió la regla.
+- El árbol quedó limpio tras los commits; Flyway/Java/React/Compose sin cambios.
+- La CI definida ejecutaría PG 17 nativo y el gate obligatorio; se espera rojo por
+  los 29 casos pendientes. Sin push no se presenta un run remoto ficticio.
+
+## 9. Bloqueos materiales y siguiente paso
 
 1. **82 vs 83**: F1–10 contiene 82 fichas tabulares; la tabla HTML vacía explica
    la cifra editorial, no una entidad adicional. No se inventó una tabla 83.

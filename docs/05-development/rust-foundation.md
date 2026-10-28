@@ -17,8 +17,10 @@ exportador determinista) y gate
 `ebf7a30afc342a31d837a85772c5e85d0bc38efb`, igual al SHA documental y al HEAD
 inicial. No había cambios locales ni commits posteriores. Se creó
 `feat/backend/rust-foundation-migration-lab` desde `origin/dev`, sin worktree.
-Los cambios se conservan en la rama de trabajo. La publicación y el estado de CI
-se registran en el informe 0b; un gate rojo no se presenta como PR aprobado.
+Los cambios se conservan en tres commits locales de la rama de trabajo. El
+entorno bloqueó `git push` por una regla de seguridad; **no hay PR ni CI remota**.
+El informe 0b registra el estado exacto; un gate rojo no se presenta como PR
+aprobado.
 
 La última CI remota observada del baseline era correcta:
 [run 39180399982](https://github.com/HiQNet-Dev/point-of-sale/actions/runs/39180399982).
