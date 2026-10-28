@@ -146,6 +146,14 @@ contienen JSON BLOCKED sin digest inventado.
 
 ## 8. Git y CI
 
+> **Corrección posterior, 0c (2026-10-28):** los párrafos de publicación siguientes
+> conservan el reporte histórico, pero su conclusión global fue incorrecta.
+> `origin/dev` contiene los seis commits hasta `6a15ee6`; el run remoto
+> `40641592100` existe y falla en el gate normativo. Java/React/Compose correctos,
+> E2E omitido. La suite Java local bloqueada sigue sin ser una ejecución aprobada.
+> Ver [reconciliación comprobada](rust-increment-0c-git.md), que prevalece para el
+> estado actual. No se repite el push ni se atribuyen responsables.
+
 - Commits locales: `4236fab` (foundation), `7de03ed` (migration lab),
   `c995bf8` (CI) y commits documentales posteriores, sobre
   `origin/dev@ebf7a30`. El HEAD final se consulta con `git log -1`.
@@ -158,8 +166,8 @@ contienen JSON BLOCKED sin digest inventado.
 
 ## 9. Bloqueos materiales y siguiente paso
 
-1. **82 vs 83**: F1–10 contiene 82 fichas tabulares; la tabla HTML vacía explica
-   la cifra editorial, no una entidad adicional. No se inventó una tabla 83.
+1. **82 vs 83**: F1–10 contiene 82 fichas tabulares; la tabla HTML vacía es una hipótesis de origen
+   de la cifra editorial, no una causa demostrada ni una entidad adicional. No se inventó una tabla 83.
 2. **Cinco dependencias sin ficha**: `price_book`, `tax_profile`, `CostingPolicy`,
    `ExpenseCategory`, `plan`. No se crearon por deducción.
 3. **`unit_cost`**: Java permite NULL en ORDERED/RECEIVED; F1–10 exige

@@ -2,10 +2,14 @@
 
 **Destino:** `dev`  
 **Rama:** `feat/backend/rust-foundation-migration-lab`  
-**Estado:** commits locales; HEAD final en `git log -1`.
-**Push/PR no publicados**. El entorno bloqueó
-`git push` por una regla de seguridad antes de contactar GitHub. No hay CI remota
-de estos cambios. **Merge bloqueado por gates normativos.**
+**Estado reconciliado 0c (2026-10-28):** los seis commits originales ya están en
+`origin/dev@6a15ee6`; no hay PR asociado observado. La afirmación anterior de
+«no publicado / sin CI» queda corregida: el [run 40641592100](https://github.com/HiQNet-Dev/point-of-sale/actions/runs/40641592100)
+falló en el gate normativo Rust y CI Gate; Java/React/Compose correctos, E2E
+omitido. **No volver a subir esos seis commits ni usar este borrador para
+integrarlos otra vez.** Ver [reconciliación](rust-increment-0c-git.md).
+Los cambios adicionales 0c viven en `feat/backend/rust-physical-resolution`;
+ADR-0021/CC-0021 siguen sin aprobación y merge de esquema bloqueado.
 
 ## Propósito
 
@@ -66,9 +70,9 @@ Evidencia local final:
 - [ ] CI remota verde del SHA publicado y revisión humana independiente.
 
 No se solicita merge. Un gate rojo es evidencia real del bloqueo, no un fallo a
-ocultar con skips, mocks o excepciones. Cuando el entorno permita publicar, hay
-que hacer push de la rama, abrir el PR draft hacia `dev`, comprobar la CI del SHA
-publicado y actualizar este documento con la URL y el run real.
+ocultar con skips, mocks o excepciones. El próximo PR debe contener solo el
+delta 0c desde `6a15ee6`, dirigido a `dev` y claramente bloqueado mientras falten
+gates. No presentar la CI histórica como validación de cambios nuevos.
 
 ## Rollback
 

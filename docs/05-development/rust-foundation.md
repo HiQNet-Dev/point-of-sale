@@ -1,4 +1,4 @@
-# Incremento 0 / 0b — Foundation Rust y Migration Lab
+# Incrementos 0 / 0b / 0c — Foundation Rust y Migration Lab
 
 **Fecha:** 2026-10-27. **Estado global: PARCIAL; merge de esquema BLOQUEADO.**
 No hay datos reales, cutover, doble escritura, release, nueva UI ni retirada de
@@ -9,7 +9,9 @@ exportación determinista de las 37 tablas y AUTH-MIG sintético. Resultado: **4
 comprobaciones técnicas verdes**, **1/30 casos normativos aprobados** (PAR-08,
 exportador determinista) y gate
 `--require-complete` con **exit 2**. El detalle por caso está en
-[`rust-increment-0b-report.md`](rust-increment-0b-report.md).
+[`rust-increment-0b-report.md`](rust-increment-0b-report.md). La
+[revisión 0c](rust-increment-0c-report.md) conserva esos estados y documenta
+nuevas verificaciones, propuestas físicas y decisiones aún sin aceptar.
 
 ## 1. Baseline y fuentes
 
@@ -17,14 +19,18 @@ exportador determinista) y gate
 `ebf7a30afc342a31d837a85772c5e85d0bc38efb`, igual al SHA documental y al HEAD
 inicial. No había cambios locales ni commits posteriores. Se creó
 `feat/backend/rust-foundation-migration-lab` desde `origin/dev`, sin worktree.
-Los cambios se conservan en commits locales de la rama de trabajo. El
-entorno bloqueó `git push` por una regla de seguridad; **no hay PR ni CI remota**.
-El informe 0b registra el estado exacto; un gate rojo no se presenta como PR
-aprobado.
+**Corrección 0c (2026-10-28):** los seis commits hasta `6a15ee6` ya están en
+`origin/dev`. La afirmación anterior «no publicado / sin CI» era incorrecta como
+estado global: el [run 40641592100](https://github.com/HiQNet-Dev/point-of-sale/actions/runs/40641592100)
+falló únicamente en el gate normativo Rust y su propagación a CI Gate; Java,
+React y Compose fueron correctos, E2E omitido. No hay PR asociado observado.
+Ver [reconciliación y propuesta de protección](rust-increment-0c-git.md).
+La nueva rama `feat/backend/rust-physical-resolution` parte de ese SHA; no duplica
+commits ni convalida el merge previo. ADR-0021 sigue PROPOSED.
 
 La última CI remota observada del baseline era correcta:
 [run 39180399982](https://github.com/HiQNet-Dev/point-of-sale/actions/runs/39180399982).
-No representa la CI de estos archivos sin publicar.
+Es evidencia histórica del baseline Java, no el run de la foundation citado arriba.
 
 | Fuente consultada              | Uso                                              | Límite                                          |
 | ------------------------------ | ------------------------------------------------ | ----------------------------------------------- |
@@ -69,7 +75,7 @@ comandos y límites. Workspace edición 2024, toolchain 1.99.1, MSRV 1.99 y lock
 | `pos-storage-sqlite` | Archivo WAL/FULL, FK verificadas por conexión, timeout obligatorio, pool de un slot, migración Local embebida, checkpoint | Repositorios, ownership multiproceso, cifrado, backup de instalación               |
 | `pos-local`          | Configuración tipada, composición explícita, tracing JSON cerrado, SIGINT/SIGTERM y cierre                                | Tauri, IPC, HTTP, auth, RBAC, comandos de negocio                                  |
 | `migration-lab`      | Fixtures SQLite, PG17 nativo, origen Flyway real, 37 tablas exportadas, AUTH-MIG, verificación y evidencia honesta        | Import target/paridad, esquemas completos, ownership/rehost, sesiones persistentes |
-| CI                   | Detección Rust y gates fmt/clippy/test/build/secrets/audit/DDL13, PG build y verificación de evidencia                    | Ejecución remota de esta rama (ver informe 0b)                                     |
+| CI                   | Detección Rust y gates fmt/clippy/test/build/secrets/audit/DDL13, PG build y verificación de evidencia                    | Gate normativo remoto verde; ver reconciliación 0c                                 |
 
 Los errores públicos de configuración/storage no contienen rutas, SQL ni valores
 externos. Se desactiva logging de sentencias y se filtra telemetría de dependencias.

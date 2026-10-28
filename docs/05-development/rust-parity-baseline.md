@@ -1,5 +1,12 @@
 # Baseline de paridad Rust — auditoría AS-IS Java/React
 
+**Seguimiento 0c (2026-10-28):** el baseline funcional Java se conserva. El
+[mapping de compras 47/47](rust-purchase-parity-contract.md) amplía la trazabilidad
+sin cambiar contratos; [ADR-0021](../01-architecture/adr/0021-frozen-physical-parity-conflicts.md)
+sigue PROPOSED. Para Git/CI actuales prevalece la
+[reconciliación 0c](rust-increment-0c-git.md), no las observaciones históricas de
+esta auditoría.
+
 ## 1. Identidad, alcance y grado de certeza
 
 - **Baseline:** `ebf7a30afc342a31d837a85772c5e85d0bc38efb` (2026-10-18), incorporación de recepción de compras y stock atómicos. Auditoría: **2026-10-27**.

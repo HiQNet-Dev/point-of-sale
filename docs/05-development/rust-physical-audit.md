@@ -11,6 +11,18 @@ Este documento registra solo índice de nombres, referencias y hechos necesarios
 no reproduce campos completos, diagramas ni el expediente confidencial.
 No modifica el freeze, Java/Flyway, Rust/SQLx, OpenAPI ni gates ejecutables.
 
+## Revisión 0c — 2026-10-28
+
+La reconsulta conserva el hash TXT F1–10 y las 82 fichas: no se identificó una
+entidad 83; el origen editorial sigue siendo hipótesis. El XLSX complementario
+sí menciona nombres `costing_policy`/`expense_category`, pero no aporta sus fichas
+canónicas. Ver [diccionario propuesto](rust-missing-physical-proposal.md) y
+[mapping de compras 47/47](rust-purchase-parity-contract.md).
+ADR-0021 ahora recomienda B+D sin adoptarla; [CC-0021](rust-adr0021-change-control.md)
+solicita aprobación explícita. El informe inicial siguiente se conserva como
+trazabilidad, no como afirmación de que no se pueda formular una recomendación.
+Git/CI actuales: [reconciliación 0c](rust-increment-0c-git.md).
+
 ## 1. Fuentes y autoridad
 
 Los cuatro documentos principales se consultaron por `export?format=txt`.

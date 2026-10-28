@@ -12,6 +12,13 @@ El bloqueo normativo es material: F1–10 contiene 82 fichas tabulares (no 83),
 cinco dependencias sin ficha física y una incompatibilidad de `unit_cost` entre
 Java (NULL en ORDERED/RECEIVED) y el destino congelado (NOT NULL). Ver
 [ADR-0021](../docs/01-architecture/adr/0021-frozen-physical-parity-conflicts.md).
+El incremento 0c aporta [reconciliación Git/CI](../docs/05-development/rust-increment-0c-git.md),
+[cinco fichas propuestas](../docs/05-development/rust-missing-physical-proposal.md),
+[mapping de compras](../docs/05-development/rust-purchase-parity-contract.md) y
+[CC-0021 sin aprobar](../docs/05-development/rust-adr0021-change-control.md).
+No se implementa DDL de esos candidatos antes de su aceptación. El
+[informe 0c](../docs/05-development/rust-increment-0c-report.md) reúne los 30
+estados normativos, comandos, digests y decisiones pendientes.
 
 ## Arquitectura materializada
 
@@ -33,8 +40,8 @@ backend-rust/
   crates/pos-storage-sqlite/   # Open, migración Local embebida, checkpoint
   apps/pos-local/              # Proceso de prueba, sin HTTP, IPC, auth ni UI
   migrations/local/           # 0001: organization / branch (parcial)
-  migrations/central/         # 0001: operational_tenant (sin ejecutar en PG)
-  migrations/control/         # 0001: customer (sin ejecutar en PG)
+  migrations/central/         # 0001: operational_tenant (ejecutado, parcial)
+  migrations/control/         # 0001: customer (ejecutado, parcial)
   tools/migration-lab/         # Runner, fixtures, PostgreSQL nativo, origen Java,
                                # auth sintético, tests e informes
 ```
@@ -60,6 +67,7 @@ Desde este directorio:
 
 ```sh
 cargo fetch --locked
+python3 -B tools/migration-lab/scripts/test_verify_evidence.py
 cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 cargo test --locked --workspace --all-features
@@ -74,7 +82,7 @@ cargo run --locked -p migration-lab -- \
 python3 tools/migration-lab/scripts/verify_evidence.py \
   --evidence target/migration-evidence --expect-exit 0
 
-# Gate obligatorio: exit 2 mientras los 30 casos normativos estén bloqueados.
+# Gate obligatorio: exit 2 mientras falte cualquiera de los 30 casos normativos.
 cargo run --locked -p migration-lab -- \
   --output target/migration-gate-evidence \
   --postgres-bin target/pg17-build/install/bin --java-source --require-complete

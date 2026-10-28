@@ -66,6 +66,7 @@ regenera ni permite resolver silenciosamente nuevas versiones.
 Checks técnicos exactos, desde `backend-rust`:
 
 ```bash
+python3 -B tools/migration-lab/scripts/test_verify_evidence.py
 cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 cargo test --locked --workspace --all-features
@@ -84,6 +85,11 @@ compila desde fuente oficial con SHA-256 fijado. No usa Docker, `sudo`, el
 servidor PostgreSQL del runner ni `DATABASE_URL`. `cargo test` no requiere
 PostgreSQL: la integración real se ejecuta por el CLI y se valida con
 `verify_evidence.py`.
+
+El incremento 0c añade ocho regresiones del verificador: valida SHA-256 real de
+los siete snapshots técnicos, inventario completo sin duplicados/rutas inesperadas,
+archivos/manifiesto ausentes, truncados o simbólicos. No acredita autenticidad ni
+aprueba DDL13. El step de tests es bloqueante y no altera `--require-complete`.
 
 La ejecución normal devuelve **0 por ejecución técnica correcta, NO por
 aprobación normativa**. Los 41 checks técnicos pueden pasar, pero eso no basta
