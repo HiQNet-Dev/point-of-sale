@@ -14,12 +14,14 @@ CREATE TABLE pos_user (
     ),
     email TEXT NOT NULL CHECK (
         instr(email,char(0))=0 AND length(email) BETWEEN 3 AND 254
-        AND email = lower(trim(email)) AND instr(email,'@') > 1
+        -- SQLite `lower()` es ASCII: la normalización Unicode (Java/Rust) se aplica
+        -- en la aplicación. La BD solo exige el valor ya recortado y con forma básica.
+        AND email = trim(email) AND instr(email,'@') > 1
     ),
     status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','INACTIVE')),
     version INTEGER NOT NULL DEFAULT 0 CHECK (version >= 0),
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
+    created_at TEXT NOT NULL CHECK (created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'),
+    updated_at TEXT NOT NULL CHECK (updated_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'),
     UNIQUE (organization_id, email),
     -- Superclave para FKs compuestas same-org.
     UNIQUE (id, organization_id)
@@ -50,9 +52,12 @@ CREATE TABLE local_credential (
     state TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (state IN ('ACTIVE','PASSWORD_RESET_REQUIRED')),
     credential_version INTEGER NOT NULL DEFAULT 1 CHECK (credential_version >= 1),
     failed_login_attempts INTEGER NOT NULL DEFAULT 0 CHECK (failed_login_attempts >= 0),
-    locked_until TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
+    locked_until TEXT CHECK (
+        locked_until IS NULL
+        OR locked_until GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+    ),
+    created_at TEXT NOT NULL CHECK (created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'),
+    updated_at TEXT NOT NULL CHECK (updated_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'),
     UNIQUE (user_id, credential_kind),
     FOREIGN KEY (user_id, organization_id) REFERENCES pos_user(id, organization_id)
 ) STRICT;
@@ -68,14 +73,22 @@ CREATE TABLE local_session (
         length(session_hash)=64 AND session_hash NOT GLOB '*[^0-9a-f]*'
     ),
     -- D-AUTH-03: columna física de F1-10 §16.45.
+    -- `ACTIVE` es el valor persistido al crear; la expiración temporal se evalúa
+    -- siempre contra `expires_at`, sin depender de una tarea en segundo plano.
+    -- `EXPIRED` solo se materializa en una transición explícita y nunca coexiste
+    -- con `revoked_at`.
     state TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (state IN ('ACTIVE','REVOKED','EXPIRED')),
-    created_at TEXT NOT NULL,
-    expires_at TEXT NOT NULL,
-    revoked_at TEXT,
+    created_at TEXT NOT NULL CHECK (created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'),
+    expires_at TEXT NOT NULL CHECK (expires_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'),
+    revoked_at TEXT CHECK (
+        revoked_at IS NULL
+        OR revoked_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+    ),
     session_version INTEGER NOT NULL DEFAULT 1 CHECK (session_version >= 1),
     CHECK (expires_at > created_at),
     CHECK (state <> 'REVOKED' OR revoked_at IS NOT NULL),
     CHECK (state <> 'ACTIVE' OR revoked_at IS NULL),
+    CHECK (state <> 'EXPIRED' OR revoked_at IS NULL),
     -- Superclave para la FK de atribución de audit_event (sesión del actor).
     UNIQUE (id, user_id)
 ) STRICT;

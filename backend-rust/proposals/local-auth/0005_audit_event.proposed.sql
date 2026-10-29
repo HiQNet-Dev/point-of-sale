@@ -22,12 +22,14 @@ CREATE TABLE audit_event (
         metadata_json IS NULL
         OR (json_valid(metadata_json) AND length(CAST(metadata_json AS BLOB)) <= 16384)
     ),
-    occurred_at TEXT NOT NULL,
+    occurred_at TEXT NOT NULL CHECK (occurred_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'),
     event_version INTEGER NOT NULL DEFAULT 1 CHECK (event_version >= 1),
     CHECK (
         (actor_type = 'USER' AND actor_user_id IS NOT NULL)
         OR (actor_type = 'SYSTEM' AND actor_user_id IS NULL)
     ),
+    -- Un camino SYSTEM no tiene sesión de usuario: la correlación solo aplica a USER.
+    CHECK (actor_type = 'USER' OR session_id IS NULL),
     FOREIGN KEY (branch_id, organization_id) REFERENCES branch(id, organization_id),
     FOREIGN KEY (actor_user_id, organization_id) REFERENCES pos_user(id, organization_id),
     FOREIGN KEY (session_id, actor_user_id) REFERENCES local_session(id, user_id)

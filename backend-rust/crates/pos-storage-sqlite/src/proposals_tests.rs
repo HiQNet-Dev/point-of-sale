@@ -1,12 +1,15 @@
 // Valida las propuestas físicas fuera de producto: sintaxis, CHECK, FKs,
-// trigger append-only y durabilidad. No las convierte en migraciones.
+// triggers, semántica RBAC y durabilidad. No las convierte en migraciones.
 #![allow(clippy::panic)]
 
-use std::time::Duration;
+use std::{collections::BTreeSet, time::Duration};
 
-use pos_core::organization_branch::{
-    BusinessCode, DisplayName, EntityId, IsoCurrency, LocaleTag, NewOrganization, Organization,
-    Timezone,
+use pos_core::{
+    identity::PERMISSION_CATALOG,
+    organization_branch::{
+        Branch, BusinessCode, DisplayName, EntityId, IsoCurrency, LocaleTag, NewBranch,
+        NewOrganization, Organization, Timezone,
+    },
 };
 
 use super::*;
@@ -22,11 +25,23 @@ const PROPOSAL_0005: &str =
 const PROPOSAL_0006: &str =
     include_str!("../../../proposals/local-auth/0006_bootstrap_record.proposed.sql");
 
+/// Sustituto **solo de test** de `installation_identity` (§16.3 no transcrita).
+const INSTALLATION_FIXTURE: &str = "CREATE TABLE installation_identity (
+    id TEXT PRIMARY KEY NOT NULL CHECK (length(id) = 36)
+) STRICT";
+
 const ORG: &str = "00000000-0000-0000-0000-000000000080";
 const ORG_TWO: &str = "00000000-0000-0000-0000-000000000081";
+const BRANCH_A: &str = "00000000-0000-0000-0000-000000000090";
 const USER: &str = "00000000-0000-0000-0000-0000000000a0";
 const USER_TWO: &str = "00000000-0000-0000-0000-0000000000a1";
+const CREDENTIAL: &str = "00000000-0000-0000-0000-0000000000e0";
 const SESSION: &str = "00000000-0000-0000-0000-0000000000d0";
+const ROLE_ORG: &str = "00000000-0000-0000-0000-0000000000b0";
+const ROLE_BRANCH: &str = "00000000-0000-0000-0000-0000000000b1";
+const MEMBERSHIP: &str = "00000000-0000-0000-0000-0000000000c0";
+const INSTALLATION: &str = "00000000-0000-0000-0000-0000000000f0";
+const INSTALLATION_TWO: &str = "00000000-0000-0000-0000-0000000000f1";
 const TIME: &str = "2026-10-29T00:00:00Z";
 const LATER: &str = "2026-10-30T00:00:00Z";
 const HASH: &str = "aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffff0000000011111111";
@@ -35,7 +50,21 @@ fn id(value: &str) -> EntityId {
     EntityId::parse(value).unwrap_or_else(|error| panic!("fixture UUID: {error}"))
 }
 
+fn organization(value: &str, code: &str) -> Organization {
+    Organization::create(
+        id(value),
+        NewOrganization {
+            name: DisplayName::new("Propuesta").unwrap_or_else(|error| panic!("name: {error}")),
+            code: BusinessCode::new(code).unwrap_or_else(|error| panic!("code: {error}")),
+            timezone: Timezone::new("UTC").unwrap_or_else(|error| panic!("tz: {error}")),
+            currency: IsoCurrency::new("MXN").unwrap_or_else(|error| panic!("currency: {error}")),
+            locale: LocaleTag::new("es-MX").unwrap_or_else(|error| panic!("locale: {error}")),
+        },
+    )
+}
+
 async fn apply_proposals(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
+    sqlx::raw_sql(INSTALLATION_FIXTURE).execute(pool).await?;
     for statement in [
         PROPOSAL_0002,
         PROPOSAL_0003,
@@ -48,22 +77,38 @@ async fn apply_proposals(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
-async fn seed_base(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
+async fn open_proposed(path: &std::path::Path) -> Result<SqlitePool, Box<dyn std::error::Error>> {
+    let pool = open(path, Duration::from_millis(75)).await?;
+    migrate(&pool).await?;
+    apply_proposals(&pool).await?;
+    sqlx::query("INSERT INTO installation_identity (id) VALUES (?)")
+        .bind(INSTALLATION)
+        .execute(&pool)
+        .await?;
+    sqlx::query("INSERT INTO installation_identity (id) VALUES (?)")
+        .bind(INSTALLATION_TWO)
+        .execute(&pool)
+        .await?;
+    Ok(pool)
+}
+
+async fn seed(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
     let store = SqliteOrganizationBranchStore::new(pool.clone());
     for (value, code) in [(ORG, "prop-org-a"), (ORG_TWO, "prop-org-b")] {
-        let organization = Organization::create(
-            id(value),
-            NewOrganization {
-                name: DisplayName::new("Propuesta").unwrap_or_else(|error| panic!("name: {error}")),
-                code: BusinessCode::new(code).unwrap_or_else(|error| panic!("code: {error}")),
-                timezone: Timezone::new("UTC").unwrap_or_else(|error| panic!("timezone: {error}")),
-                currency: IsoCurrency::new("MXN")
-                    .unwrap_or_else(|error| panic!("currency: {error}")),
-                locale: LocaleTag::new("es-MX").unwrap_or_else(|error| panic!("locale: {error}")),
-            },
-        );
-        store.insert_organization(&organization, TIME, TIME).await?;
+        store
+            .insert_organization(&organization(value, code), TIME, TIME)
+            .await?;
     }
+    let branch = Branch::create(
+        id(BRANCH_A),
+        id(ORG),
+        NewBranch {
+            name: DisplayName::new("Sucursal").unwrap_or_else(|error| panic!("name: {error}")),
+            code: BusinessCode::new("prop-branch").unwrap_or_else(|error| panic!("code: {error}")),
+            timezone_override: None,
+        },
+    );
+    store.insert_branch(&branch, TIME, TIME).await?;
     for (user, owner, email) in [
         (USER, ORG, "operadora@prop.test"),
         (USER_TWO, ORG_TWO, "otra@prop.test"),
@@ -82,8 +127,9 @@ async fn seed_base(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> 
     }
     sqlx::query(
         "INSERT INTO local_credential (id, user_id, organization_id, credential_kind, algorithm, secret_hash, params_json, policy_id, state, credential_version, failed_login_attempts, created_at, updated_at) \
-         VALUES ('00000000-0000-0000-0000-0000000000e0', ?, ?, 'PASSWORD', 'LEGACY_BCRYPT', '$2b$04$synthetic', '{\"cost\":4}', 'legacy-import-v1', 'ACTIVE', 1, 0, ?, ?)",
+         VALUES (?, ?, ?, 'PASSWORD', 'LEGACY_BCRYPT', '$2b$04$synthetic', '{\"cost\":4}', 'legacy-import-v1', 'ACTIVE', 1, 0, ?, ?)",
     )
+    .bind(CREDENTIAL)
     .bind(USER)
     .bind(ORG)
     .bind(TIME)
@@ -104,75 +150,626 @@ async fn seed_base(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
+async fn complete_bootstrap(
+    pool: &SqlitePool,
+    installation: &str,
+) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+    sqlx::query(
+        "UPDATE bootstrap_record SET state = 'COMPLETED', completed_at = ?, organization_id = ?, \
+         administrator_user_id = ?, administrator_role_id = ?, bootstrap_version = 1, updated_at = ? \
+         WHERE installation_id = ? AND state = 'PENDING'",
+    )
+    .bind(LATER)
+    .bind(ORG)
+    .bind(USER)
+    .bind(ROLE_ORG)
+    .bind(LATER)
+    .bind(installation)
+    .execute(pool)
+    .await
+}
+
+async fn effective_permissions(
+    pool: &SqlitePool,
+    user: &str,
+    organization: &str,
+    branch: Option<&str>,
+    require_active_branch: bool,
+) -> Result<Vec<String>, sqlx::Error> {
+    let mut granted: BTreeSet<String> =
+        sqlx::query_scalar::<_, String>(ORGANIZATION_PERMISSIONS_SQL)
+            .bind(organization)
+            .bind(user)
+            .fetch_all(pool)
+            .await?
+            .into_iter()
+            .collect();
+    if let Some(branch) = branch {
+        let branch_grants: Vec<String> = if require_active_branch {
+            sqlx::query_scalar::<_, String>(BRANCH_PERMISSIONS_SQL)
+                .bind(organization)
+                .bind(branch)
+                .bind(user)
+                .fetch_all(pool)
+                .await?
+        } else {
+            sqlx::query_scalar::<_, String>(BRANCH_PERMISSIONS_RECOVERY_SQL)
+                .bind(organization)
+                .bind(branch)
+                .bind(user)
+                .fetch_all(pool)
+                .await?
+        };
+        granted.extend(branch_grants);
+    }
+    Ok(granted.into_iter().collect())
+}
+
+const ORGANIZATION_PERMISSIONS_SQL: &str = "SELECT DISTINCT rp.permission_code FROM user_organization_role ur \
+     JOIN pos_user u ON u.id = ur.user_id AND u.organization_id = ur.organization_id \
+     JOIN role r ON r.id = ur.role_id AND r.organization_id = ur.organization_id \
+     JOIN role_permission rp ON rp.role_id = r.id \
+     JOIN organization o ON o.id = ur.organization_id \
+     WHERE ur.organization_id = ? AND ur.user_id = ? \
+       AND u.status = 'ACTIVE' AND r.status = 'ACTIVE' AND o.status = 'ACTIVE' \
+     ORDER BY rp.permission_code";
+
+const BRANCH_PERMISSIONS_SQL: &str = "SELECT DISTINCT rp.permission_code FROM branch_membership m \
+     JOIN pos_user u ON u.id = m.user_id AND u.organization_id = m.organization_id \
+     JOIN branch b ON b.id = m.branch_id AND b.organization_id = m.organization_id \
+     JOIN branch_membership_role mr ON mr.membership_id = m.id AND mr.organization_id = m.organization_id \
+     JOIN role r ON r.id = mr.role_id AND r.organization_id = mr.organization_id \
+     JOIN role_permission rp ON rp.role_id = r.id \
+     JOIN organization o ON o.id = m.organization_id \
+     WHERE m.organization_id = ? AND m.branch_id = ? AND m.user_id = ? \
+       AND m.status = 'ACTIVE' AND u.status = 'ACTIVE' AND r.status = 'ACTIVE' \
+       AND o.status = 'ACTIVE' AND b.status = 'ACTIVE' \
+     ORDER BY rp.permission_code";
+
+const BRANCH_PERMISSIONS_RECOVERY_SQL: &str = "SELECT DISTINCT rp.permission_code FROM branch_membership m \
+     JOIN pos_user u ON u.id = m.user_id AND u.organization_id = m.organization_id \
+     JOIN branch b ON b.id = m.branch_id AND b.organization_id = m.organization_id \
+     JOIN branch_membership_role mr ON mr.membership_id = m.id AND mr.organization_id = m.organization_id \
+     JOIN role r ON r.id = mr.role_id AND r.organization_id = mr.organization_id \
+     JOIN role_permission rp ON rp.role_id = r.id \
+     JOIN organization o ON o.id = m.organization_id \
+     WHERE m.organization_id = ? AND m.branch_id = ? AND m.user_id = ? \
+       AND m.status = 'ACTIVE' AND u.status = 'ACTIVE' AND r.status = 'ACTIVE' \
+       AND o.status = 'ACTIVE' \
+     ORDER BY rp.permission_code";
+
+async fn seed_rbac(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    for (role, code) in [(ROLE_ORG, "org-role"), (ROLE_BRANCH, "branch-role")] {
+        sqlx::query(
+            "INSERT INTO role (id, organization_id, code, name, status, version, created_at, updated_at) \
+             VALUES (?, ?, ?, 'Rol', 'ACTIVE', 0, ?, ?)",
+        )
+        .bind(role)
+        .bind(ORG)
+        .bind(code)
+        .bind(TIME)
+        .bind(TIME)
+        .execute(pool)
+        .await?;
+    }
+    for (role, permission) in [
+        (ROLE_ORG, "organization.read"),
+        (ROLE_ORG, "branch.update"),
+        (ROLE_BRANCH, "sale.create"),
+    ] {
+        sqlx::query("INSERT INTO role_permission (role_id, permission_code) VALUES (?, ?)")
+            .bind(role)
+            .bind(permission)
+            .execute(pool)
+            .await?;
+    }
+    sqlx::query(
+        "INSERT INTO user_organization_role (organization_id, user_id, role_id, created_at) VALUES (?, ?, ?, ?)",
+    )
+    .bind(ORG)
+    .bind(USER)
+    .bind(ROLE_ORG)
+    .bind(TIME)
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO branch_membership (id, organization_id, branch_id, user_id, status, version, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, 'ACTIVE', 0, ?, ?)",
+    )
+    .bind(MEMBERSHIP)
+    .bind(ORG)
+    .bind(BRANCH_A)
+    .bind(USER)
+    .bind(TIME)
+    .bind(TIME)
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO branch_membership_role (organization_id, membership_id, role_id, created_at) VALUES (?, ?, ?, ?)",
+    )
+    .bind(ORG)
+    .bind(MEMBERSHIP)
+    .bind(ROLE_BRANCH)
+    .bind(TIME)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 #[tokio::test]
-async fn proposed_schema_creates_checks_foreign_keys_and_append_only()
+async fn proposal_set_applies_from_empty_database_and_rejects_reapplication()
 -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("proposals.sqlite");
-    let pool = open(&path, Duration::from_millis(75)).await?;
-    migrate(&pool).await?;
-    apply_proposals(&pool).await?;
-    seed_base(&pool).await?;
+    let pool = open_proposed(&path).await?;
+    seed(&pool).await?;
+    // Reaplicar una migración ya ejecutada debe fallar: contrato one-shot.
+    assert!(sqlx::raw_sql(PROPOSAL_0002).execute(&pool).await.is_err());
 
-    // D-AUTH-02: el catálogo físico no admite DISABLED.
-    let disabled = sqlx::query("UPDATE local_credential SET state = 'DISABLED'")
-        .execute(&pool)
-        .await;
-    assert!(disabled.is_err(), "DISABLED no debe ser un estado físico");
-    let reset = sqlx::query("UPDATE local_credential SET state = 'PASSWORD_RESET_REQUIRED'")
-        .execute(&pool)
-        .await;
-    assert!(reset.is_ok());
-    sqlx::query("UPDATE local_credential SET state = 'ACTIVE'")
-        .execute(&pool)
+    pool.close().await;
+    let reopened = open(&path, Duration::from_millis(75)).await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM pos_user")
+            .fetch_one(&reopened)
+            .await?,
+        2
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM local_session")
+            .fetch_one(&reopened)
+            .await?,
+        1
+    );
+    reopened.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn catalog_matches_the_java_permission_list_exactly() -> Result<(), Box<dyn std::error::Error>>
+{
+    let temp = tempfile::tempdir()?;
+    let pool = open_proposed(&temp.path().join("catalog.sqlite")).await?;
+    let mut stored = sqlx::query_scalar::<_, String>("SELECT code FROM permission ORDER BY code")
+        .fetch_all(&pool)
         .await?;
+    let mut expected: Vec<String> = PERMISSION_CATALOG
+        .iter()
+        .map(|code| (*code).to_owned())
+        .collect();
+    expected.sort();
+    assert_eq!(stored, expected);
+    assert_eq!(stored.len(), 59);
 
-    // D-AUTH-04: credencial cross-organization rechazada por FK compuesta.
-    let cross = sqlx::query(
-        "INSERT INTO local_credential (id, user_id, organization_id, credential_kind, algorithm, secret_hash, params_json, policy_id, state, credential_version, failed_login_attempts, created_at, updated_at) \
-         VALUES ('00000000-0000-0000-0000-0000000000e1', ?, ?, 'PIN', 'ARGON2ID', '$argon2id$x', '{\"m_cost\":1}', 'lab-argon2-v1', 'ACTIVE', 1, 0, ?, ?)",
+    // El seed es idempotente y no altera descripciones existentes.
+    sqlx::raw_sql(
+        "INSERT INTO permission (code, description) VALUES ('organization.read', 'duplicado') \
+         ON CONFLICT (code) DO NOTHING",
     )
-    .bind(USER)
+    .execute(&pool)
+    .await?;
+    stored = sqlx::query_scalar::<_, String>(
+        "SELECT description FROM permission WHERE code = 'organization.read'",
+    )
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(stored, vec!["Read organization details".to_owned()]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn normalization_uniqueness_and_uuid_rules_hold() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open_proposed(&temp.path().join("identity.sqlite")).await?;
+    seed(&pool).await?;
+
+    // Email único por organización.
+    assert!(
+        sqlx::query(
+            "INSERT INTO pos_user (id, organization_id, display_name, email, status, version, created_at, updated_at) \
+             VALUES ('00000000-0000-0000-0000-0000000000a2', ?, 'Otra', 'operadora@prop.test', 'ACTIVE', 0, ?, ?)",
+        )
+        .bind(ORG)
+        .bind(TIME)
+        .bind(TIME)
+        .execute(&pool)
+        .await
+        .is_err()
+    );
+    // Mismo email en otra organización es válido.
+    sqlx::query(
+        "INSERT INTO pos_user (id, organization_id, display_name, email, status, version, created_at, updated_at) \
+         VALUES ('00000000-0000-0000-0000-0000000000a3', ?, 'Otra', 'operadora@prop.test', 'ACTIVE', 0, ?, ?)",
+    )
     .bind(ORG_TWO)
     .bind(TIME)
     .bind(TIME)
     .execute(&pool)
-    .await;
-    assert!(cross.is_err(), "FK compuesta debe rechazar cross-org");
+    .await?;
+    // UUID no canónico (mayúsculas) rechazado.
+    assert!(
+        sqlx::query(
+            "INSERT INTO pos_user (id, organization_id, display_name, email, status, version, created_at, updated_at) \
+             VALUES ('00000000-0000-0000-0000-0000000000AF', ?, 'Otra', 'x@prop.test', 'ACTIVE', 0, ?, ?)",
+        )
+        .bind(ORG)
+        .bind(TIME)
+        .bind(TIME)
+        .execute(&pool)
+        .await
+        .is_err()
+    );
+    // Timestamp sin 'Z' rechazado.
+    assert!(
+        sqlx::query(
+            "INSERT INTO pos_user (id, organization_id, display_name, email, status, version, created_at, updated_at) \
+             VALUES ('00000000-0000-0000-0000-0000000000a4', ?, 'Otra', 'y@prop.test', 'ACTIVE', 0, '2026-10-29 00:00:00', ?)",
+        )
+        .bind(ORG)
+        .bind(TIME)
+        .execute(&pool)
+        .await
+        .is_err()
+    );
+    Ok(())
+}
 
-    // D-AUTH-07: actor USER/SYSTEM.
-    let audit = |id_value: &'static str, actor: &'static str, user: Option<&'static str>| {
+#[tokio::test]
+async fn session_state_is_coherent_and_expiry_is_derived() -> Result<(), Box<dyn std::error::Error>>
+{
+    let temp = tempfile::tempdir()?;
+    let pool = open_proposed(&temp.path().join("session.sqlite")).await?;
+    seed(&pool).await?;
+
+    // ACTIVE no puede llevar revoked_at.
+    assert!(
+        sqlx::query("UPDATE local_session SET revoked_at = ? WHERE id = ?")
+            .bind(LATER)
+            .bind(SESSION)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    // REVOKED exige revoked_at.
+    assert!(
+        sqlx::query("UPDATE local_session SET state = 'REVOKED' WHERE id = ?")
+            .bind(SESSION)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    // EXPIRED no puede llevar revoked_at (revocación explícita gana).
+    assert!(
+        sqlx::query("UPDATE local_session SET state = 'EXPIRED', revoked_at = ? WHERE id = ?")
+            .bind(LATER)
+            .bind(SESSION)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    // Transición de revocación atómica con CAS.
+    let first = sqlx::query(
+        "UPDATE local_session SET state = 'REVOKED', revoked_at = ?, session_version = session_version + 1 \
+         WHERE id = ? AND session_version = 1 AND state = 'ACTIVE'",
+    )
+    .bind(LATER)
+    .bind(SESSION)
+    .execute(&pool)
+    .await?;
+    assert_eq!(first.rows_affected(), 1);
+    let second = sqlx::query(
+        "UPDATE local_session SET state = 'REVOKED', revoked_at = ?, session_version = session_version + 1 \
+         WHERE id = ? AND session_version = 1 AND state = 'ACTIVE'",
+    )
+    .bind(LATER)
+    .bind(SESSION)
+    .execute(&pool)
+    .await?;
+    assert_eq!(second.rows_affected(), 0);
+
+    // Expiración derivada: una fila ACTIVE con expires_at vencido no autentica.
+    sqlx::query(
+        "INSERT INTO local_session (id, user_id, session_hash, state, created_at, expires_at, revoked_at, session_version) \
+         VALUES ('00000000-0000-0000-0000-0000000000d1', ?, ?, 'ACTIVE', ?, ?, NULL, 1)",
+    )
+    .bind(USER)
+    .bind("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+    .bind(TIME)
+    .bind("2026-10-29T12:00:00Z")
+    .execute(&pool)
+    .await?;
+    let usable = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM local_session \
+         WHERE id = '00000000-0000-0000-0000-0000000000d1' \
+           AND state = 'ACTIVE' AND revoked_at IS NULL AND expires_at > ?",
+    )
+    .bind(LATER)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        usable, 0,
+        "la expiración no depende de materializar EXPIRED"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn bootstrap_is_one_shot_per_installation_and_complete()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open_proposed(&temp.path().join("bootstrap.sqlite")).await?;
+    seed(&pool).await?;
+    seed_rbac(&pool).await?;
+
+    sqlx::query(
+        "INSERT INTO bootstrap_record (installation_id, state, updated_at) VALUES (?, 'PENDING', ?)",
+    )
+    .bind(INSTALLATION)
+    .bind(TIME)
+    .execute(&pool)
+    .await?;
+    // Provisioning parcial rechazado.
+    assert!(
+        sqlx::query("UPDATE bootstrap_record SET completed_at = ? WHERE installation_id = ?")
+            .bind(LATER)
+            .bind(INSTALLATION)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    complete_bootstrap(&pool, INSTALLATION).await?;
+    // Segundo intento para la misma instalación no actualiza nada.
+    assert_eq!(
+        complete_bootstrap(&pool, INSTALLATION)
+            .await?
+            .rows_affected(),
+        0
+    );
+    // Otra instalación tiene su propio registro one-shot.
+    sqlx::query(
+        "INSERT INTO bootstrap_record (installation_id, state, updated_at) VALUES (?, 'PENDING', ?)",
+    )
+    .bind(INSTALLATION_TWO)
+    .bind(TIME)
+    .execute(&pool)
+    .await?;
+
+    // Administrador de otra organización rechazado por FK compuesta.
+    sqlx::query(
+        "INSERT INTO installation_identity (id) VALUES ('00000000-0000-0000-0000-0000000000f2')",
+    )
+    .execute(&pool)
+    .await?;
+    let cross = sqlx::query(
+        "INSERT INTO bootstrap_record (installation_id, state, completed_at, organization_id, administrator_user_id, administrator_role_id, bootstrap_version, updated_at) \
+         VALUES ('00000000-0000-0000-0000-0000000000f2', 'COMPLETED', ?, ?, ?, ?, 1, ?)",
+    )
+    .bind(LATER)
+    .bind(ORG)
+    .bind(USER_TWO)
+    .bind(ROLE_ORG)
+    .bind(LATER)
+    .execute(&pool)
+    .await;
+    assert!(cross.is_err(), "administrador cross-org debe rechazarse");
+
+    // Fallo de auditoría revierte el bootstrap dentro de la misma transacción.
+    let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+    let mut transaction = unit_of_work.begin().await?;
+    sqlx::query(
+        "UPDATE bootstrap_record SET state = 'COMPLETED', completed_at = ?, organization_id = ?, \
+         administrator_user_id = ?, administrator_role_id = ?, updated_at = ? WHERE installation_id = ?",
+    )
+    .bind(LATER)
+    .bind(ORG)
+    .bind(USER)
+    .bind(ROLE_ORG)
+    .bind(LATER)
+    .bind(INSTALLATION_TWO)
+    .execute(&mut *transaction.connection())
+    .await?;
+    let audit = sqlx::query(
+        "INSERT INTO audit_event (id, organization_id, actor_type, actor_user_id, session_id, action, entity_type, occurred_at, event_version) \
+         VALUES ('00000000-0000-0000-0000-0000000000f9', ?, 'SYSTEM', ?, NULL, 'bootstrap.completed', 'bootstrap_record', ?, 1)",
+    )
+    .bind(ORG)
+    .bind(USER)
+    .bind(LATER)
+    .execute(&mut *transaction.connection())
+    .await;
+    assert!(audit.is_err(), "SYSTEM con actor debe fallar");
+    transaction.rollback().await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT state FROM bootstrap_record WHERE installation_id = ?"
+        )
+        .bind(INSTALLATION_TWO)
+        .fetch_one(&pool)
+        .await?,
+        "PENDING"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn rbac_catalog_resolution_preserves_java_semantics() -> Result<(), Box<dyn std::error::Error>>
+{
+    let temp = tempfile::tempdir()?;
+    let pool = open_proposed(&temp.path().join("rbac.sqlite")).await?;
+    seed(&pool).await?;
+    seed_rbac(&pool).await?;
+
+    let organization = effective_permissions(&pool, USER, ORG, None, true).await?;
+    assert_eq!(organization, vec!["branch.update", "organization.read"]);
+
+    let branch = effective_permissions(&pool, USER, ORG, Some(BRANCH_A), true).await?;
+    assert_eq!(
+        branch,
+        vec!["branch.update", "organization.read", "sale.create"]
+    );
+
+    // Override de organización sin membership: la pierna de sucursal no aporta,
+    // pero las grants organizacionales se conservan (Java).
+    sqlx::query("UPDATE branch_membership SET status = 'INACTIVE' WHERE id = ?")
+        .bind(MEMBERSHIP)
+        .execute(&pool)
+        .await?;
+    let without_membership = effective_permissions(&pool, USER, ORG, Some(BRANCH_A), true).await?;
+    assert_eq!(
+        without_membership,
+        vec!["branch.update", "organization.read"]
+    );
+
+    // El permiso de sucursal nunca aparece en el scope de organización.
+    assert!(!organization.contains(&"sale.create".to_owned()));
+
+    // Rol inactivo retira solo su propia grant.
+    sqlx::query("UPDATE branch_membership SET status = 'ACTIVE' WHERE id = ?")
+        .bind(MEMBERSHIP)
+        .execute(&pool)
+        .await?;
+    sqlx::query("UPDATE role SET status = 'INACTIVE' WHERE id = ?")
+        .bind(ROLE_BRANCH)
+        .execute(&pool)
+        .await?;
+    let inactive_role = effective_permissions(&pool, USER, ORG, Some(BRANCH_A), true).await?;
+    assert_eq!(inactive_role, vec!["branch.update", "organization.read"]);
+    sqlx::query("UPDATE role SET status = 'ACTIVE' WHERE id = ?")
+        .bind(ROLE_BRANCH)
+        .execute(&pool)
+        .await?;
+
+    // Sucursal inactiva: la variante normal no aporta la grant de sucursal; la
+    // histórica sí.
+    sqlx::query("UPDATE branch SET status = 'INACTIVE' WHERE id = ?")
+        .bind(BRANCH_A)
+        .execute(&pool)
+        .await?;
+    assert_eq!(
+        effective_permissions(&pool, USER, ORG, Some(BRANCH_A), true).await?,
+        vec!["branch.update", "organization.read"]
+    );
+    assert_eq!(
+        effective_permissions(&pool, USER, ORG, Some(BRANCH_A), false).await?,
+        vec!["branch.update", "organization.read", "sale.create"]
+    );
+
+    // Organización inactiva retira todo.
+    sqlx::query("UPDATE branch SET status = 'ACTIVE' WHERE id = ?")
+        .bind(BRANCH_A)
+        .execute(&pool)
+        .await?;
+    sqlx::query("UPDATE organization SET status = 'INACTIVE' WHERE id = ?")
+        .bind(ORG)
+        .execute(&pool)
+        .await?;
+    assert_eq!(
+        effective_permissions(&pool, USER, ORG, None, true).await?,
+        Vec::<String>::new()
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn audit_contract_enforces_actor_session_and_append_only()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open_proposed(&temp.path().join("audit.sqlite")).await?;
+    seed(&pool).await?;
+
+    let insert = |id_value: &'static str,
+                  actor: &'static str,
+                  user: Option<&'static str>,
+                  session: Option<&'static str>| {
         let pool = pool.clone();
         async move {
             sqlx::query(
                 "INSERT INTO audit_event (id, organization_id, branch_id, actor_type, actor_user_id, session_id, action, entity_type, entity_id, reason, metadata_json, occurred_at, event_version) \
-                 VALUES (?, ?, NULL, ?, ?, NULL, 'credential.updated', 'local_credential', NULL, NULL, NULL, ?, 1)",
+                 VALUES (?, ?, NULL, ?, ?, ?, 'credential.updated', 'local_credential', NULL, NULL, '{\"fields\":[\"state\"]}', ?, 1)",
             )
             .bind(id_value)
             .bind(ORG)
             .bind(actor)
             .bind(user)
+            .bind(session)
             .bind(LATER)
             .execute(&pool)
             .await
         }
     };
-    audit("00000000-0000-0000-0000-0000000000f0", "USER", Some(USER)).await?;
-    audit("00000000-0000-0000-0000-0000000000f1", "SYSTEM", None).await?;
+
+    insert(
+        "00000000-0000-0000-0000-0000000000f0",
+        "USER",
+        Some(USER),
+        Some(SESSION),
+    )
+    .await?;
+    insert(
+        "00000000-0000-0000-0000-0000000000f1",
+        "USER",
+        Some(USER),
+        None,
+    )
+    .await?;
+    insert("00000000-0000-0000-0000-0000000000f2", "SYSTEM", None, None).await?;
     assert!(
-        audit("00000000-0000-0000-0000-0000000000f2", "SYSTEM", Some(USER))
-            .await
-            .is_err(),
-        "SYSTEM con actor debe fallar"
+        insert(
+            "00000000-0000-0000-0000-0000000000f3",
+            "SYSTEM",
+            Some(USER),
+            None
+        )
+        .await
+        .is_err()
     );
     assert!(
-        audit("00000000-0000-0000-0000-0000000000f3", "USER", None)
-            .await
-            .is_err(),
-        "USER sin actor debe fallar"
+        insert(
+            "00000000-0000-0000-0000-0000000000f4",
+            "SYSTEM",
+            None,
+            Some(SESSION)
+        )
+        .await
+        .is_err()
+    );
+    assert!(
+        insert(
+            "00000000-0000-0000-0000-0000000000f5",
+            "USER",
+            Some(USER_TWO),
+            Some(SESSION)
+        )
+        .await
+        .is_err(),
+        "sesión de otro usuario debe rechazarse"
     );
 
-    // D-AUTH-08: append-only.
+    // Metadata fuera de límite.
+    assert!(
+        sqlx::query(
+            "INSERT INTO audit_event (id, organization_id, actor_type, actor_user_id, action, entity_type, metadata_json, occurred_at, event_version) \
+             VALUES ('00000000-0000-0000-0000-0000000000f6', ?, 'SYSTEM', NULL, 'x', 'y', ?, ?, 1)",
+        )
+        .bind(ORG)
+        .bind(format!("{{\"blob\":\"{}\"}}", "a".repeat(16_500)))
+        .bind(LATER)
+        .execute(&pool)
+        .await
+        .is_err()
+    );
+    // event_version 0 rechazado.
+    assert!(
+        sqlx::query(
+            "INSERT INTO audit_event (id, organization_id, actor_type, action, entity_type, occurred_at, event_version) \
+             VALUES ('00000000-0000-0000-0000-0000000000f7', ?, 'SYSTEM', 'x', 'y', ?, 0)",
+        )
+        .bind(ORG)
+        .bind(LATER)
+        .execute(&pool)
+        .await
+        .is_err()
+    );
+
     assert!(
         sqlx::query("UPDATE audit_event SET action = 'tampered'")
             .execute(&pool)
@@ -185,37 +782,80 @@ async fn proposed_schema_creates_checks_foreign_keys_and_append_only()
             .await
             .is_err()
     );
+    Ok(())
+}
 
-    // D-AUTH-10: singleton y estado completo.
-    assert!(
-        sqlx::query("INSERT INTO bootstrap_record (id) VALUES (2)")
-            .execute(&pool)
-            .await
-            .is_err()
-    );
-    assert!(
-        sqlx::query("UPDATE bootstrap_record SET completed_at = ? WHERE id = 1")
-            .bind(TIME)
-            .execute(&pool)
-            .await
-            .is_err(),
-        "un estado parcial debe rechazarse"
+#[tokio::test]
+async fn integrity_errors_roll_back_and_survive_reopen() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("integrity.sqlite");
+    let pool = open_proposed(&path).await?;
+    seed(&pool).await?;
+
+    // CAS sobre credencial.
+    let stale = sqlx::query(
+        "UPDATE local_credential SET failed_login_attempts = failed_login_attempts + 1, \
+         credential_version = credential_version + 1 WHERE id = ? AND credential_version = 99",
+    )
+    .bind(CREDENTIAL)
+    .execute(&pool)
+    .await?;
+    assert_eq!(stale.rows_affected(), 0);
+
+    // Rollback por error de integridad dentro de una transacción.
+    let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+    let mut transaction = unit_of_work.begin().await?;
+    sqlx::query(
+        "INSERT INTO pos_user (id, organization_id, display_name, email, status, version, created_at, updated_at) \
+         VALUES ('00000000-0000-0000-0000-0000000000a5', ?, 'Temp', 'temp@prop.test', 'ACTIVE', 0, ?, ?)",
+    )
+    .bind(ORG)
+    .bind(TIME)
+    .bind(TIME)
+    .execute(&mut *transaction.connection())
+    .await?;
+    let invalid = sqlx::query(
+        "INSERT INTO pos_user (id, organization_id, display_name, email, status, version, created_at, updated_at) \
+         VALUES ('00000000-0000-0000-0000-0000000000a6', ?, 'Temp', 'bad', 'ACTIVE', 0, ?, ?)",
+    )
+    .bind(ORG)
+    .bind(TIME)
+    .bind(TIME)
+    .execute(&mut *transaction.connection())
+    .await;
+    assert!(invalid.is_err());
+    transaction.rollback().await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM pos_user WHERE id = '00000000-0000-0000-0000-0000000000a5'"
+        )
+        .fetch_one(&pool)
+        .await?,
+        0
     );
 
-    // Durabilidad: reapertura ve los datos confirmados.
     pool.close().await;
     let reopened = open(&path, Duration::from_millis(75)).await?;
     assert_eq!(
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM audit_event")
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM local_credential")
             .fetch_one(&reopened)
             .await?,
-        2
+        1
     );
-    assert_eq!(
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM pos_user")
-            .fetch_one(&reopened)
-            .await?,
-        2
+    sqlx::query(
+        "INSERT INTO audit_event (id, organization_id, actor_type, action, entity_type, occurred_at, event_version) \
+         VALUES ('00000000-0000-0000-0000-0000000000fa', ?, 'SYSTEM', 'x', 'y', ?, 1)",
+    )
+    .bind(ORG)
+    .bind(LATER)
+    .execute(&reopened)
+    .await?;
+    assert!(
+        sqlx::query("UPDATE audit_event SET action = 'tampered'")
+            .execute(&reopened)
+            .await
+            .is_err(),
+        "el trigger append-only sobrevive a la reapertura"
     );
     reopened.close().await;
     Ok(())
