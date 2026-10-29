@@ -2,6 +2,8 @@
 
 use std::{path::Path, time::Duration};
 
+/// Transición de credenciales de laboratorio (BCrypt → Argon2id) sobre la UoW.
+pub mod credential_lab;
 /// Adaptador de identidad y permisos exclusivo de laboratorio (tablas `*_lab`).
 pub mod identity_lab;
 
@@ -1012,6 +1014,8 @@ fn storage_error(error: OrganizationBranchStorageError) -> ApplicationError {
     }
 }
 
+#[cfg(test)]
+mod credential_lab_tests;
 #[cfg(test)]
 mod identity_lab_tests;
 #[cfg(test)]

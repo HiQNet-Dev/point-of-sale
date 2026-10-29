@@ -82,8 +82,8 @@ pub const LAB_SCHEMA_STATEMENTS: [&str; 6] = [
      ) STRICT",
 ];
 
-/// Segunda tanda del esquema de laboratorio (roles de membership + índices).
-pub const LAB_SCHEMA_TAIL_STATEMENTS: [&str; 2] = [
+/// Segunda tanda del esquema de laboratorio (roles de membership + índice).
+pub const LAB_SCHEMA_TAIL_STATEMENTS: [&str; 3] = [
     "CREATE TABLE IF NOT EXISTS identity_membership_role_lab (\
         organization_id TEXT NOT NULL, \
         membership_id TEXT NOT NULL, \
@@ -93,6 +93,24 @@ pub const LAB_SCHEMA_TAIL_STATEMENTS: [&str; 2] = [
         FOREIGN KEY (role_id, organization_id) REFERENCES identity_role_lab(id, organization_id)\
      ) STRICT",
     "CREATE INDEX IF NOT EXISTS idx_identity_session_lab_hash ON identity_session_lab (session_hash)",
+    "CREATE TABLE IF NOT EXISTS identity_credential_lab (\
+        id TEXT PRIMARY KEY NOT NULL, \
+        user_id TEXT NOT NULL, \
+        organization_id TEXT NOT NULL, \
+        credential_kind TEXT NOT NULL CHECK (credential_kind IN ('PASSWORD', 'PIN')), \
+        algorithm TEXT NOT NULL CHECK (algorithm IN ('LEGACY_BCRYPT', 'ARGON2ID')), \
+        secret_hash TEXT NOT NULL, \
+        params_json TEXT NOT NULL CHECK (json_valid(params_json)), \
+        policy_id TEXT NOT NULL, \
+        state TEXT NOT NULL CHECK (state IN ('ACTIVE', 'RESET_REQUIRED', 'DISABLED')), \
+        credential_version INTEGER NOT NULL CHECK (credential_version >= 1), \
+        failed_login_attempts INTEGER NOT NULL CHECK (failed_login_attempts >= 0), \
+        locked_until INTEGER, \
+        created_at INTEGER NOT NULL, \
+        updated_at INTEGER NOT NULL, \
+        UNIQUE (user_id, credential_kind), \
+        FOREIGN KEY (user_id, organization_id) REFERENCES identity_user_lab(id, organization_id)\
+     ) STRICT",
 ];
 
 /// Crea el esquema de laboratorio sobre una base ya migrada con `0001`.
