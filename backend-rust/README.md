@@ -198,6 +198,7 @@ No ejecutar down migrations sobre bases reales.
 - [Foundation de identidad Local 1F](../docs/05-development/rust-increment-1f.md).
 - [Adaptador de identidad y permisos 1G](../docs/05-development/rust-increment-1g.md).
 - [Verificación de credenciales 1H](../docs/05-development/rust-increment-1h.md).
+- [CAS obligatorio y sección crítica mínima 1H.1](../docs/05-development/rust-increment-1h1.md).
 - [Especificación real del lab y artefactos](tools/migration-lab/README.md).
 - [ADR-0020](../docs/01-architecture/adr/0020-rust-foundation-sqlx-migration-boundary.md).
 - [CI y gate normativo obligatorio](../docs/05-development/ci.md).

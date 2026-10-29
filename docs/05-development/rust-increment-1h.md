@@ -1,5 +1,10 @@
 # Incremento 1H — verificación de credenciales Local y transición BCrypt → Argon2id
 
+> **Actualización 1H.1.** El CAS de `persist` ya no se ignora y la criptografía se
+> ejecuta fuera de la transacción de escritura. Ver
+> [`rust-increment-1h1.md`](rust-increment-1h1.md). El diseño de `verify_and_upgrade`
+> descrito abajo quedó sustituido por `snapshot → prepare → apply`.
+
 **Estado: LABORATORIO CRIPTOGRÁFICO.** Existe verificación real y transición con CAS
 sobre SQLite de laboratorio. **No** hay login, sesiones productivas, entrega de
 handles, DDL aprobado ni endpoints. Todas las políticas son experimentales.

@@ -163,8 +163,9 @@ opacos de sesión. La transición BCrypt → Argon2id se ejecuta en
 
 Los parámetros (`lab-argon2-v0`, `lab-argon2-v1`) son experimentales. El paquete de
 decisiones D-AUTH-01..10 y el orden de migraciones propuesto están en
-[`rust-increment-1h.md`](rust-increment-1h.md); ninguna migración se crea sin esa
-aceptación.
+[`rust-increment-1h1.md`](rust-increment-1h1.md); ninguna migración se crea sin esa
+aceptación. El 1H.1 corrige además que `local_session` sí incluye `state` físico
+en F1–10 §16.45: derivarlo en el dominio no elimina la columna.
 
 ## Decisiones abiertas
 
