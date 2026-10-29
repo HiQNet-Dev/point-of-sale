@@ -8,8 +8,7 @@ use pos_core::organization_branch::{
     NewBranch, Organization, Permission, Status, Timezone,
 };
 use sqlx::{
-    ConnectOptions, Sqlite, SqliteConnection, SqlitePool,
-    pool::PoolConnection,
+    ConnectOptions, Sqlite, SqliteConnection, SqlitePool, Transaction,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
 };
 
@@ -466,29 +465,21 @@ impl SqliteUnitOfWork {
 
     /// Adquiere una conexión y abre una transacción de escritura real.
     pub async fn begin(&self) -> Result<SqliteTransaction, OrganizationBranchStorageError> {
-        let mut connection = self
+        let transaction = self
             .pool
-            .acquire()
+            .begin()
             .await
             .map_err(|_| OrganizationBranchStorageError::Database)?;
-        sqlx::query("BEGIN IMMEDIATE")
-            .execute(&mut *connection)
-            .await
-            .map_err(|_| OrganizationBranchStorageError::Database)?;
-        Ok(SqliteTransaction {
-            connection,
-            finalized: false,
-        })
+        Ok(SqliteTransaction { transaction })
     }
 }
 
 /// Transacción Local con ownership exclusivo de la conexión SQLx.
 ///
-/// No clona conexiones ni usa `block_on`. El llamador debe confirmar o hacer
-/// rollback explícito; sus métodos nunca usan el pool mientras esté activa.
+/// No clona conexiones ni usa `block_on`. `sqlx::Transaction` hace rollback
+/// al abandonarse sin commit; los métodos nunca usan el pool mientras esté activa.
 pub struct SqliteTransaction {
-    connection: PoolConnection<Sqlite>,
-    finalized: bool,
+    transaction: Transaction<'static, Sqlite>,
 }
 
 impl SqliteTransaction {
@@ -499,7 +490,7 @@ impl SqliteTransaction {
     ) -> Result<Option<Organization>, OrganizationBranchStorageError> {
         let row = sqlx::query_as::<_, OrganizationRow>("SELECT id, code, name, currency, timezone, locale, stock_negative_policy, status, version FROM organization WHERE id = ?")
             .bind(organization_id.as_str())
-            .fetch_optional(&mut *self.connection)
+            .fetch_optional(&mut *self.transaction)
             .await
             .map_err(|_| OrganizationBranchStorageError::Database)?;
         row.map(OrganizationRow::into_domain).transpose()
@@ -514,7 +505,7 @@ impl SqliteTransaction {
         let row = sqlx::query_as::<_, BranchRow>("SELECT id, organization_id, code, name, status, timezone_override, version FROM branch WHERE organization_id = ? AND id = ?")
             .bind(organization_id.as_str())
             .bind(branch_id.as_str())
-            .fetch_optional(&mut *self.connection)
+            .fetch_optional(&mut *self.transaction)
             .await
             .map_err(|_| OrganizationBranchStorageError::Database)?;
         row.map(BranchRow::into_domain).transpose()
@@ -536,7 +527,7 @@ impl SqliteTransaction {
             .bind(revision_to_i64(branch.revision())?)
             .bind(occurred_at)
             .bind(occurred_at)
-            .execute(&mut *self.connection)
+            .execute(&mut *self.transaction)
             .await
             .map_err(map_branch_write_error)?;
         Ok(())
@@ -559,7 +550,7 @@ impl SqliteTransaction {
             .bind(organization_id.as_str())
             .bind(branch.id().as_str())
             .bind(revision_to_i64(previous_revision)?)
-            .execute(&mut *self.connection)
+            .execute(&mut *self.transaction)
             .await
             .map_err(|_| OrganizationBranchStorageError::Database)?;
         if result.rows_affected() == 1 {
@@ -570,7 +561,7 @@ impl SqliteTransaction {
         )
         .bind(organization_id.as_str())
         .bind(branch.id().as_str())
-        .fetch_one(&mut *self.connection)
+        .fetch_one(&mut *self.transaction)
         .await
         .map_err(|_| OrganizationBranchStorageError::Database)?;
         Ok(if exists == 0 {
@@ -581,28 +572,24 @@ impl SqliteTransaction {
     }
 
     /// Confirma todos los efectos ya ejecutados sobre esta conexión.
-    pub async fn commit(mut self) -> Result<(), OrganizationBranchStorageError> {
-        sqlx::query("COMMIT")
-            .execute(&mut *self.connection)
+    pub async fn commit(self) -> Result<(), OrganizationBranchStorageError> {
+        self.transaction
+            .commit()
             .await
-            .map_err(|_| OrganizationBranchStorageError::Database)?;
-        self.finalized = true;
-        Ok(())
+            .map_err(|_| OrganizationBranchStorageError::Database)
     }
 
     /// Revierte la transacción abierta; se usa para todo error anterior a commit.
-    pub async fn rollback(mut self) -> Result<(), OrganizationBranchStorageError> {
-        sqlx::query("ROLLBACK")
-            .execute(&mut *self.connection)
+    pub async fn rollback(self) -> Result<(), OrganizationBranchStorageError> {
+        self.transaction
+            .rollback()
             .await
-            .map_err(|_| OrganizationBranchStorageError::Database)?;
-        self.finalized = true;
-        Ok(())
+            .map_err(|_| OrganizationBranchStorageError::Database)
     }
 
     /// Expone la conexión solo a un writer de auditoría inyectado por el composition root.
     pub fn connection(&mut self) -> &mut SqliteConnection {
-        &mut self.connection
+        &mut self.transaction
     }
 }
 
