@@ -180,7 +180,9 @@ Fuentes oficiales de comportamiento:
 Cambio seguro ejecutado aquí: el verificador ya no acepta 30 registros si falta un
 ID sustituido por otro duplicado. Exige IDs exactos/únicos, estados válidos y
 contadores enteros derivados; se conservan PAR-08 único PASS y exit2 normativo.
-Tests pasaron de 8 a **17**; regresión RED reprodujo defecto antes del arreglo.
+PRE0D-1 elevó los tests de 8 a 17; la suite vigente tiene **19** al incluir la
+coherencia RUN/BASELINE/AGGREGATE y el caso de fallo técnico. La regresión RED
+reprodujo el defecto de IDs antes del arreglo.
 CI existente ya ejecuta esa suite; no se cambió YAML ni significado de PASS.
 En la misma línea se añadió `flyway_worktree` al baseline: detecta migraciones
 Java modificadas o untracked en el checkout para no presentarlas como fuente
@@ -199,15 +201,17 @@ python3 tools/migration-lab/scripts/verify_evidence.py --evidence target/approva
 cargo audit --file Cargo.lock --json
 ```
 
-Resultados nuevos de la revisión 0d: **17 tests verificador OK**, **21 tests CI OK**,
+Resultados históricos de PRE0D-1: **17 tests del verificador OK**, **21 tests CI OK**,
 fmt OK, Clippy `-D warnings` OK, **60 tests Rust listados** y suite workspace verde,
 RustSec **0 vulnerabilidades/warnings vacíos**. La ejecución
 `target/approval-pre0d-gate-2` (SQLite, sin PostgreSQL/Java externo) dio
 **19/19 técnicos**, `exit=2` y **0/30 normativos**. La ejecución previa
 `gate-1` con PostgreSQL 17.11 + source + auth dio **41/41 técnicos**, `exit=2` y
 dos instalaciones Flyway V1–V25 reales: 37/37 tablas y digest funcional igual.
-El verificador de `gate-2` confirma que solo PAR-08 está aprobado a nivel de
-exporter. No se alteró código Java/React, lock ni migrations. No se reejecutaron
+`gate-2` no incluye PostgreSQL ni origen Java y por ello observó 0/30; no se
+presenta como evidencia verificable de PAR-08. La afirmación de PAR-08 pertenece
+a `gate-1`, que sí ejecutó el origen Java/Flyway. No se alteró código Java/React,
+lock ni migrations. No se reejecutaron
 suites locales Java/React/E2E; se reporta su resultado remoto base por separado.
 Las revisiones numéricas de anexos son oráculos propuestos, no implementación ni
 nuevas pruebas normativas.

@@ -189,12 +189,20 @@ class VerifyEvidenceTests(unittest.TestCase):
         ).hexdigest()
         complete = self.parity["require_complete"]
         code = self.parity["exit_code"]
-        gate = "BLOCKED" if complete else "NOT_REQUESTED"
+        technical_status = self.parity["technical_status"]
+        technical_failed = technical_status != "PASSED" or any(
+            case["status"] != "PASSED" for case in self.parity["technical_checks"]
+        )
+        gate = (
+            "NOT_EVALUATED"
+            if technical_failed
+            else ("BLOCKED" if complete else "NOT_REQUESTED")
+        )
         self.write_json(
             "run-result.json",
             {
                 "schema_version": 1,
-                "technical_status": "PASSED",
+                "technical_status": technical_status,
                 "normative_status": "BLOCKED",
                 "normative_complete": False,
                 "normative_approved": 1,
@@ -211,8 +219,8 @@ class VerifyEvidenceTests(unittest.TestCase):
             "aggregate-status.json",
             {
                 "schema_version": 1,
-                "status": "BLOCKED",
-                "technical_status": "PASSED",
+                "status": "FAILED" if technical_failed else "BLOCKED",
+                "technical_status": technical_status,
                 "normative_status": "BLOCKED",
                 "baseline_evidence_status": "VERIFIED_SOURCE_INVENTORY",
                 "gate": {
@@ -269,6 +277,17 @@ class VerifyEvidenceTests(unittest.TestCase):
     def test_inconsistent_execution_summaries_are_rejected(self):
         self.write_json("run-result.json", {"schema_version": 1})
         self.assert_rejected("run result")
+
+    def test_technical_failure_has_exit_one_and_gate_not_evaluated(self):
+        for require_complete in (False, True):
+            with self.subTest(require_complete=require_complete):
+                self.parity["require_complete"] = require_complete
+                self.parity["technical_status"] = "FAILED"
+                self.parity["technical_checks"][0]["status"] = "FAILED"
+                self.parity["exit_code"] = 1
+                self.write_json("parity-report.json", self.parity)
+                result = self.verify(1)
+                self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_missing_normative_case_replaced_by_duplicate_is_rejected(self):
         original = self.parity["normative_cases"]

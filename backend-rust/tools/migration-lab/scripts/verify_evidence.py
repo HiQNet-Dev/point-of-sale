@@ -33,9 +33,12 @@ def verify_execution_summaries(root, parity, baseline):
         fail("run result or aggregate status missing or unreadable")
     if type(parity.get("require_complete")) is not bool:
         fail("run result requires boolean require_complete in parity report")
-    expected_exit = 2 if parity["require_complete"] else 0
+    technical_failed = parity.get("technical_status") != "PASSED" or any(
+        case.get("status") != "PASSED" for case in parity.get("technical_checks", [])
+    )
+    expected_exit = 1 if technical_failed else (2 if parity["require_complete"] else 0)
     if parity.get("exit_code") != expected_exit:
-        fail("run result exit code conflicts with incomplete normative gate")
+        fail("run result exit code conflicts with technical or normative gate")
     expected_run = {
         "schema_version": 1,
         "technical_status": parity["technical_status"],
@@ -58,10 +61,14 @@ def verify_execution_summaries(root, parity, baseline):
         or evidence.get("sha256") != digest
     ):
         fail("run result baseline evidence digest is invalid")
-    gate_status = "BLOCKED" if parity["require_complete"] else "NOT_REQUESTED"
+    gate_status = (
+        "NOT_EVALUATED"
+        if technical_failed
+        else ("BLOCKED" if parity["require_complete"] else "NOT_REQUESTED")
+    )
     expected_aggregate = {
         "schema_version": 1,
-        "status": "BLOCKED",
+        "status": "FAILED" if technical_failed else "BLOCKED",
         "technical_status": parity["technical_status"],
         "normative_status": "BLOCKED",
         "baseline_evidence_status": baseline.get("status"),
@@ -190,10 +197,9 @@ def main():
         fail("normative_complete must remain false")
     if parity.get("exit_code") != args.expect_exit:
         fail(f"expected exit {args.expect_exit}, observed {parity.get('exit_code')}")
-    if parity.get("technical_status") != "PASSED":
-        fail("technical checks are not PASSED")
-    if any(case.get("status") != "PASSED" for case in technical):
-        fail("a technical check failed")
+    technical_failed = parity.get("technical_status") != "PASSED" or any(
+        case.get("status") != "PASSED" for case in technical
+    )
     expected = 41
     if len(technical) != expected:
         fail(f"expected {expected} technical checks, observed {len(technical)}")
