@@ -1,9 +1,30 @@
 # CC-0021 — solicitud de cambio del físico y paridad Free Local v1
 
-**Estado: PROPUESTO, SIN APROBACIÓN. Fecha: 2026-10-28.**
+**Estado: PROPUESTO, SIN ACEPTACIÓN FORMAL. Fecha: 2026-10-28.**
+La dirección funcional D01..D07 fue **aprobada con condiciones** por el titular el
+2026-10-28; las condiciones y el registro están en el [paquete PRE0D-1](rust-0d-approval-package.md) §5.
 Relacionada con [ADR-0021](../01-architecture/adr/0021-frozen-physical-parity-conflicts.md).
 No edita documentos canónicos de Drive ni autoriza DDL, import o producción.
-Titular/aprobador, aceptación y versiones nuevas: **PENDIENTES**.
+Titular/aprobador por decisión, revisores, aceptación formal y versiones nuevas: **PENDIENTES**.
+
+## Versión de aprobación PRE0D-1
+
+El [paquete ejecutivo](rust-0d-approval-package.md) fija la recomendación por
+D01..D07, alternativas, impacto y criterios; [D02](rust-d02-approval-contract.md)
+responde las 21 Q técnicas, [D03..D06](rust-valuation-approval-contract.md) fija
+MWAC-DEC1 y la operación pending, [D07](rust-d07-approval-contract.md) completa
+mapping/ausencias. Son anexos de esta solicitud, **no aprobaciones**. Sus deltas
+finales concretan las filas históricas siguientes; no quedan autorizados por
+formular una respuesta técnica. Prevalece F4–21 vigente hasta aceptación y
+actualización canónica. Las preguntas abiertas se reducen a aceptación de negocio,
+responsables/configuración real y gobierno Git, no a decisiones técnicas implícitas.
+
+Alcance adicional explícito CC21-02/04/05: asignación fiscal versionada APPLY/STOP,
+followup económico append-only, evidencia local, continuidad física pending sin
+valor, escala/cota DEC1, refund acumulativo, cancelación futura, retiro de FK
+inversa redundante, rechazo desconocido nullable y JTI forense sin sesión.
+No se solicitan siete aceptaciones por arrastre ni una autorización productiva.
+Los cambios exactos por F1–10/11/12 y F4–13/15/21 están en §4 del paquete.
 
 ## 1. Motivo y separación de decisiones
 
@@ -32,15 +53,15 @@ y aprobación propia. No se fija hoy un nuevo conteo total del modelo.
 
 ## 3. Decisiones explícitas que necesita tomar el titular
 
-| Decisión                   | Recomendación del agente, NO ADOPTADA                                                                                                | Registro exigido                                                                                                                                                                                                                               |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D01 Inventario             | Reconocer 82 fichas comprobadas sin entidad 83 identificada; confirmar causa editorial con autor                                     | Errata confirmada o nueva ficha; versión/fecha.                                                                                                                                                                                                |
-| D02 Catálogos              | PriceBook/TaxProfile/ExpenseCategory organization-owned; CostingPolicy branch-wide versionada aplicada por item; Plan global Control | Resolver Q-PB/Q-TP/Q-CP/Q-EC/Q-PL, lifecycle, límites y selección tributaria antes de DDL.                                                                                                                                                     |
-| D03 Historia económica     | B+D de ADR: NULL y evidencia faltante explícitos, no valor estimado sin fuente                                                       | Nulabilidad, enums, procedencia, campos/relaciones y reglas de import.                                                                                                                                                                         |
-| D04 Operación nueva        | PO pactado opcional; receipt nueva requiere base económica documentada                                                               | Fuente admisible del costo, tratamiento ante dato faltante y aceptación de diferencia Java/Rust.                                                                                                                                               |
-| D05 Stock legado sin valor | No promedio/margen confirmado sobre cadena incompleta; regularización autorizada como hechos nuevos                                  | Decidir operación permitida/bloqueada/provisional y UX/reportes, sin dependencia remota ni fallback.                                                                                                                                           |
-| D06 Cálculo                | Contrato exacto versionado, sin truncamiento; política Q=0, negativos/residuo y costo tardío                                         | Precisión/rango/rounding, vectores, política y orden causal acreditado. Java no tiene secuencia total: fecha/UUID no bastan; aprobar detección y tratamiento de reconstrucción ambigua, con concurrencia y timestamps coincidentes/invertidos. |
-| D07 Snapshots ausentes     | Conservar originales; ausencia tipada/procedencia, nunca reconstrucción silenciosa                                                   | Rechazos/motivos/facturas/impuestos no registrados: convención y límites de afirmación.                                                                                                                                                        |
+| Decisión                   | Recomendación del agente, NO ADOPTADA                                                                                                | Registro exigido                                                                                                                                                                   |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D01 Inventario             | Reconocer 82 fichas comprobadas sin entidad 83 identificada; confirmar causa editorial con autor                                     | Errata confirmada o nueva ficha; versión/fecha.                                                                                                                                    |
+| D02 Catálogos              | PriceBook/TaxProfile/ExpenseCategory organization-owned; CostingPolicy branch-wide versionada aplicada por item; Plan global Control | Aceptar/ajustar las 21 respuestas concretas de D02; sus lifecycle, límites y selección tributaria son P hasta aprobación, antes de DDL.                                            |
+| D03 Historia económica     | B+D de ADR: NULL y evidencia faltante explícitos, no valor estimado sin fuente                                                       | Nulabilidad, enums, procedencia, campos/relaciones y reglas de import.                                                                                                             |
+| D04 Operación nueva        | PO pactado opcional; receipt nueva requiere base económica documentada                                                               | Fuente admisible del costo, tratamiento ante dato faltante y aceptación de diferencia Java/Rust.                                                                                   |
+| D05 Stock legado sin valor | No promedio/margen confirmado sobre cadena incompleta; regularización autorizada como hechos nuevos                                  | Aceptar/ajustar matriz D05: permitir físico pending autorizado, negar costo/margen confirmado sin base, STRICT íntegro y retorno vendible afectado rechazado; sin red obligatoria. |
+| D06 Cálculo                | Contrato exacto versionado, sin truncamiento; política Q=0, negativos/residuo y costo tardío                                         | Aceptar/ajustar MWAC-DEC1, escalas/rangos/HE/cota y 16 vectores. Secuencia causal nueva; historia ambigua permanece pending, sin elegir fecha/UUID como causalidad.                |
+| D07 Snapshots ausentes     | Conservar originales; ausencia tipada/procedencia, nunca reconstrucción silenciosa                                                   | Rechazos/motivos/facturas/impuestos no registrados: convención y límites de afirmación.                                                                                            |
 
 Una aprobación parcial debe indicar sus límites; no habilita materializar el
 resto. La aceptación del ADR no equivale a aprobar AUTHG-02, IMP-01 ni paridad.

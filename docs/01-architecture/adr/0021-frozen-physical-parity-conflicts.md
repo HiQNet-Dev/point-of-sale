@@ -2,8 +2,11 @@
 
 ## Estado y control
 
-**PROPOSED / PROPUESTO SIN APROBACIÓN.** Creado: 2026-10-27.
-Revisión 0c: 2026-10-28. **Aprobador, fecha de aceptación y baseline nuevo: pendientes.**
+**PROPOSED / SIN ACEPTACIÓN FORMAL.** Creado: 2026-10-27.
+Revisión de aprobación **PRE0D-1: 2026-10-28**. **La dirección funcional D01..D07
+fue aprobada con condiciones por el titular el 2026-10-28**, pero el ADR **no** está
+ACCEPTED: aprobador por decisión, revisores, fecha de cierre y baseline canónico
+nuevo siguen pendientes. No se infiere aceptación de la orden de preparar 0d.
 
 No modifica F4–21, los documentos canónicos, migraciones, API ni autoridad
 productiva. La recomendación siguiente no equivale a aceptación. F4–21 sigue
@@ -14,6 +17,31 @@ siendo la autoridad; Java conserva la operación real.
 - Rama 0c: `feat/backend/rust-physical-resolution`.
 - [Reconciliación Git](../../05-development/rust-increment-0c-git.md): los seis
   commits anteriores ya están en `dev`, con CI roja. No volver a integrarlos.
+
+## Versión sometida a aprobación PRE0D-1
+
+Base reconciliada: `origin/dev@329c0984722e8339f3e3b29497960d426ac2c43c`;
+los dos commits 0c ya están publicados. Rama nueva `feat/backend/rust-0d-readiness`.
+El [paquete ejecutivo](../../05-development/rust-0d-approval-package.md) contiene
+matriz D01..D07, alternativas, impactos, estado remoto/CI y el registro de la
+dirección aprobada con condiciones.
+
+Contratos finales **propuestos**, que concretan o reemplazan candidatos parciales
+0c sin cambiar el freeze vigente:
+
+- D01: corrección editorial a 82 fichas del inventario comprobado, no entidad 83.
+- D02: [21 respuestas de catálogos](../../05-development/rust-d02-approval-contract.md),
+  propiedad, lifecycle, FK/índices, asignación fiscal APPLY/STOP, refund acumulativo.
+- D03..D06: [MWAC-DEC1](../../05-development/rust-valuation-approval-contract.md),
+  evidencia local de receipt, continuidad física pending, escala18/HE/cota,
+  causalidad y regularizaciones. Único contrato económico propuesto final.
+- D07: [mapping y ausencias](../../05-development/rust-d07-approval-contract.md),
+  47/47 compras y 12/12 audit, FK de ledger sin ciclo y sesiones Java no importadas.
+
+Las tablas/resúmenes 0c de §3.1–3.2 siguientes son antecedentes parciales; los
+anexos PRE0D-1 especifican los nombres/campos/estados finales propuestos. No hay
+migración aprobada por publicar un anexo. Si no se acepta el paquete completo,
+registrar alcance por D y mantener bloqueadas sus dependencias.
 
 ## 1. Contexto y evidencia
 
@@ -99,11 +127,13 @@ Evidencia decisiva AS-IS:
    original. No cambia receipt, snapshot ni delta físico; no duplica stock ni
    afirma que un costo tardío se conocía en la fecha original. Reconciliar cadena
    de consumo/residuales mediante asientos correlacionados, no reescritura.
-8. **Operación sobre saldo sin valorar:** recomendar no confirmar costeo/margen de
-   salidas hasta resolver el valor; cualquier operación provisional requiere la
-   política explícita de F4–13 y su representación aprobada. Este ADR no habilita
-   ni bloquea unilateralmente checkout Free. Ese comportamiento es una aprobación
-   específica requerida en CC-0021, no una dependencia de licencias o red.
+8. **Operación sobre saldo sin valorar:** PRE0D-1 recomienda permitir continuidad
+   física autorizada sobre legado íntegro pending, con seguimiento atómico y sin
+   costo/margen confirmado. STRICT sigue rechazando insuficiencia; negativos y
+   estimaciones requieren guards/evidencia explícitos. RESELLABLE afectado por
+   déficit/pending se deniega sin efectos hasta un contrato específico. Policy
+   puede estar ausente solo en seguimiento físico pending sin número económico.
+   Esto requiere aceptación CC-0021: no habilita hoy checkout ni cambia el freeze.
 
 ### 3.1 Contrato de campos propuesto para discusión
 
@@ -152,8 +182,10 @@ columna de estado; su traducción propuesta a POSTED no significa valor CONFIRME
   nueva **sí requiere aprobación**, físico reconciliado y actualización de
   F1–10/F1–12/F1–11 y referencias de F4–21. Ver
   [CC-0021](../../05-development/rust-adr0021-change-control.md).
-- El diccionario pendiente es una propuesta revisable, no cinco migraciones listas.
-  La selección tributaria producto/perfil y el scope de política requieren cierre.
+- El diccionario y sus 21 preguntas tienen respuestas técnicas recomendadas en
+  el anexo D02; siguen pendientes de aprobación, no son cinco migraciones listas.
+  La relación fiscal y seguimiento económico adicionales se incluyen expresamente
+  en el cambio solicitado, no se agregan por inferencia.
 - No afirmar que aceptar cinco padres produce necesariamente el modelo definitivo:
   aritméticamente daría 87 fichas (63/9/15) sin otros cambios, pero puede requerir
   relaciones/representaciones adicionales. No sustituir 83 por otro número meta.
@@ -194,7 +226,7 @@ columna de estado; su traducción propuesta a POSTED no significa valor CONFIRME
 Hoy no hay DDL ni datos de este ADR que revertir. Se puede descartar únicamente
 la propuesta local mediante un cambio revisado, conservando el historial. Java
 sigue autoridad; no hay doble escritura. No revertir por iniciativa propia los
-seis commits publicados ni modificar una migration aplicada.
+ocho commits publicados del baseline reconciliado ni modificar una migration aplicada.
 
 Tras aprobación: baseline documental versionado y huellas, snapshot sintético
 N-1, backup consistente, migraciones aditivas/inmutables y restore ensayado antes

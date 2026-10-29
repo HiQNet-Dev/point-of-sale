@@ -5,6 +5,13 @@ ADR-0021 permanece **PROPOSED**, sin aceptación del titular. Se preparó un mod
 revisable y control de cambios, no un esquema completo aprobado. No hay datos
 reales, cutover, doble escritura, endpoints nuevos, Pro ni retirada de Java.
 
+> **Seguimiento PRE0D-1:** después del estado local relatado aquí,
+> `43d9909` y `329c098` quedaron en `origin/dev`. La CI real del último es
+> [40775256216](https://github.com/HiQNet-Dev/point-of-sale/actions/runs/40775256216),
+> fallida solo en gate normativo Rust y CI Gate; Java/React/Compose correctos,
+> E2E omitido. Este informe conserva la cronología de 0c, no certifica ausencia
+> de publicación actual. Estado y propuesta final: [paquete PRE0D-1](rust-0d-approval-package.md).
+
 ## 1. GitHub, seis commits y baseline
 
 La [reconciliación Git/CI](rust-increment-0c-git.md) documenta lecturas API,
