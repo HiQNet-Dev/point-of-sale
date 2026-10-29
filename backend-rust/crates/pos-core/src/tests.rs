@@ -262,6 +262,9 @@ fn organization_rejects_invalid_codes_timezones_currencies_and_locales() {
             Err(DomainError::InvalidTimezone)
         );
     }
+    for timezone in ["+01:00", "UTC+01:00", "GMT+01:00", "UT+01:00"] {
+        assert!(IanaTimezone::parse(timezone).is_ok(), "timezone {timezone}");
+    }
     for currency in ["", "US", "USDD", "XYZ", "12$"] {
         assert_eq!(
             OrganizationCurrency::parse(currency),
@@ -271,6 +274,7 @@ fn organization_rejects_invalid_codes_timezones_currencies_and_locales() {
     for locale in ["", "not_a_locale", "x".repeat(21).as_str()] {
         assert_eq!(LocaleTag::parse(locale), Err(DomainError::InvalidLocale));
     }
+    assert!(LocaleTag::parse("en-u-ca-gregory").is_ok());
 }
 
 #[test]
@@ -299,6 +303,47 @@ fn organization_patch_updates_only_material_fields_and_enforces_revision() -> Re
         organization.apply_patch(Revision::INITIAL, OrganizationPatch::default()),
         Err(DomainError::VersionMismatch)
     );
+    Ok(())
+}
+
+#[test]
+fn patch_overflow_preserves_organization_and_branch_state() -> Result<(), DomainError> {
+    let maximum = Revision::try_new(Revision::MAX_VALUE)?;
+    let mut organization = organization()?;
+    organization.set_revision_for_test(maximum);
+    let organization_before = organization.clone();
+    assert_eq!(
+        organization.apply_patch(
+            maximum,
+            OrganizationPatch {
+                name: Some(DisplayName::parse("No debe persistir")?),
+                ..OrganizationPatch::default()
+            },
+        ),
+        Err(DomainError::VersionOverflow)
+    );
+    assert_eq!(organization, organization_before);
+
+    let mut branch = Branch::create(
+        BranchId::new(Uuid::from_u128(2)),
+        organization.id(),
+        DisplayName::parse("Sucursal")?,
+        BusinessCode::parse("sucursal")?,
+        None,
+    );
+    branch.set_revision_for_test(maximum);
+    let branch_before = branch.clone();
+    assert_eq!(
+        branch.apply_patch(
+            maximum,
+            BranchPatch {
+                status: Some(BranchStatus::Inactive),
+                ..BranchPatch::default()
+            },
+        ),
+        Err(DomainError::VersionOverflow)
+    );
+    assert_eq!(branch, branch_before);
     Ok(())
 }
 
@@ -335,7 +380,7 @@ fn branch_inherits_timezone_and_cannot_change_owner_or_code() -> Result<(), Doma
     assert_eq!(branch.effective_timezone(&inherited), &override_timezone);
     assert_eq!(branch.revision().value(), 1);
     let cleared = branch.apply_patch(
-        Revision::new(1),
+        Revision::try_new(1)?,
         BranchPatch {
             timezone: TimezonePatch::ClearToInherited,
             ..BranchPatch::default()

@@ -5,9 +5,10 @@
 
 use std::{fmt, str::FromStr};
 
+use chrono::FixedOffset;
 use chrono_tz::Tz;
+use icu_locale_core::Locale;
 use iso_currency::Currency as IsoCurrency;
-use unic_langid::LanguageIdentifier;
 use uuid::Uuid;
 
 /// Error de una invariante de Organization o Branch, sin incluir entradas crudas.
@@ -124,16 +125,26 @@ impl BusinessCode {
     }
 }
 
-/// Zona horaria IANA validada contra el catálogo embebido, no un string libre.
+/// ZoneId Java validada: zona TZDB nombrada u offset fijo, no un string libre.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IanaTimezone {
     value: String,
 }
 
 impl IanaTimezone {
-    /// Valida una zona IANA no vacía de hasta 64 bytes UTF-8.
+    /// Valida un `ZoneId` Java no vacío de hasta 64 bytes UTF-8.
+    ///
+    /// Acepta zonas TZDB nombradas y offsets fijos (`+01:00`, `UTC+01:00`,
+    /// `GMT+01:00` o `UT+01:00`) que `ZoneId.of` también admite.
     pub fn parse(value: &str) -> Result<Self, DomainError> {
-        if value.is_empty() || value.len() > 64 || Tz::from_str(value).is_err() {
+        let named_zone = Tz::from_str(value).is_ok();
+        let fixed_offset = FixedOffset::from_str(value).is_ok()
+            || ["UTC", "GMT", "UT"].iter().any(|prefix| {
+                value
+                    .strip_prefix(prefix)
+                    .is_some_and(|offset| FixedOffset::from_str(offset).is_ok())
+            });
+        if value.is_empty() || value.len() > 64 || (!named_zone && !fixed_offset) {
             return Err(DomainError::InvalidTimezone);
         }
         Ok(Self {
@@ -180,7 +191,7 @@ impl LocaleTag {
         if value.is_empty() || value.len() > 20 {
             return Err(DomainError::InvalidLocale);
         }
-        let parsed = LanguageIdentifier::from_str(value).map_err(|_| DomainError::InvalidLocale)?;
+        let parsed = Locale::try_from_str(value).map_err(|_| DomainError::InvalidLocale)?;
         if !parsed.to_string().eq_ignore_ascii_case(value) {
             return Err(DomainError::InvalidLocale);
         }
@@ -222,9 +233,15 @@ impl Revision {
     /// Revisión inicial de un agregado recién creado.
     pub const INITIAL: Self = Self(0);
 
-    /// Construye una revisión recuperada de persistencia.
-    pub const fn new(value: u64) -> Self {
-        Self(value)
+    /// Mayor revisión compatible con `BIGINT` positivo de Java/PostgreSQL.
+    pub const MAX_VALUE: u64 = i64::MAX as u64;
+
+    /// Construye una revisión recuperada de persistencia compatible con Java.
+    pub fn try_new(value: u64) -> Result<Self, DomainError> {
+        if value > Self::MAX_VALUE {
+            return Err(DomainError::VersionOverflow);
+        }
+        Ok(Self(value))
     }
 
     /// Devuelve el valor para una frontera de aplicación o almacenamiento.
@@ -233,10 +250,7 @@ impl Revision {
     }
 
     fn next(self) -> Result<Self, DomainError> {
-        self.0
-            .checked_add(1)
-            .map(Self)
-            .ok_or(DomainError::VersionOverflow)
+        Self::try_new(self.0.checked_add(1).ok_or(DomainError::VersionOverflow)?)
     }
 }
 
@@ -319,20 +333,32 @@ impl Organization {
         if self.revision != expected_revision {
             return Err(DomainError::VersionMismatch);
         }
+        let mut candidate = self.clone();
         let mut changed = Vec::new();
-        apply_if_changed(&mut self.name, patch.name, "name", &mut changed);
-        apply_if_changed(&mut self.timezone, patch.timezone, "timezone", &mut changed);
-        apply_if_changed(&mut self.currency, patch.currency, "currency", &mut changed);
-        apply_if_changed(&mut self.locale, patch.locale, "locale", &mut changed);
-        apply_if_changed(&mut self.status, patch.status, "status", &mut changed);
+        apply_if_changed(&mut candidate.name, patch.name, "name", &mut changed);
         apply_if_changed(
-            &mut self.inventory_negative_stock_policy,
+            &mut candidate.timezone,
+            patch.timezone,
+            "timezone",
+            &mut changed,
+        );
+        apply_if_changed(
+            &mut candidate.currency,
+            patch.currency,
+            "currency",
+            &mut changed,
+        );
+        apply_if_changed(&mut candidate.locale, patch.locale, "locale", &mut changed);
+        apply_if_changed(&mut candidate.status, patch.status, "status", &mut changed);
+        apply_if_changed(
+            &mut candidate.inventory_negative_stock_policy,
             patch.inventory_negative_stock_policy,
             "inventoryNegativeStockPolicy",
             &mut changed,
         );
         if !changed.is_empty() {
-            self.revision = self.revision.next()?;
+            candidate.revision = candidate.revision.next()?;
+            *self = candidate;
         }
         Ok(ChangedFields(changed))
     }
@@ -376,6 +402,11 @@ impl Organization {
     /// Indica si el estado es operativo; autorización sigue siendo externa.
     pub const fn is_active(&self) -> bool {
         matches!(self.status, OrganizationStatus::Active)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_revision_for_test(&mut self, revision: Revision) {
+        self.revision = revision;
     }
 }
 

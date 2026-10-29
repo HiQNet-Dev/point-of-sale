@@ -93,38 +93,43 @@ impl Branch {
         if self.revision != expected_revision {
             return Err(DomainError::VersionMismatch);
         }
+        let mut candidate = self.clone();
         let mut changed = Vec::new();
         if let Some(name) = patch.name
-            && self.name != name
+            && candidate.name != name
         {
-            self.name = name;
+            candidate.name = name;
             changed.push("name");
         }
         match patch.timezone {
             TimezonePatch::Keep => {}
-            TimezonePatch::Set(timezone) if self.timezone_override.as_ref() != Some(&timezone) => {
-                self.timezone_override = Some(timezone);
+            TimezonePatch::Set(timezone)
+                if candidate.timezone_override.as_ref() != Some(&timezone) =>
+            {
+                candidate.timezone_override = Some(timezone);
                 changed.push("timezone");
             }
-            TimezonePatch::ClearToInherited if self.timezone_override.is_some() => {
-                self.timezone_override = None;
+            TimezonePatch::ClearToInherited if candidate.timezone_override.is_some() => {
+                candidate.timezone_override = None;
                 changed.push("timezone");
             }
             TimezonePatch::Set(_) | TimezonePatch::ClearToInherited => {}
         }
         if let Some(status) = patch.status
-            && self.status != status
+            && candidate.status != status
         {
-            self.status = status;
+            candidate.status = status;
             changed.push("status");
         }
         if !changed.is_empty() {
-            self.revision = Revision::new(
-                self.revision
+            candidate.revision = Revision::try_new(
+                candidate
+                    .revision
                     .value()
                     .checked_add(1)
                     .ok_or(DomainError::VersionOverflow)?,
-            );
+            )?;
+            *self = candidate;
         }
         Ok(ChangedFields(changed))
     }
@@ -160,5 +165,10 @@ impl Branch {
     /// Indica si está ACTIVE; permisos y excepciones de recuperación son externos.
     pub const fn is_active(&self) -> bool {
         matches!(self.status, BranchStatus::Active)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_revision_for_test(&mut self, revision: Revision) {
+        self.revision = revision;
     }
 }

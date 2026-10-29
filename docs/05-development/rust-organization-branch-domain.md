@@ -5,11 +5,11 @@ persistencia, casos de uso, RBAC, HTTP, React ni sustitución del backend Java.
 
 ## Alcance materializado
 
-| Componente | Implementado en Rust | Fuera de este incremento |
-| --- | --- | --- |
+| Componente   | Implementado en Rust                                                                                         | Fuera de este incremento                                                            |
+| ------------ | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
 | Organization | UUID recibido, código inmutable, nombre, IANA timezone, ISO 4217, BCP-47, estado, política legada y revisión | Generación UUID, reloj/timestamps, unicidad, CAS SQL, auditoría, autorización y API |
-| Branch | UUID/owner inmutables, código/nombre, estado, timezone override e herencia, revisión | Lookup scopeado, unicidad `(organization_id, code)`, auditoría, autorización y API |
-| Quantity | Se conserva `NUMERIC(19,6)` exacto en `i128` dentro del dominio | Codec/persistencia SQLite y reglas MWAC-DEC1 |
+| Branch       | UUID/owner inmutables, código/nombre, estado, timezone override e herencia, revisión                         | Lookup scopeado, unicidad `(organization_id, code)`, auditoría, autorización y API  |
+| Quantity     | Se conserva `NUMERIC(19,6)` exacto en `i128` dentro del dominio                                              | Codec/persistencia SQLite y reglas MWAC-DEC1                                        |
 
 Los módulos son [`organization.rs`](../../backend-rust/crates/pos-core/src/organization.rs)
 y [`branch.rs`](../../backend-rust/crates/pos-core/src/branch.rs). No dependen de
@@ -17,18 +17,18 @@ SQLx, SQLite, PostgreSQL, Axum, Tauri, Spring ni JPA.
 
 ## Paridad Java → Rust comprobada
 
-| Regla AS-IS | Fuente Java | Rust 1A | Prueba Rust |
-| --- | --- | --- | --- |
-| Nombre trim, no vacío, máximo 120 | `Organization.java`, `Branch.java` | `DisplayName` | creación y patches |
-| Slug minúsculo máximo 64 e inmutable | `OrganizationService`, `BranchService` | `BusinessCode`; sin mutador | vectores inválidos y acceso inmutable |
-| Zona IANA válida | `ZoneId.of` | `chrono-tz` embebido, `IanaTimezone` | `Not/AZone` rechazado |
-| Moneda ISO 4217 válida y mayúsculas | `Currency.getInstance` | `iso_currency`, `OrganizationCurrency` | MXN válido, XYZ rechazado |
-| Locale BCP-47 | `Locale.forLanguageTag` | `unic-langid`, `LocaleTag` | locale inválido rechazado |
-| Defaults Organization | `Organization.create` | `ACTIVE` / `STRICT` | creación |
-| Estado legacy stock negativo | `InventoryNegativeStockPolicy` | `STRICT` / `ALLOW_NEGATIVE` | patch y no se agregan valores nuevos |
-| Patch no-op y revisión | servicios Java + `@Version` | `apply_patch` solo incrementa ante cambio | no-op, modificación y versión stale |
-| Owner y código Branch inmutables | `Branch` | campos sin mutador | construcción/patch |
-| Timezone Branch ternaria | `PatchField` Java | `Keep` / `Set` / `ClearToInherited` | override y retorno a herencia |
+| Regla AS-IS                          | Fuente Java                            | Rust 1A                                                   | Prueba Rust                                                 |
+| ------------------------------------ | -------------------------------------- | --------------------------------------------------------- | ----------------------------------------------------------- |
+| Nombre trim, no vacío, máximo 120    | `Organization.java`, `Branch.java`     | `DisplayName`                                             | creación y patches                                          |
+| Slug minúsculo máximo 64 e inmutable | `OrganizationService`, `BranchService` | `BusinessCode`; sin mutador                               | vectores inválidos y acceso inmutable                       |
+| `ZoneId` válida                      | `ZoneId.of`                            | TZDB `chrono-tz` + offsets fijos `chrono`, `IanaTimezone` | inválida rechazada; `+01:00` y `UTC/GMT/UT+01:00` aceptadas |
+| Moneda ISO 4217 válida y mayúsculas  | `Currency.getInstance`                 | `iso_currency`, `OrganizationCurrency`                    | MXN válido, XYZ rechazado                                   |
+| Locale BCP-47 con extensiones        | `Locale.forLanguageTag`                | `icu_locale_core::Locale`, `LocaleTag`                    | inválido rechazado; `en-u-ca-gregory` aceptado              |
+| Defaults Organization                | `Organization.create`                  | `ACTIVE` / `STRICT`                                       | creación                                                    |
+| Estado legacy stock negativo         | `InventoryNegativeStockPolicy`         | `STRICT` / `ALLOW_NEGATIVE`                               | patch y no se agregan valores nuevos                        |
+| Patch no-op y revisión               | servicios Java + `@Version`            | `apply_patch` solo incrementa ante cambio                 | no-op, modificación y versión stale                         |
+| Owner y código Branch inmutables     | `Branch`                               | campos sin mutador                                        | construcción/patch                                          |
+| Timezone Branch ternaria             | `PatchField` Java                      | `Keep` / `Set` / `ClearToInherited`                       | override y retorno a herencia                               |
 
 La diferencia deliberada es que Java asigna UUID/timestamps mediante `UUID.randomUUID`
 y callbacks JPA; Rust recibe UUID de la aplicación y no recibe un reloj todavía. La
@@ -58,12 +58,12 @@ paridad de persistencia, RBAC, aislamiento por query, auditoría ni contratos JS
 
 ## Dependencias justificadas
 
-| Dependencia | Uso aislado |
-| --- | --- |
-| `uuid` | Identidades estables proporcionadas por la aplicación |
-| `chrono-tz` | Validación IANA sin I/O ni una lista artesanal |
-| `iso_currency` | Validación ISO 4217 equivalente al catálogo Java |
-| `unic-langid` | Validación BCP-47 de locales |
+| Dependencia            | Uso aislado                                                                |
+| ---------------------- | -------------------------------------------------------------------------- |
+| `uuid`                 | Identidades estables proporcionadas por la aplicación                      |
+| `chrono-tz` + `chrono` | Validación TZDB y offsets fijos de `ZoneId` sin I/O ni una lista artesanal |
+| `iso_currency`         | Validación ISO 4217 equivalente al catálogo Java                           |
+| `icu_locale_core`      | Validación BCP-47, incluidas extensiones de locale                         |
 
 ADR-0021 y CC-0021 no se modifican: la política de stock negativa conserva únicamente
 los valores Java y no adopta pending, retornos ni costeo propuesto.
