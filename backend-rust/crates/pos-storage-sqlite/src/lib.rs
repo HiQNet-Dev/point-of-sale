@@ -2,6 +2,9 @@
 
 use std::{path::Path, time::Duration};
 
+/// Adaptador de identidad y permisos exclusivo de laboratorio (tablas `*_lab`).
+pub mod identity_lab;
+
 use pos_core::organization_branch::{
     ApplicationError, AuditEvent, Authorization, Branch, BranchPatch, BusinessCode, DisplayName,
     DomainError, EntityId, IdentityGenerator, IsoCurrency, LocaleTag, NegativeStockPolicy,
@@ -1009,5 +1012,7 @@ fn storage_error(error: OrganizationBranchStorageError) -> ApplicationError {
     }
 }
 
+#[cfg(test)]
+mod identity_lab_tests;
 #[cfg(test)]
 mod tests;
