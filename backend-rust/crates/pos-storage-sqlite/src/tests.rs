@@ -5,6 +5,7 @@
 use super::*;
 use pos_core::{
     audit::AuditMetadata,
+    identity::{NormalizedEmail, SessionHandleHash},
     organization_branch::{
         ApplicationError, AuditEvent, Authorization, Branch, BranchPatch, BusinessCode,
         DisplayName, EntityId, IdentityGenerator, IsoCurrency, LocaleTag, NewBranch,
@@ -563,6 +564,88 @@ async fn concurrent_cas_allows_one_organization_and_branch_writer_per_revision()
             .into_iter()
             .filter(|outcome| *outcome == CasOutcome::Conflict)
             .count(),
+        1
+    );
+    first_pool.close().await;
+    second_pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn local_identity_fixture_enforces_owner_uniqueness_session_cas_and_revocation()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("identity-fixture.sqlite");
+    let first_pool = open(&path, Duration::from_millis(75)).await?;
+    migrate(&first_pool).await?;
+    sqlx::query("CREATE TABLE pos_user_fixture (id TEXT PRIMARY KEY NOT NULL, organization_id TEXT NOT NULL REFERENCES organization(id), email TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('ACTIVE', 'INACTIVE')), version INTEGER NOT NULL CHECK (version >= 0), UNIQUE (id, organization_id), UNIQUE (organization_id, email)) STRICT")
+        .execute(&first_pool)
+        .await?;
+    sqlx::query("CREATE TABLE local_session_fixture (id TEXT PRIMARY KEY NOT NULL, organization_id TEXT NOT NULL, user_id TEXT NOT NULL, handle_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, revoked_at INTEGER, version INTEGER NOT NULL CHECK (version >= 0), CHECK (expires_at > created_at), FOREIGN KEY (user_id, organization_id) REFERENCES pos_user_fixture(id, organization_id)) STRICT")
+        .execute(&first_pool)
+        .await?;
+    let organization_a = organization("00000000-0000-0000-0000-000000000080", "identity-a");
+    let organization_b = organization("00000000-0000-0000-0000-000000000081", "identity-b");
+    let store = SqliteOrganizationBranchStore::new(first_pool.clone());
+    store
+        .insert_organization(&organization_a, TIME, TIME)
+        .await?;
+    store
+        .insert_organization(&organization_b, TIME, TIME)
+        .await?;
+    let email = NormalizedEmail::new(" Admin@Example.test ")?;
+    sqlx::query("INSERT INTO pos_user_fixture (id, organization_id, email, status, version) VALUES (?, ?, ?, 'ACTIVE', 0)")
+        .bind("00000000-0000-0000-0000-000000000082")
+        .bind(organization_a.id().as_str())
+        .bind(email.as_str())
+        .execute(&first_pool)
+        .await?;
+    // Misma dirección está permitida en otro owner, como en Java V3/V4.
+    sqlx::query("INSERT INTO pos_user_fixture (id, organization_id, email, status, version) VALUES (?, ?, ?, 'ACTIVE', 0)")
+        .bind("00000000-0000-0000-0000-000000000083")
+        .bind(organization_b.id().as_str())
+        .bind(email.as_str())
+        .execute(&first_pool)
+        .await?;
+    assert!(sqlx::query("INSERT INTO pos_user_fixture (id, organization_id, email, status, version) VALUES (?, ?, ?, 'ACTIVE', 0)")
+        .bind("00000000-0000-0000-0000-000000000084")
+        .bind(organization_a.id().as_str())
+        .bind(email.as_str())
+        .execute(&first_pool)
+        .await
+        .is_err());
+    let _handle =
+        SessionHandleHash::new("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789")?;
+    sqlx::query("INSERT INTO local_session_fixture (id, organization_id, user_id, handle_hash, created_at, expires_at, version) VALUES (?, ?, ?, ?, 10, 100, 0)")
+        .bind("00000000-0000-0000-0000-000000000085")
+        .bind(organization_a.id().as_str())
+        .bind("00000000-0000-0000-0000-000000000082")
+        .bind("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789")
+        .execute(&first_pool)
+        .await?;
+    assert!(sqlx::query("INSERT INTO local_session_fixture (id, organization_id, user_id, handle_hash, created_at, expires_at, version) VALUES (?, ?, ?, ?, 10, 100, 0)")
+        .bind("00000000-0000-0000-0000-000000000086")
+        .bind(organization_b.id().as_str())
+        .bind("00000000-0000-0000-0000-000000000082")
+        .bind("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+        .execute(&first_pool)
+        .await
+        .is_err());
+    let second_pool = open(&path, Duration::from_millis(75)).await?;
+    let session_id = "00000000-0000-0000-0000-000000000085";
+    let first = sqlx::query("UPDATE local_session_fixture SET revoked_at = 20, version = version + 1 WHERE id = ? AND version = 0")
+        .bind(session_id)
+        .execute(&first_pool);
+    let second = sqlx::query("UPDATE local_session_fixture SET revoked_at = 20, version = version + 1 WHERE id = ? AND version = 0")
+        .bind(session_id)
+        .execute(&second_pool);
+    let (first, second) = tokio::join!(first, second);
+    assert_eq!(first?.rows_affected() + second?.rows_affected(), 1);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT version FROM local_session_fixture WHERE id = ?")
+            .bind(session_id)
+            .fetch_one(&first_pool)
+            .await?,
         1
     );
     first_pool.close().await;
