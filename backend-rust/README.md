@@ -128,10 +128,17 @@ no cero. Un checkpoint **no es un backup**.
   [`rust-foundation.md`](../docs/05-development/rust-foundation.md).
 - Los roots PG no se aplican automáticamente. Requieren bases efímeras diferentes,
   roles y permisos de laboratorio, nunca credenciales/URLs productivas.
-- Organization/Branch disponen de un adaptador SQLite y UoW **experimental**;
-  no hay auditoría productiva, RBAC DB-authoritative, importador, checkout,
+- Organization/Branch disponen de un adaptador SQLite y UoW **experimental**.
+  Las mutaciones auditables usan `BEGIN IMMEDIATE` dentro de un
+  `sqlx::Transaction` RAII: cancelación/Drop encola rollback y el pool no
+  reutiliza la conexión hasta procesarlo. Se prueban lock entre pools, WAL reader,
+  CAS concurrente, rollback y fallo de commit sobre SQLite real; el detalle está
+  en [`rust-increment-1d.md`](../docs/05-development/rust-increment-1d.md).
+- No hay auditoría productiva, RBAC DB-authoritative, importador, checkout,
   outbox, cifrado de backups, sesiones ni transición BCrypt/Argon2id. Las tablas
-  actuales no habilitan operar en producción.
+  actuales no habilitan operar en producción. La ficha Local de auditoría es una
+  propuesta sin DDL en
+  [`rust-local-audit-event-proposal.md`](../docs/05-development/rust-local-audit-event-proposal.md).
 
 `MoneyMinor` usa `i64` firmado y suma checked con moneda explícita. El importador
 **primitivo**, no el importador Java, convierte strings decimales solo si la
