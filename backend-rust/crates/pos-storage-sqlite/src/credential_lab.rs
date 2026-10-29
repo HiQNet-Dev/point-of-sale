@@ -1,23 +1,36 @@
 //! Transición de credenciales **de laboratorio**: verificación BCrypt y rehash
-//! Argon2id sobre la conexión de una unidad de trabajo.
+//! Argon2id con sección crítica mínima.
 //!
-//! No es autenticación productiva: no emite sesiones, no entrega handles y no
-//! registra auditoría por sí mismo. El llamador es responsable de insertar el
-//! evento de auditoría en la **misma** conexión y de confirmar un solo commit.
+//! # Flujo
+//!
+//! ```text
+//! snapshot (lectura corta)
+//!   -> verificación criptográfica fuera de la transacción (spawn_blocking)
+//!   -> BEGIN IMMEDIATE
+//!        relectura + validación del snapshot
+//!        mutación con CAS sobre credential_version
+//!        auditoría requerida
+//!      COMMIT
+//! ```
+//!
+//! Ninguna transición se anuncia como persistida si el CAS no confirmó la fila.
+//! No es autenticación productiva: no emite sesiones ni entrega handles.
+
+use std::future::Future;
 
 use pos_core::{
     identity::{
         CredentialAlgorithm, CredentialKind, CredentialParameters, CredentialState, IdentityError,
-        LocalCredential, LockoutPolicy, SecretHash, UtcSeconds, VerifiedPrincipal,
+        LocalCredential, LockoutPolicy, SecretHash, UtcSeconds,
     },
     organization_branch::EntityId,
 };
 use pos_credentials::{
     Argon2Policy, VerificationOutcome, VerifyRequest, hash_password, verify_credential,
 };
-use sqlx::{FromRow, SqliteConnection};
+use sqlx::{FromRow, SqliteConnection, SqlitePool};
 
-use crate::CasOutcome;
+use crate::{CasOutcome, SqliteTransaction, SqliteUnitOfWork};
 
 /// Resultado interno de un intento de credencial.
 ///
@@ -27,7 +40,7 @@ use crate::CasOutcome;
 pub enum CredentialTransition {
     /// Secreto correcto; `rehash_performed` indica migración a Argon2id.
     Verified {
-        /// `true` si el material se sustituyó por Argon2id.
+        /// `true` si el material se sustituyó por Argon2id y el CAS lo confirmó.
         rehash_performed: bool,
     },
     /// Secreto incorrecto; puede haber incrementado el contador de fallos.
@@ -38,12 +51,7 @@ pub enum CredentialTransition {
     ResetRequired,
 }
 
-/// Adaptador de credenciales ligado a una conexión SQLite concreta.
-pub struct SqliteCredentialLab<'a> {
-    connection: &'a mut SqliteConnection,
-}
-
-/// Datos de un intento de credencial sobre una conexión concreta.
+/// Datos de un intento de credencial.
 #[derive(Clone, Debug)]
 pub struct CredentialAttempt<'a> {
     /// Organización del usuario; nunca se toma del cliente no verificado.
@@ -60,6 +68,128 @@ pub struct CredentialAttempt<'a> {
     pub target_policy: Argon2Policy,
     /// Política de bloqueo inyectada.
     pub lockout: LockoutPolicy,
+}
+
+/// Evento de auditoría que acompaña a una mutación realmente persistida.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CredentialAuditEntry {
+    /// Organización del usuario.
+    pub organization_id: EntityId,
+    /// Usuario afectado.
+    pub user_id: EntityId,
+    /// Transición persistida.
+    pub transition: CredentialTransition,
+    /// Instante UTC de la operación.
+    pub occurred_at: UtcSeconds,
+}
+
+/// Writer de auditoría que participa en la transacción de la credencial.
+///
+/// Solo se invoca cuando una mutación fue confirmada por CAS. Un error aquí debe
+/// provocar el rollback completo de la operación.
+pub trait CredentialAuditWriter {
+    /// Inserta el evento y devuelve error para forzar el rollback.
+    fn append(
+        &self,
+        transaction: &mut SqliteTransaction,
+        entry: &CredentialAuditEntry,
+    ) -> impl Future<Output = Result<(), IdentityError>> + Send;
+}
+
+/// Decisión criptográfica preparada fuera de la transacción.
+pub struct PreparedCredential {
+    decision: Decision,
+    snapshot_version: u64,
+}
+
+enum Decision {
+    Verified { rehash: Option<PreparedMaterial> },
+    Rejected,
+    Unusable,
+}
+
+struct PreparedMaterial {
+    secret_hash: SecretHash,
+    parameters: CredentialParameters,
+    policy_id: &'static str,
+}
+
+impl std::fmt::Debug for PreparedCredential {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("PreparedCredential(REDACTED)")
+    }
+}
+
+/// Aplica la verificación criptográfica y decide la mutación pendiente.
+///
+/// Es una función de CPU: el llamador debe ejecutarla fuera de la transacción de
+/// escritura (por ejemplo con `spawn_blocking`).
+///
+/// # Errors
+/// Devuelve [`IdentityError::StorageUnavailable`] si no se pudo preparar el
+/// material de rehash.
+pub fn prepare(
+    credential: &LocalCredential,
+    kind: CredentialKind,
+    password: &str,
+    target_policy: Argon2Policy,
+) -> Result<PreparedCredential, IdentityError> {
+    let snapshot_version = credential.credential_version();
+    let outcome = {
+        let request = VerifyRequest {
+            purpose: kind,
+            algorithm: credential.algorithm(),
+            stored: credential.secret_hash(),
+            password,
+        };
+        verify_credential(&request)
+    };
+    let decision = match outcome {
+        Ok(VerificationOutcome::Verified {
+            rehash_required: false,
+        }) => Decision::Verified { rehash: None },
+        Ok(VerificationOutcome::Verified {
+            rehash_required: true,
+        }) => {
+            let secret_hash = hash_password(password, target_policy)
+                .map_err(|_| IdentityError::StorageUnavailable)?;
+            let parameters = CredentialParameters::new(&serde_json::json!({
+                "m_cost": target_policy.memory_kib(),
+                "t_cost": target_policy.iterations(),
+                "p_cost": target_policy.lanes(),
+            }))
+            .map_err(|_| IdentityError::StorageUnavailable)?;
+            Decision::Verified {
+                rehash: Some(PreparedMaterial {
+                    secret_hash,
+                    parameters,
+                    policy_id: target_policy.id(),
+                }),
+            }
+        }
+        Ok(VerificationOutcome::Rejected) => Decision::Rejected,
+        Ok(VerificationOutcome::Unusable) => Decision::Unusable,
+        // Entrada inválida: no se toca el estado almacenado.
+        Err(_) => Decision::Rejected,
+    };
+    Ok(PreparedCredential {
+        decision,
+        snapshot_version,
+    })
+}
+
+/// Resultado de aplicar una credencial ya preparada.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AppliedCredential {
+    /// Transición observada.
+    pub transition: CredentialTransition,
+    /// `true` solo si el CAS confirmó la fila modificada.
+    pub persisted: bool,
+}
+
+/// Adaptador de credenciales ligado a una conexión SQLite concreta.
+pub struct SqliteCredentialLab<'a> {
+    connection: &'a mut SqliteConnection,
 }
 
 impl<'a> SqliteCredentialLab<'a> {
@@ -91,8 +221,127 @@ impl<'a> SqliteCredentialLab<'a> {
         row.map(CredentialRow::into_domain).transpose()
     }
 
-    /// Persiste la credencial con CAS sobre `credential_version`.
-    pub async fn persist(
+    /// Aplica la decisión preparada dentro de la transacción actual.
+    ///
+    /// Relee el estado vigente y exige que la versión no haya cambiado para las
+    /// decisiones `Verified`: una verificación criptográfica no se reutiliza
+    /// sobre material distinto. Un usuario desactivado entre el snapshot y el
+    /// commit se rechaza sin mutación.
+    pub async fn apply(
+        &mut self,
+        organization_id: &EntityId,
+        user_id: &EntityId,
+        kind: CredentialKind,
+        prepared: PreparedCredential,
+        now: UtcSeconds,
+        lockout: LockoutPolicy,
+    ) -> Result<AppliedCredential, IdentityError> {
+        let active_user = sqlx::query_scalar::<_, String>(
+            "SELECT status FROM identity_user_lab WHERE organization_id = ? AND id = ?",
+        )
+        .bind(organization_id.as_str())
+        .bind(user_id.as_str())
+        .fetch_optional(&mut *self.connection)
+        .await
+        .map_err(|_| IdentityError::StorageUnavailable)?;
+        if active_user.as_deref() != Some("ACTIVE") {
+            return Ok(AppliedCredential {
+                transition: CredentialTransition::Rejected,
+                persisted: false,
+            });
+        }
+        let Some(mut current) = self.load(organization_id, user_id, kind).await? else {
+            return Err(IdentityError::ConcurrentModification);
+        };
+        match current.state() {
+            CredentialState::Active => {}
+            CredentialState::ResetRequired => {
+                return Ok(AppliedCredential {
+                    transition: CredentialTransition::ResetRequired,
+                    persisted: false,
+                });
+            }
+            CredentialState::Disabled => {
+                return Ok(AppliedCredential {
+                    transition: CredentialTransition::Rejected,
+                    persisted: false,
+                });
+            }
+        }
+        if current.is_locked(now) {
+            return Ok(AppliedCredential {
+                transition: CredentialTransition::Locked,
+                persisted: false,
+            });
+        }
+        let version = current.credential_version();
+        let (transition, mutated) = match prepared.decision {
+            Decision::Verified { rehash } => {
+                // Cualquier mutación previa incrementa la versión; no se reutiliza
+                // una verificación sobre material que cambió después del snapshot.
+                if version != prepared.snapshot_version {
+                    return Err(IdentityError::ConcurrentModification);
+                }
+                if let Some(material) = rehash {
+                    current.rotate_material(
+                        CredentialAlgorithm::Argon2id,
+                        material.secret_hash,
+                        material.parameters,
+                        material.policy_id,
+                        now,
+                        version,
+                    )?;
+                    (
+                        CredentialTransition::Verified {
+                            rehash_performed: true,
+                        },
+                        true,
+                    )
+                } else {
+                    let cleared = current.record_successful_login(now, version)?;
+                    (
+                        CredentialTransition::Verified {
+                            rehash_performed: false,
+                        },
+                        cleared,
+                    )
+                }
+            }
+            Decision::Rejected => {
+                let locked = current.record_failed_login(now, lockout, version)?;
+                (
+                    if locked {
+                        CredentialTransition::Locked
+                    } else {
+                        CredentialTransition::Rejected
+                    },
+                    true,
+                )
+            }
+            Decision::Unusable => {
+                current.require_reset(version)?;
+                (CredentialTransition::ResetRequired, true)
+            }
+        };
+        if !mutated {
+            return Ok(AppliedCredential {
+                transition,
+                persisted: false,
+            });
+        }
+        match self.persist(organization_id, version, &current).await? {
+            CasOutcome::Updated => Ok(AppliedCredential {
+                transition,
+                persisted: true,
+            }),
+            // Un conflicto nunca confirma la mutación parcial ni el resultado.
+            CasOutcome::Missing | CasOutcome::Conflict => {
+                Err(IdentityError::ConcurrentModification)
+            }
+        }
+    }
+
+    async fn persist(
         &mut self,
         organization_id: &EntityId,
         previous_version: u64,
@@ -132,117 +381,99 @@ impl<'a> SqliteCredentialLab<'a> {
             CasOutcome::Conflict
         })
     }
+}
 
-    /// Verifica un secreto y aplica la transición BCrypt → Argon2id con CAS.
-    ///
-    /// No abre transacción: el llamador debe invocarlo dentro de la UoW de la
-    /// operación para que mutación y auditoría compartan commit.
-    pub async fn verify_and_upgrade(
-        &mut self,
-        attempt: CredentialAttempt<'_>,
-    ) -> Result<CredentialTransition, IdentityError> {
-        let CredentialAttempt {
-            organization_id,
-            user_id,
-            kind,
-            password,
-            now,
-            target_policy,
-            lockout,
-        } = attempt;
-        let Some(mut credential) = self.load(&organization_id, &user_id, kind).await? else {
-            return Ok(CredentialTransition::Rejected);
-        };
-        match credential.state() {
-            CredentialState::Active => {}
-            CredentialState::ResetRequired => return Ok(CredentialTransition::ResetRequired),
-            CredentialState::Disabled => return Ok(CredentialTransition::Rejected),
-        }
-        if credential.is_locked(now) {
-            return Ok(CredentialTransition::Locked);
-        }
-        let version = credential.credential_version();
-        let outcome = {
-            let request = VerifyRequest {
-                purpose: kind,
-                algorithm: credential.algorithm(),
-                stored: credential.secret_hash(),
-                password,
-            };
-            verify_credential(&request)
-        };
-        match outcome {
-            Ok(VerificationOutcome::Verified {
-                rehash_required: false,
-            }) => Ok(CredentialTransition::Verified {
-                rehash_performed: false,
-            }),
-            Ok(VerificationOutcome::Verified {
-                rehash_required: true,
-            }) => {
-                let secret_hash = hash_password(password, target_policy)
-                    .map_err(|_| IdentityError::StorageUnavailable)?;
-                let parameters = CredentialParameters::new(&serde_json::json!({
-                    "m_cost": target_policy.memory_kib(),
-                    "t_cost": target_policy.iterations(),
-                    "p_cost": target_policy.lanes(),
-                }))
-                .map_err(|_| IdentityError::StorageUnavailable)?;
-                credential.rotate_material(
-                    CredentialAlgorithm::Argon2id,
-                    secret_hash,
-                    parameters,
-                    target_policy.id(),
-                    now,
-                    version,
-                )?;
-                self.persist(&organization_id, version, &credential).await?;
-                Ok(CredentialTransition::Verified {
-                    rehash_performed: true,
-                })
-            }
-            Ok(VerificationOutcome::Rejected) => {
-                let locked = credential.record_failed_login(now, lockout, version)?;
-                self.persist(&organization_id, version, &credential).await?;
-                Ok(if locked {
-                    CredentialTransition::Locked
-                } else {
-                    CredentialTransition::Rejected
-                })
-            }
-            Ok(VerificationOutcome::Unusable) => {
-                credential.require_reset(version)?;
-                self.persist(&organization_id, version, &credential).await?;
-                Ok(CredentialTransition::ResetRequired)
-            }
-            // Entrada inválida: no se toca el estado almacenado.
-            Err(_) => Ok(CredentialTransition::Rejected),
-        }
+/// Verifica una credencial reduciendo la sección crítica de escritura.
+///
+/// 1. Snapshot y validación de estado fuera de la transacción.
+/// 2. Criptografía en `spawn_blocking` (sin retener locks de SQLite).
+/// 3. `BEGIN IMMEDIATE`, relectura, CAS y auditoría en el mismo commit.
+///
+/// # Errors
+/// Devuelve [`IdentityError::ConcurrentModification`] si el estado cambió entre el
+/// snapshot y la aplicación, y [`IdentityError::StorageUnavailable`] ante fallos de
+/// almacenamiento, commit o criptografía interna.
+pub async fn authenticate_and_upgrade<W: CredentialAuditWriter>(
+    pool: &SqlitePool,
+    unit_of_work: &SqliteUnitOfWork,
+    attempt: CredentialAttempt<'_>,
+    audit: &W,
+) -> Result<CredentialTransition, IdentityError> {
+    let snapshot = {
+        let mut connection = pool
+            .acquire()
+            .await
+            .map_err(|_| IdentityError::StorageUnavailable)?;
+        SqliteCredentialLab::new(&mut connection)
+            .load(&attempt.organization_id, &attempt.user_id, attempt.kind)
+            .await?
+    };
+    let Some(credential) = snapshot else {
+        return Ok(CredentialTransition::Rejected);
+    };
+    match credential.state() {
+        CredentialState::Active => {}
+        CredentialState::ResetRequired => return Ok(CredentialTransition::ResetRequired),
+        CredentialState::Disabled => return Ok(CredentialTransition::Rejected),
+    }
+    if credential.is_locked(attempt.now) {
+        return Ok(CredentialTransition::Locked);
     }
 
-    /// Variante scoped a un principal autenticado para credenciales PASSWORD.
-    ///
-    /// El usuario y la organización proceden del principal; conocer un UUID ajeno
-    /// no habilita la operación.
-    pub async fn verify_and_upgrade_for(
-        &mut self,
-        principal: &VerifiedPrincipal,
-        password: &str,
-        now: UtcSeconds,
-        target_policy: Argon2Policy,
-        lockout: LockoutPolicy,
-    ) -> Result<CredentialTransition, IdentityError> {
-        self.verify_and_upgrade(CredentialAttempt {
-            organization_id: principal.scope().organization_id().clone(),
-            user_id: principal.user_id().clone(),
-            kind: CredentialKind::Password,
-            password,
-            now,
-            target_policy,
-            lockout,
-        })
+    let kind = attempt.kind;
+    let password = attempt.password.to_owned();
+    let target_policy = attempt.target_policy;
+    let prepared =
+        tokio::task::spawn_blocking(move || prepare(&credential, kind, &password, target_policy))
+            .await
+            .map_err(|_| IdentityError::StorageUnavailable)??;
+
+    let mut transaction = unit_of_work
+        .begin()
         .await
+        .map_err(|_| IdentityError::StorageUnavailable)?;
+    let applied = {
+        let mut lab = SqliteCredentialLab::new(transaction.connection());
+        lab.apply(
+            &attempt.organization_id,
+            &attempt.user_id,
+            attempt.kind,
+            prepared,
+            attempt.now,
+            attempt.lockout,
+        )
+        .await
+    };
+    let applied = match applied {
+        Ok(applied) => applied,
+        Err(error) => {
+            transaction
+                .rollback()
+                .await
+                .map_err(|_| IdentityError::StorageUnavailable)?;
+            return Err(error);
+        }
+    };
+    if applied.persisted {
+        let entry = CredentialAuditEntry {
+            organization_id: attempt.organization_id.clone(),
+            user_id: attempt.user_id.clone(),
+            transition: applied.transition,
+            occurred_at: attempt.now,
+        };
+        if audit.append(&mut transaction, &entry).await.is_err() {
+            transaction
+                .rollback()
+                .await
+                .map_err(|_| IdentityError::StorageUnavailable)?;
+            return Err(IdentityError::StorageUnavailable);
+        }
     }
+    transaction
+        .commit()
+        .await
+        .map_err(|_| IdentityError::StorageUnavailable)?;
+    Ok(applied.transition)
 }
 
 fn kind_code(kind: CredentialKind) -> &'static str {

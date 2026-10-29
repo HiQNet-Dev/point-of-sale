@@ -1,12 +1,16 @@
 // Fixtures de laboratorio para credenciales; no representan datos de producto.
 #![allow(clippy::panic)]
 
-use std::{path::Path, time::Duration};
+use std::{
+    path::Path,
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
+};
 
 use pos_core::{
     identity::{
-        CredentialAlgorithm, CredentialKind, CredentialState, LocalPrincipalService, LockoutPolicy,
-        SessionHash, UtcSeconds,
+        CredentialAlgorithm, CredentialKind, CredentialState, IdentityError, LockoutPolicy,
+        UtcSeconds,
     },
     organization_branch::{
         Branch, BusinessCode, DisplayName, EntityId, IsoCurrency, LocaleTag, NewBranch,
@@ -19,8 +23,11 @@ use pos_credentials::{
 
 use super::*;
 use crate::{
-    credential_lab::{CredentialAttempt, CredentialTransition, SqliteCredentialLab},
-    identity_lab::{SqliteIdentityLab, ensure_lab_identity_schema},
+    credential_lab::{
+        CredentialAttempt, CredentialAuditEntry, CredentialAuditWriter, CredentialTransition,
+        SqliteCredentialLab, authenticate_and_upgrade, prepare,
+    },
+    identity_lab::ensure_lab_identity_schema,
 };
 
 const ORG: &str = "00000000-0000-0000-0000-000000000080";
@@ -43,7 +50,7 @@ fn moment(value: i64) -> UtcSeconds {
 fn lockout() -> LockoutPolicy {
     LockoutPolicy::new(3, 60).unwrap_or_else(|error| panic!("policy: {error}"))
 }
-fn attempt<'a>(password: &'a str, now: i64) -> CredentialAttempt<'a> {
+fn attempt(password: &str, now: i64) -> CredentialAttempt<'_> {
     CredentialAttempt {
         organization_id: id(ORG),
         user_id: id(USER),
@@ -55,8 +62,41 @@ fn attempt<'a>(password: &'a str, now: i64) -> CredentialAttempt<'a> {
     }
 }
 
+/// Writer de auditoría de fixture; escribe en la misma conexión transaccional.
+#[derive(Clone)]
+struct FixtureAudit {
+    fail: bool,
+}
+impl FixtureAudit {
+    fn new(fail: bool) -> Self {
+        Self { fail }
+    }
+}
+impl CredentialAuditWriter for FixtureAudit {
+    async fn append(
+        &self,
+        transaction: &mut SqliteTransaction,
+        entry: &CredentialAuditEntry,
+    ) -> Result<(), IdentityError> {
+        if self.fail {
+            return Err(IdentityError::StorageUnavailable);
+        }
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let id = NEXT.fetch_add(1, Ordering::Relaxed);
+        sqlx::query(
+            "INSERT INTO audit_event_fixture (id, organization_id, action) VALUES (?, ?, 'credential.changed')",
+        )
+        .bind(format!("audit-{id}"))
+        .bind(entry.organization_id.as_str())
+        .execute(&mut *transaction.connection())
+        .await
+        .map_err(|_| IdentityError::StorageUnavailable)?;
+        Ok(())
+    }
+}
+
 async fn open_lab(path: &Path) -> Result<SqlitePool, Box<dyn std::error::Error>> {
-    let pool = open(path, Duration::from_millis(75)).await?;
+    let pool = open(path, Duration::from_millis(500)).await?;
     migrate(&pool).await?;
     ensure_lab_identity_schema(&pool).await?;
     let store = SqliteOrganizationBranchStore::new(pool.clone());
@@ -103,7 +143,7 @@ async fn open_lab(path: &Path) -> Result<SqlitePool, Box<dyn std::error::Error>>
         "CREATE TABLE audit_event_fixture (\
             id TEXT PRIMARY KEY NOT NULL, \
             organization_id TEXT NOT NULL, \
-            action TEXT NOT NULL CHECK (action <> 'forbidden')\
+            action TEXT NOT NULL\
          ) STRICT",
     )
     .execute(&pool)
@@ -136,6 +176,17 @@ async fn seed_credential(
     Ok(())
 }
 
+async fn stored(
+    pool: &SqlitePool,
+) -> Result<pos_core::identity::LocalCredential, Box<dyn std::error::Error>> {
+    let mut connection = pool.acquire().await?;
+    let credential = SqliteCredentialLab::new(&mut connection)
+        .load(&id(ORG), &id(USER), CredentialKind::Password)
+        .await?
+        .unwrap_or_else(|| panic!("credential"));
+    Ok(credential)
+}
+
 #[tokio::test]
 async fn legacy_bcrypt_login_upgrades_to_argon2id_in_one_commit()
 -> Result<(), Box<dyn std::error::Error>> {
@@ -143,31 +194,17 @@ async fn legacy_bcrypt_login_upgrades_to_argon2id_in_one_commit()
     let pool = open_lab(&temp.path().join("credential-upgrade.sqlite")).await?;
     seed_credential(&pool, "LEGACY_BCRYPT", BCRYPT_HASH, "ACTIVE", None).await?;
     let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+    let audit = FixtureAudit::new(false);
 
-    let mut transaction = unit_of_work.begin().await?;
-    let outcome = SqliteCredentialLab::new(transaction.connection())
-        .verify_and_upgrade(attempt(PASSWORD, 20))
-        .await?;
+    let outcome =
+        authenticate_and_upgrade(&pool, &unit_of_work, attempt(PASSWORD, 20), &audit).await?;
     assert_eq!(
         outcome,
         CredentialTransition::Verified {
             rehash_performed: true
         }
     );
-    sqlx::query(
-        "INSERT INTO audit_event_fixture (id, organization_id, action) VALUES (?, ?, 'credential.upgraded')",
-    )
-    .bind("00000000-0000-0000-0000-0000000000f0")
-    .bind(ORG)
-    .execute(&mut *transaction.connection())
-    .await?;
-    transaction.commit().await?;
-
-    let mut connection = pool.acquire().await?;
-    let stored = SqliteCredentialLab::new(&mut connection)
-        .load(&id(ORG), &id(USER), CredentialKind::Password)
-        .await?
-        .unwrap_or_else(|| panic!("credential"));
+    let stored = stored(&pool).await?;
     assert_eq!(stored.algorithm(), CredentialAlgorithm::Argon2id);
     assert_eq!(stored.credential_version(), 2);
     assert_eq!(stored.policy_id(), "lab-argon2-v1");
@@ -185,7 +222,7 @@ async fn legacy_bcrypt_login_upgrades_to_argon2id_in_one_commit()
     );
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM audit_event_fixture")
-            .fetch_one(&mut *connection)
+            .fetch_one(&pool)
             .await?,
         1
     );
@@ -199,82 +236,97 @@ async fn wrong_password_locks_after_policy_and_never_upgrades()
     let pool = open_lab(&temp.path().join("credential-lock.sqlite")).await?;
     seed_credential(&pool, "LEGACY_BCRYPT", BCRYPT_HASH, "ACTIVE", None).await?;
     let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+    let audit = FixtureAudit::new(false);
 
-    for (attempt_index, now) in [10, 11, 12].into_iter().enumerate() {
-        let mut transaction = unit_of_work.begin().await?;
-        let outcome = SqliteCredentialLab::new(transaction.connection())
-            .verify_and_upgrade(attempt("wrong-secret", now))
-            .await?;
-        transaction.commit().await?;
-        if attempt_index < 2 {
+    for (index, now) in [10, 11, 12].into_iter().enumerate() {
+        let outcome =
+            authenticate_and_upgrade(&pool, &unit_of_work, attempt("wrong-secret", now), &audit)
+                .await?;
+        if index < 2 {
             assert_eq!(outcome, CredentialTransition::Rejected);
         } else {
             assert_eq!(outcome, CredentialTransition::Locked);
         }
     }
 
-    let mut connection = pool.acquire().await?;
-    let locked = SqliteCredentialLab::new(&mut connection)
-        .load(&id(ORG), &id(USER), CredentialKind::Password)
-        .await?
-        .unwrap_or_else(|| panic!("credential"));
+    let locked = stored(&pool).await?;
     assert_eq!(locked.algorithm(), CredentialAlgorithm::LegacyBcrypt);
     assert_eq!(locked.failed_login_attempts(), 3);
     assert_eq!(locked.locked_until().map(UtcSeconds::get), Some(72));
     assert_eq!(locked.credential_version(), 4);
 
-    let blocked = SqliteCredentialLab::new(&mut connection)
-        .verify_and_upgrade(attempt(PASSWORD, 50))
-        .await?;
-    assert_eq!(blocked, CredentialTransition::Locked);
-
-    // La ventana vencida permite verificar y migrar.
-    let after_window = SqliteCredentialLab::new(&mut connection)
-        .verify_and_upgrade(attempt(PASSWORD, 73))
-        .await?;
     assert_eq!(
-        after_window,
+        authenticate_and_upgrade(&pool, &unit_of_work, attempt(PASSWORD, 50), &audit).await?,
+        CredentialTransition::Locked
+    );
+    assert_eq!(
+        authenticate_and_upgrade(&pool, &unit_of_work, attempt(PASSWORD, 73), &audit).await?,
         CredentialTransition::Verified {
             rehash_performed: true
         }
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM audit_event_fixture")
+            .fetch_one(&pool)
+            .await?,
+        4
     );
     Ok(())
 }
 
 #[tokio::test]
-async fn cas_conflict_leaves_the_stored_material_untouched()
+async fn concurrent_upgrade_cannot_reuse_a_stale_crypto_decision()
 -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
-    let pool = open_lab(&temp.path().join("credential-cas.sqlite")).await?;
+    let pool = open_lab(&temp.path().join("credential-stale.sqlite")).await?;
     seed_credential(&pool, "LEGACY_BCRYPT", BCRYPT_HASH, "ACTIVE", None).await?;
     let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+    let audit = FixtureAudit::new(false);
 
     let mut connection = pool.acquire().await?;
-    let stale = SqliteCredentialLab::new(&mut connection)
+    let snapshot = SqliteCredentialLab::new(&mut connection)
         .load(&id(ORG), &id(USER), CredentialKind::Password)
         .await?
         .unwrap_or_else(|| panic!("credential"));
     drop(connection);
+    let prepared = prepare(
+        &snapshot,
+        CredentialKind::Password,
+        PASSWORD,
+        Argon2Policy::LAB_V1,
+    )?;
+
+    // Otra operación confirma el upgrade antes de aplicar la decisión preparada.
+    assert_eq!(
+        authenticate_and_upgrade(&pool, &unit_of_work, attempt(PASSWORD, 20), &audit).await?,
+        CredentialTransition::Verified {
+            rehash_performed: true
+        }
+    );
 
     let mut transaction = unit_of_work.begin().await?;
-    SqliteCredentialLab::new(transaction.connection())
-        .verify_and_upgrade(attempt(PASSWORD, 20))
-        .await?;
-    transaction.commit().await?;
+    let applied = SqliteCredentialLab::new(transaction.connection())
+        .apply(
+            &id(ORG),
+            &id(USER),
+            CredentialKind::Password,
+            prepared,
+            moment(21),
+            lockout(),
+        )
+        .await;
+    assert_eq!(applied, Err(IdentityError::ConcurrentModification));
+    transaction.rollback().await?;
 
-    let mut connection = pool.acquire().await?;
-    assert_eq!(
-        SqliteCredentialLab::new(&mut connection)
-            .persist(&id(ORG), 1, &stale)
-            .await?,
-        CasOutcome::Conflict
-    );
-    let current = SqliteCredentialLab::new(&mut connection)
-        .load(&id(ORG), &id(USER), CredentialKind::Password)
-        .await?
-        .unwrap_or_else(|| panic!("credential"));
+    let current = stored(&pool).await?;
     assert_eq!(current.algorithm(), CredentialAlgorithm::Argon2id);
     assert_eq!(current.credential_version(), 2);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM audit_event_fixture")
+            .fetch_one(&pool)
+            .await?,
+        1
+    );
     Ok(())
 }
 
@@ -285,34 +337,21 @@ async fn audit_failure_rolls_back_the_credential_upgrade() -> Result<(), Box<dyn
     let pool = open_lab(&temp.path().join("credential-audit.sqlite")).await?;
     seed_credential(&pool, "LEGACY_BCRYPT", BCRYPT_HASH, "ACTIVE", None).await?;
     let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+    let audit = FixtureAudit::new(true);
 
-    let mut transaction = unit_of_work.begin().await?;
-    let outcome = SqliteCredentialLab::new(transaction.connection())
-        .verify_and_upgrade(attempt(PASSWORD, 20))
-        .await?;
     assert_eq!(
-        outcome,
-        CredentialTransition::Verified {
-            rehash_performed: true
-        }
+        authenticate_and_upgrade(&pool, &unit_of_work, attempt(PASSWORD, 20), &audit).await,
+        Err(IdentityError::StorageUnavailable)
     );
-    let audit = sqlx::query(
-        "INSERT INTO audit_event_fixture (id, organization_id, action) VALUES (?, ?, 'forbidden')",
-    )
-    .bind("00000000-0000-0000-0000-0000000000f1")
-    .bind(ORG)
-    .execute(&mut *transaction.connection())
-    .await;
-    assert!(audit.is_err());
-    transaction.rollback().await?;
-
-    let mut connection = pool.acquire().await?;
-    let stored = SqliteCredentialLab::new(&mut connection)
-        .load(&id(ORG), &id(USER), CredentialKind::Password)
-        .await?
-        .unwrap_or_else(|| panic!("credential"));
-    assert_eq!(stored.algorithm(), CredentialAlgorithm::LegacyBcrypt);
-    assert_eq!(stored.credential_version(), 1);
+    let current = stored(&pool).await?;
+    assert_eq!(current.algorithm(), CredentialAlgorithm::LegacyBcrypt);
+    assert_eq!(current.credential_version(), 1);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM audit_event_fixture")
+            .fetch_one(&pool)
+            .await?,
+        0
+    );
     Ok(())
 }
 
@@ -323,24 +362,28 @@ async fn corrupt_hash_requires_reset_without_fallback_or_further_mutation()
     let pool = open_lab(&temp.path().join("credential-reset.sqlite")).await?;
     seed_credential(&pool, "LEGACY_BCRYPT", "not-a-hash", "ACTIVE", None).await?;
     let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+    let audit = FixtureAudit::new(false);
 
-    for now in [20, 21] {
-        let mut transaction = unit_of_work.begin().await?;
-        let outcome = SqliteCredentialLab::new(transaction.connection())
-            .verify_and_upgrade(attempt(PASSWORD, now))
-            .await?;
-        transaction.commit().await?;
-        assert_eq!(outcome, CredentialTransition::ResetRequired);
-    }
+    assert_eq!(
+        authenticate_and_upgrade(&pool, &unit_of_work, attempt(PASSWORD, 20), &audit).await?,
+        CredentialTransition::ResetRequired
+    );
+    assert_eq!(
+        authenticate_and_upgrade(&pool, &unit_of_work, attempt(PASSWORD, 21), &audit).await?,
+        CredentialTransition::ResetRequired
+    );
 
-    let mut connection = pool.acquire().await?;
-    let stored = SqliteCredentialLab::new(&mut connection)
-        .load(&id(ORG), &id(USER), CredentialKind::Password)
-        .await?
-        .unwrap_or_else(|| panic!("credential"));
-    assert_eq!(stored.state(), CredentialState::ResetRequired);
-    assert_eq!(stored.credential_version(), 2);
-    assert_eq!(stored.algorithm(), CredentialAlgorithm::LegacyBcrypt);
+    let current = stored(&pool).await?;
+    assert_eq!(current.state(), CredentialState::ResetRequired);
+    assert_eq!(current.credential_version(), 2);
+    assert_eq!(current.algorithm(), CredentialAlgorithm::LegacyBcrypt);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM audit_event_fixture")
+            .fetch_one(&pool)
+            .await?,
+        1,
+        "solo el cambio realmente persistido se audita"
+    );
     Ok(())
 }
 
@@ -350,20 +393,14 @@ async fn disabled_and_locked_credentials_reject_before_expensive_verification()
     let temp = tempfile::tempdir()?;
     let pool = open_lab(&temp.path().join("credential-state.sqlite")).await?;
     seed_credential(&pool, "LEGACY_BCRYPT", BCRYPT_HASH, "DISABLED", None).await?;
-    let mut connection = pool.acquire().await?;
+    let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+    let audit = FixtureAudit::new(false);
+
     assert_eq!(
-        SqliteCredentialLab::new(&mut connection)
-            .verify_and_upgrade(attempt(PASSWORD, 20))
-            .await?,
+        authenticate_and_upgrade(&pool, &unit_of_work, attempt(PASSWORD, 20), &audit).await?,
         CredentialTransition::Rejected
     );
-    let stored = SqliteCredentialLab::new(&mut connection)
-        .load(&id(ORG), &id(USER), CredentialKind::Password)
-        .await?
-        .unwrap_or_else(|| panic!("credential"));
-    assert_eq!(stored.state(), CredentialState::Disabled);
-    assert_eq!(stored.credential_version(), 1);
-    drop(connection);
+    assert_eq!(stored(&pool).await?.credential_version(), 1);
 
     sqlx::query(
         "UPDATE identity_credential_lab SET state = 'ACTIVE', locked_until = 100 WHERE id = ?",
@@ -371,52 +408,269 @@ async fn disabled_and_locked_credentials_reject_before_expensive_verification()
     .bind(CREDENTIAL)
     .execute(&pool)
     .await?;
-    let mut connection = pool.acquire().await?;
     assert_eq!(
-        SqliteCredentialLab::new(&mut connection)
-            .verify_and_upgrade(attempt(PASSWORD, 50))
-            .await?,
+        authenticate_and_upgrade(&pool, &unit_of_work, attempt(PASSWORD, 50), &audit).await?,
         CredentialTransition::Locked
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM audit_event_fixture")
+            .fetch_one(&pool)
+            .await?,
+        0
     );
     Ok(())
 }
 
 #[tokio::test]
-async fn scoped_verification_only_touches_the_authenticated_principal()
+async fn deactivated_user_between_snapshot_and_commit_is_rejected()
 -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
-    let pool = open_lab(&temp.path().join("credential-principal.sqlite")).await?;
+    let pool = open_lab(&temp.path().join("credential-user.sqlite")).await?;
     seed_credential(&pool, "LEGACY_BCRYPT", BCRYPT_HASH, "ACTIVE", None).await?;
     let unit_of_work = SqliteUnitOfWork::new(pool.clone());
 
-    let mut transaction = unit_of_work.begin().await?;
-    let principal = LocalPrincipalService::new(SqliteIdentityLab::new(transaction.connection()))
-        .authenticate(
-            &SessionHash::new(SESSION_SECRET).unwrap_or_else(|error| panic!("hash: {error}")),
-            moment(11),
-            None,
-        )
-        .await
-        .unwrap_or_else(|error| panic!("principal: {error}"));
-    transaction.rollback().await?;
+    let mut connection = pool.acquire().await?;
+    let snapshot = SqliteCredentialLab::new(&mut connection)
+        .load(&id(ORG), &id(USER), CredentialKind::Password)
+        .await?
+        .unwrap_or_else(|| panic!("credential"));
+    drop(connection);
+    let prepared = prepare(
+        &snapshot,
+        CredentialKind::Password,
+        PASSWORD,
+        Argon2Policy::LAB_V1,
+    )?;
+    sqlx::query("UPDATE identity_user_lab SET status = 'INACTIVE' WHERE id = ?")
+        .bind(USER)
+        .execute(&pool)
+        .await?;
 
     let mut transaction = unit_of_work.begin().await?;
-    let outcome = SqliteCredentialLab::new(transaction.connection())
-        .verify_and_upgrade_for(
-            &principal,
-            PASSWORD,
+    let applied = SqliteCredentialLab::new(transaction.connection())
+        .apply(
+            &id(ORG),
+            &id(USER),
+            CredentialKind::Password,
+            prepared,
             moment(20),
-            Argon2Policy::LAB_V1,
             lockout(),
         )
         .await?;
+    transaction.commit().await?;
     assert_eq!(
-        outcome,
+        applied,
+        crate::credential_lab::AppliedCredential {
+            transition: CredentialTransition::Rejected,
+            persisted: false,
+        }
+    );
+    let current = stored(&pool).await?;
+    assert_eq!(current.algorithm(), CredentialAlgorithm::LegacyBcrypt);
+    assert_eq!(current.credential_version(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn simultaneous_wrong_attempts_do_not_lose_updates() -> Result<(), Box<dyn std::error::Error>>
+{
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("credential-concurrent-fail.sqlite");
+    let first = open_lab(&path).await?;
+    let second = open(&path, Duration::from_millis(500)).await?;
+    seed_credential(&first, "LEGACY_BCRYPT", BCRYPT_HASH, "ACTIVE", None).await?;
+    let first_uow = SqliteUnitOfWork::new(first.clone());
+    let second_uow = SqliteUnitOfWork::new(second.clone());
+    let first_audit = FixtureAudit::new(false);
+    let second_audit = FixtureAudit::new(false);
+
+    let (left, right) = tokio::join!(
+        authenticate_and_upgrade(
+            &first,
+            &first_uow,
+            attempt("wrong-secret", 10),
+            &first_audit
+        ),
+        authenticate_and_upgrade(
+            &second,
+            &second_uow,
+            attempt("wrong-secret", 11),
+            &second_audit
+        )
+    );
+    assert_eq!(left?, CredentialTransition::Rejected);
+    assert_eq!(right?, CredentialTransition::Rejected);
+    let current = stored(&first).await?;
+    assert_eq!(current.failed_login_attempts(), 2);
+    assert_eq!(current.credential_version(), 3);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM audit_event_fixture")
+            .fetch_one(&first)
+            .await?,
+        2
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn simultaneous_upgrades_leave_one_winner_and_one_conflict()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("credential-concurrent-upgrade.sqlite");
+    let first = open_lab(&path).await?;
+    let second = open(&path, Duration::from_millis(500)).await?;
+    seed_credential(&first, "LEGACY_BCRYPT", BCRYPT_HASH, "ACTIVE", None).await?;
+    let first_uow = SqliteUnitOfWork::new(first.clone());
+    let second_uow = SqliteUnitOfWork::new(second.clone());
+    let first_audit = FixtureAudit::new(false);
+    let second_audit = FixtureAudit::new(false);
+
+    let (left, right) = tokio::join!(
+        authenticate_and_upgrade(&first, &first_uow, attempt(PASSWORD, 20), &first_audit),
+        authenticate_and_upgrade(&second, &second_uow, attempt(PASSWORD, 21), &second_audit)
+    );
+    let outcomes = [left, right];
+    let upgraded = outcomes
+        .iter()
+        .filter(|outcome| {
+            matches!(
+                outcome,
+                Ok(CredentialTransition::Verified {
+                    rehash_performed: true
+                })
+            )
+        })
+        .count();
+    let conflicts = outcomes
+        .iter()
+        .filter(|outcome| matches!(outcome, Err(IdentityError::ConcurrentModification)))
+        .count();
+    assert_eq!(upgraded, 1);
+    assert_eq!(conflicts, 1);
+    let current = stored(&first).await?;
+    assert_eq!(current.algorithm(), CredentialAlgorithm::Argon2id);
+    assert_eq!(current.credential_version(), 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn independent_writer_proceeds_while_argon2_verifies()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("credential-writer.sqlite");
+    let first = open_lab(&path).await?;
+    let second = open(&path, Duration::from_millis(500)).await?;
+    seed_credential(&first, "LEGACY_BCRYPT", BCRYPT_HASH, "ACTIVE", None).await?;
+    let first_uow = SqliteUnitOfWork::new(first.clone());
+    let audit = FixtureAudit::new(false);
+
+    let task = tokio::spawn({
+        let pool = first.clone();
+        let unit_of_work = first_uow.clone();
+        let audit = audit.clone();
+        async move {
+            authenticate_and_upgrade(&pool, &unit_of_work, attempt(PASSWORD, 20), &audit).await
+        }
+    });
+    // Argon2id tarda cientos de milisegundos; durante ese tiempo no hay lock de
+    // escritura retenido por la transacción de credenciales.
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    sqlx::query(
+        "INSERT INTO audit_event_fixture (id, organization_id, action) VALUES ('independent', ?, 'independent.write')",
+    )
+    .bind(ORG)
+    .execute(&second)
+    .await?;
+    assert_eq!(
+        task.await?,
+        Ok(CredentialTransition::Verified {
+            rehash_performed: true
+        })
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancelled_task_leaves_credentials_untouched_and_pool_usable()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open_lab(&temp.path().join("credential-cancel.sqlite")).await?;
+    seed_credential(&pool, "LEGACY_BCRYPT", BCRYPT_HASH, "ACTIVE", None).await?;
+    let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+    let audit = FixtureAudit::new(false);
+
+    let handle = tokio::spawn({
+        let pool = pool.clone();
+        let unit_of_work = unit_of_work.clone();
+        let audit = audit.clone();
+        async move {
+            authenticate_and_upgrade(&pool, &unit_of_work, attempt(PASSWORD, 20), &audit).await
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    handle.abort();
+    let _ = handle.await;
+
+    let current = stored(&pool).await?;
+    assert_eq!(current.algorithm(), CredentialAlgorithm::LegacyBcrypt);
+    assert_eq!(current.credential_version(), 1);
+    assert_eq!(
+        authenticate_and_upgrade(&pool, &unit_of_work, attempt(PASSWORD, 21), &audit).await?,
         CredentialTransition::Verified {
             rehash_performed: true
         }
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn transaction_scope_excludes_crypto_duration() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open_lab(&temp.path().join("credential-scope.sqlite")).await?;
+    seed_credential(&pool, "LEGACY_BCRYPT", BCRYPT_HASH, "ACTIVE", None).await?;
+    let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+
+    let mut connection = pool.acquire().await?;
+    let snapshot = SqliteCredentialLab::new(&mut connection)
+        .load(&id(ORG), &id(USER), CredentialKind::Password)
+        .await?
+        .unwrap_or_else(|| panic!("credential"));
+    drop(connection);
+
+    let crypto_start = std::time::Instant::now();
+    let prepared = prepare(
+        &snapshot,
+        CredentialKind::Password,
+        PASSWORD,
+        Argon2Policy::LAB_V1,
+    )?;
+    let crypto = crypto_start.elapsed();
+
+    let transaction_start = std::time::Instant::now();
+    let mut transaction = unit_of_work.begin().await?;
+    let applied = SqliteCredentialLab::new(transaction.connection())
+        .apply(
+            &id(ORG),
+            &id(USER),
+            CredentialKind::Password,
+            prepared,
+            moment(20),
+            lockout(),
+        )
+        .await?;
     transaction.commit().await?;
+    let transaction_time = transaction_start.elapsed();
+
+    assert!(applied.persisted);
+    assert!(
+        transaction_time < crypto,
+        "tx={transaction_time:?} crypto={crypto:?}"
+    );
+    eprintln!(
+        "crypto_ms={} tx_ms={}",
+        crypto.as_millis(),
+        transaction_time.as_millis()
+    );
     Ok(())
 }
 
