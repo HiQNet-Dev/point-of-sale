@@ -153,6 +153,19 @@ SQLx), sin cachés de permisos como autoridad de escritura. Los puertos son
 asíncronos y comparten una única fuente (`LocalPrincipalService<S>`), y el
 incremento 1G implementa esa composición con tablas de laboratorio.
 
+## Verificación criptográfica y transición
+
+`pos-credentials` implementa la frontera real de verificación (1H): BCrypt legado,
+Argon2id con políticas explícitas, detección de rehash, gates de entrada y handles
+opacos de sesión. La transición BCrypt → Argon2id se ejecuta en
+`pos-storage-sqlite::credential_lab` sobre la conexión de la UoW y usa CAS sobre
+`credential_version`; un fallo de auditoría revierte el cambio de material.
+
+Los parámetros (`lab-argon2-v0`, `lab-argon2-v1`) son experimentales. El paquete de
+decisiones D-AUTH-01..10 y el orden de migraciones propuesto están en
+[`rust-increment-1h.md`](rust-increment-1h.md); ninguna migración se crea sin esa
+aceptación.
+
 ## Decisiones abiertas
 
 **Aprobables de inmediato:** nombres canónicos de `local_credential` y
