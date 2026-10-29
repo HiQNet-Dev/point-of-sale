@@ -16,7 +16,7 @@
 //! Ninguna transición se anuncia como persistida si el CAS no confirmó la fila.
 //! No es autenticación productiva: no emite sesiones ni entrega handles.
 
-use std::future::Future;
+use std::{future::Future, sync::Arc};
 
 use pos_core::{
     identity::{
@@ -29,6 +29,8 @@ use pos_credentials::{
     Argon2Policy, VerificationOutcome, VerifyRequest, hash_password, verify_credential,
 };
 use sqlx::{FromRow, SqliteConnection, SqlitePool};
+use tokio::sync::Semaphore;
+use zeroize::Zeroizing;
 
 use crate::{CasOutcome, SqliteTransaction, SqliteUnitOfWork};
 
@@ -52,7 +54,7 @@ pub enum CredentialTransition {
 }
 
 /// Datos de un intento de credencial.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct CredentialAttempt<'a> {
     /// Organización del usuario; nunca se toma del cliente no verificado.
     pub organization_id: EntityId,
@@ -68,6 +70,21 @@ pub struct CredentialAttempt<'a> {
     pub target_policy: Argon2Policy,
     /// Política de bloqueo inyectada.
     pub lockout: LockoutPolicy,
+}
+
+impl std::fmt::Debug for CredentialAttempt<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("CredentialAttempt")
+            .field("organization_id", &self.organization_id)
+            .field("user_id", &self.user_id)
+            .field("kind", &self.kind)
+            .field("now", &self.now)
+            .field("target_policy", &self.target_policy)
+            .field("lockout", &self.lockout)
+            .field("password", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Evento de auditoría que acompaña a una mutación realmente persistida.
@@ -99,7 +116,29 @@ pub trait CredentialAuditWriter {
 /// Decisión criptográfica preparada fuera de la transacción.
 pub struct PreparedCredential {
     decision: Decision,
-    snapshot_version: u64,
+    fingerprint: MaterialFingerprint,
+}
+
+/// Identidad del material sobre el que se tomó la decisión.
+///
+/// No deriva `Debug` para no exponer el hash en diagnósticos.
+#[derive(Clone, Eq, PartialEq)]
+struct MaterialFingerprint {
+    algorithm: CredentialAlgorithm,
+    policy_id: String,
+    parameters: String,
+    secret_hash: String,
+}
+
+impl MaterialFingerprint {
+    fn of(credential: &LocalCredential) -> Self {
+        Self {
+            algorithm: credential.algorithm(),
+            policy_id: credential.policy_id().to_owned(),
+            parameters: credential.parameters().canonical_json().to_owned(),
+            secret_hash: credential.secret_hash().expose_to_verifier().to_owned(),
+        }
+    }
 }
 
 enum Decision {
@@ -134,7 +173,6 @@ pub fn prepare(
     password: &str,
     target_policy: Argon2Policy,
 ) -> Result<PreparedCredential, IdentityError> {
-    let snapshot_version = credential.credential_version();
     let outcome = {
         let request = VerifyRequest {
             purpose: kind,
@@ -174,7 +212,7 @@ pub fn prepare(
     };
     Ok(PreparedCredential {
         decision,
-        snapshot_version,
+        fingerprint: MaterialFingerprint::of(credential),
     })
 }
 
@@ -275,13 +313,13 @@ impl<'a> SqliteCredentialLab<'a> {
             });
         }
         let version = current.credential_version();
+        if MaterialFingerprint::of(&current) != prepared.fingerprint {
+            // El material cambió después del snapshot: la decisión criptográfica
+            // no se reutiliza, aunque solo haya cambiado el estado de la fila.
+            return Err(IdentityError::ConcurrentModification);
+        }
         let (transition, mutated) = match prepared.decision {
             Decision::Verified { rehash } => {
-                // Cualquier mutación previa incrementa la versión; no se reutiliza
-                // una verificación sobre material que cambió después del snapshot.
-                if version != prepared.snapshot_version {
-                    return Err(IdentityError::ConcurrentModification);
-                }
                 if let Some(material) = rehash {
                     current.rotate_material(
                         CredentialAlgorithm::Argon2id,
@@ -383,21 +421,72 @@ impl<'a> SqliteCredentialLab<'a> {
     }
 }
 
+/// Límite de verificaciones criptográficas concurrentes.
+///
+/// El permiso se mueve al trabajo bloqueante: cancelar el future que espera no
+/// libera el slot mientras el cálculo siga en ejecución, y nunca se retiene un
+/// lock de SQLite esperando capacidad.
+#[derive(Clone)]
+pub struct VerificationGate {
+    permits: Arc<Semaphore>,
+}
+
+impl VerificationGate {
+    /// Crea un límite explícito de verificaciones concurrentes.
+    ///
+    /// # Errors
+    /// Devuelve [`IdentityError::StorageUnavailable`] si el límite es cero.
+    pub fn new(max_concurrent: usize) -> Result<Self, IdentityError> {
+        if max_concurrent == 0 {
+            return Err(IdentityError::StorageUnavailable);
+        }
+        Ok(Self {
+            permits: Arc::new(Semaphore::new(max_concurrent)),
+        })
+    }
+
+    /// Slots libres; útil para pruebas y telemetría acotada.
+    pub fn available_permits(&self) -> usize {
+        self.permits.available_permits()
+    }
+
+    async fn run<T, F>(&self, work: F) -> Result<T, IdentityError>
+    where
+        F: FnOnce() -> T + Send + 'static,
+        T: Send + 'static,
+    {
+        let permit = self
+            .permits
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| IdentityError::StorageUnavailable)?;
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            work()
+        })
+        .await
+        .map_err(|_| IdentityError::StorageUnavailable)
+    }
+}
+
 /// Verifica una credencial reduciendo la sección crítica de escritura.
 ///
 /// 1. Snapshot y validación de estado fuera de la transacción.
-/// 2. Criptografía en `spawn_blocking` (sin retener locks de SQLite).
-/// 3. `BEGIN IMMEDIATE`, relectura, CAS y auditoría en el mismo commit.
+/// 2. Criptografía en `spawn_blocking` bajo un límite de concurrencia.
+/// 3. `BEGIN IMMEDIATE`, relectura, validación del material, CAS y auditoría.
 ///
 /// # Errors
-/// Devuelve [`IdentityError::ConcurrentModification`] si el estado cambió entre el
-/// snapshot y la aplicación, y [`IdentityError::StorageUnavailable`] ante fallos de
-/// almacenamiento, commit o criptografía interna.
+/// Devuelve [`IdentityError::ConcurrentModification`] si el material o el estado
+/// cambiaron entre el snapshot y la aplicación, y
+/// [`IdentityError::StorageUnavailable`] ante fallos de almacenamiento, commit o
+/// criptografía interna.
 pub async fn authenticate_and_upgrade<W: CredentialAuditWriter>(
     pool: &SqlitePool,
     unit_of_work: &SqliteUnitOfWork,
     attempt: CredentialAttempt<'_>,
     audit: &W,
+    gate: &VerificationGate,
 ) -> Result<CredentialTransition, IdentityError> {
     let snapshot = {
         let mut connection = pool
@@ -421,12 +510,13 @@ pub async fn authenticate_and_upgrade<W: CredentialAuditWriter>(
     }
 
     let kind = attempt.kind;
-    let password = attempt.password.to_owned();
+    // La copia temporal se borra al salir del alcance; el original nunca se clona
+    // fuera de esta frontera ni se registra.
+    let password = Zeroizing::new(attempt.password.to_owned());
     let target_policy = attempt.target_policy;
-    let prepared =
-        tokio::task::spawn_blocking(move || prepare(&credential, kind, &password, target_policy))
-            .await
-            .map_err(|_| IdentityError::StorageUnavailable)??;
+    let prepared = gate
+        .run(move || prepare(&credential, kind, password.as_str(), target_policy))
+        .await??;
 
     let mut transaction = unit_of_work
         .begin()

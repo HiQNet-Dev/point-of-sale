@@ -25,7 +25,7 @@ use super::*;
 use crate::{
     credential_lab::{
         CredentialAttempt, CredentialAuditEntry, CredentialAuditWriter, CredentialTransition,
-        SqliteCredentialLab, authenticate_and_upgrade, prepare,
+        SqliteCredentialLab, VerificationGate, authenticate_and_upgrade as orchestrator, prepare,
     },
     identity_lab::ensure_lab_identity_schema,
 };
@@ -33,7 +33,9 @@ use crate::{
 const ORG: &str = "00000000-0000-0000-0000-000000000080";
 const BRANCH: &str = "00000000-0000-0000-0000-000000000090";
 const USER: &str = "00000000-0000-0000-0000-0000000000a0";
+const USER_SECOND: &str = "00000000-0000-0000-0000-0000000000a2";
 const CREDENTIAL: &str = "00000000-0000-0000-0000-0000000000e0";
+const CREDENTIAL_SECOND: &str = "00000000-0000-0000-0000-0000000000e2";
 const SESSION: &str = "00000000-0000-0000-0000-0000000000d0";
 const TIME: &str = "2026-10-29T00:00:00Z";
 /// Vector Spring `$2b$` público y sintético para `lab-only-Piñata-42!`.
@@ -50,16 +52,30 @@ fn moment(value: i64) -> UtcSeconds {
 fn lockout() -> LockoutPolicy {
     LockoutPolicy::new(3, 60).unwrap_or_else(|error| panic!("policy: {error}"))
 }
-fn attempt(password: &str, now: i64) -> CredentialAttempt<'_> {
+fn attempt_for<'a>(user: &str, password: &'a str, now: i64) -> CredentialAttempt<'a> {
     CredentialAttempt {
         organization_id: id(ORG),
-        user_id: id(USER),
+        user_id: id(user),
         kind: CredentialKind::Password,
         password,
         now: moment(now),
         target_policy: Argon2Policy::LAB_V1,
         lockout: lockout(),
     }
+}
+fn attempt(password: &str, now: i64) -> CredentialAttempt<'_> {
+    attempt_for(USER, password, now)
+}
+fn gate() -> VerificationGate {
+    VerificationGate::new(4).unwrap_or_else(|error| panic!("gate: {error}"))
+}
+async fn authenticate_and_upgrade<W: CredentialAuditWriter>(
+    pool: &SqlitePool,
+    unit_of_work: &SqliteUnitOfWork,
+    attempt: CredentialAttempt<'_>,
+    audit: &W,
+) -> Result<CredentialTransition, IdentityError> {
+    orchestrator(pool, unit_of_work, attempt, audit, &gate()).await
 }
 
 /// Writer de auditoría de fixture; escribe en la misma conexión transaccional.
@@ -697,5 +713,304 @@ async fn session_handle_stores_only_its_hash() -> Result<(), Box<dyn std::error:
     .await?;
     assert_eq!(persisted, stored.as_storage_str());
     assert_ne!(persisted, handle.as_client_secret());
+    Ok(())
+}
+
+#[tokio::test]
+async fn debug_output_never_contains_the_secret() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open_lab(&temp.path().join("credential-debug.sqlite")).await?;
+    seed_credential(&pool, "LEGACY_BCRYPT", BCRYPT_HASH, "ACTIVE", None).await?;
+
+    let attempt = attempt("super-secret-value", 10);
+    let debug = format!("{attempt:?}");
+    assert!(!debug.contains("super-secret-value"));
+    assert!(debug.contains("<redacted>"));
+
+    let snapshot = stored(&pool).await?;
+    let prepared = prepare(
+        &snapshot,
+        CredentialKind::Password,
+        "super-secret-value",
+        Argon2Policy::LAB_V1,
+    )?;
+    assert_eq!(format!("{prepared:?}"), "PreparedCredential(REDACTED)");
+    assert!(!format!("{snapshot:?}").contains(BCRYPT_HASH));
+    Ok(())
+}
+
+#[tokio::test]
+async fn rejected_attempt_after_rotation_is_not_applied() -> Result<(), Box<dyn std::error::Error>>
+{
+    let temp = tempfile::tempdir()?;
+    let pool = open_lab(&temp.path().join("credential-stale-reject.sqlite")).await?;
+    seed_credential(&pool, "LEGACY_BCRYPT", BCRYPT_HASH, "ACTIVE", None).await?;
+    let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+    let audit = FixtureAudit::new(false);
+
+    let snapshot = stored(&pool).await?;
+    let prepared = prepare(
+        &snapshot,
+        CredentialKind::Password,
+        "wrong-secret",
+        Argon2Policy::LAB_V1,
+    )?;
+    assert_eq!(
+        authenticate_and_upgrade(&pool, &unit_of_work, attempt(PASSWORD, 20), &audit).await?,
+        CredentialTransition::Verified {
+            rehash_performed: true
+        }
+    );
+
+    let mut transaction = unit_of_work.begin().await?;
+    let applied = SqliteCredentialLab::new(transaction.connection())
+        .apply(
+            &id(ORG),
+            &id(USER),
+            CredentialKind::Password,
+            prepared,
+            moment(21),
+            lockout(),
+        )
+        .await;
+    assert_eq!(applied, Err(IdentityError::ConcurrentModification));
+    transaction.rollback().await?;
+
+    let current = stored(&pool).await?;
+    assert_eq!(current.credential_version(), 2);
+    assert_eq!(current.failed_login_attempts(), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn reset_and_disable_between_snapshot_and_apply_are_observed()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open_lab(&temp.path().join("credential-stale-state.sqlite")).await?;
+    seed_credential(&pool, "LEGACY_BCRYPT", BCRYPT_HASH, "ACTIVE", None).await?;
+    let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+
+    let snapshot = stored(&pool).await?;
+    let prepared = prepare(
+        &snapshot,
+        CredentialKind::Password,
+        PASSWORD,
+        Argon2Policy::LAB_V1,
+    )?;
+    sqlx::query("UPDATE identity_credential_lab SET state = 'RESET_REQUIRED' WHERE id = ?")
+        .bind(CREDENTIAL)
+        .execute(&pool)
+        .await?;
+    let mut transaction = unit_of_work.begin().await?;
+    let applied = SqliteCredentialLab::new(transaction.connection())
+        .apply(
+            &id(ORG),
+            &id(USER),
+            CredentialKind::Password,
+            prepared,
+            moment(20),
+            lockout(),
+        )
+        .await?;
+    transaction.commit().await?;
+    assert_eq!(
+        applied,
+        crate::credential_lab::AppliedCredential {
+            transition: CredentialTransition::ResetRequired,
+            persisted: false,
+        }
+    );
+
+    sqlx::query(
+        "UPDATE identity_credential_lab SET state = 'ACTIVE', credential_version = 1 WHERE id = ?",
+    )
+    .bind(CREDENTIAL)
+    .execute(&pool)
+    .await?;
+    let snapshot = stored(&pool).await?;
+    let prepared = prepare(
+        &snapshot,
+        CredentialKind::Password,
+        PASSWORD,
+        Argon2Policy::LAB_V1,
+    )?;
+    sqlx::query("UPDATE identity_credential_lab SET state = 'DISABLED' WHERE id = ?")
+        .bind(CREDENTIAL)
+        .execute(&pool)
+        .await?;
+    let mut transaction = unit_of_work.begin().await?;
+    let applied = SqliteCredentialLab::new(transaction.connection())
+        .apply(
+            &id(ORG),
+            &id(USER),
+            CredentialKind::Password,
+            prepared,
+            moment(21),
+            lockout(),
+        )
+        .await?;
+    transaction.commit().await?;
+    assert_eq!(
+        applied,
+        crate::credential_lab::AppliedCredential {
+            transition: CredentialTransition::Rejected,
+            persisted: false,
+        }
+    );
+    assert_eq!(stored(&pool).await?.credential_version(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn gate_limits_concurrent_verifications() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("credential-gate.sqlite");
+    let first = open_lab(&path).await?;
+    let second = open(&path, Duration::from_millis(500)).await?;
+    seed_credential(&first, "LEGACY_BCRYPT", BCRYPT_HASH, "ACTIVE", None).await?;
+    sqlx::query(
+        "INSERT INTO identity_user_lab (id, organization_id, email, display_name, status, version) \
+         VALUES (?, ?, 'segunda@lab.test', 'Segunda Operadora', 'ACTIVE', 0)",
+    )
+    .bind(USER_SECOND)
+    .bind(ORG)
+    .execute(&first)
+    .await?;
+    sqlx::query(
+        "INSERT INTO identity_credential_lab (\
+            id, user_id, organization_id, credential_kind, algorithm, secret_hash, params_json, \
+            policy_id, state, credential_version, failed_login_attempts, locked_until, created_at, updated_at\
+         ) VALUES (?, ?, ?, 'PASSWORD', 'LEGACY_BCRYPT', ?, '{\"cost\":4}', 'legacy-import-v1', 'ACTIVE', 1, 0, NULL, 10, 10)",
+    )
+    .bind(CREDENTIAL_SECOND)
+    .bind(USER_SECOND)
+    .bind(ORG)
+    .bind(BCRYPT_HASH)
+    .execute(&first)
+    .await?;
+    let first_uow = SqliteUnitOfWork::new(first.clone());
+    let second_uow = SqliteUnitOfWork::new(second.clone());
+    let audit = FixtureAudit::new(false);
+    let limited = VerificationGate::new(1).unwrap_or_else(|error| panic!("gate: {error}"));
+
+    let slow = tokio::spawn({
+        let pool = first.clone();
+        let unit_of_work = first_uow.clone();
+        let audit = audit.clone();
+        let limited = limited.clone();
+        async move {
+            orchestrator(
+                &pool,
+                &unit_of_work,
+                attempt(PASSWORD, 20),
+                &audit,
+                &limited,
+            )
+            .await
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(60)).await;
+    assert_eq!(limited.available_permits(), 0);
+
+    let waiting = tokio::spawn({
+        let pool = second.clone();
+        let unit_of_work = second_uow.clone();
+        let audit = audit.clone();
+        let limited = limited.clone();
+        async move {
+            orchestrator(
+                &pool,
+                &unit_of_work,
+                attempt_for(USER_SECOND, "wrong-secret", 21),
+                &audit,
+                &limited,
+            )
+            .await
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(60)).await;
+    assert!(!waiting.is_finished(), "la verificación excedió el límite");
+
+    assert_eq!(
+        slow.await?,
+        Ok(CredentialTransition::Verified {
+            rehash_performed: true
+        })
+    );
+    assert_eq!(waiting.await?, Ok(CredentialTransition::Rejected));
+    assert_eq!(limited.available_permits(), 1);
+    let current = stored(&first).await?;
+    assert_eq!(current.credential_version(), 2);
+    assert_eq!(current.failed_login_attempts(), 0);
+    let second_attempts = sqlx::query_scalar::<_, i64>(
+        "SELECT failed_login_attempts FROM identity_credential_lab WHERE id = ?",
+    )
+    .bind(CREDENTIAL_SECOND)
+    .fetch_one(&first)
+    .await?;
+    assert_eq!(second_attempts, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancelled_while_waiting_for_capacity_leaves_state_consistent()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("credential-gate-cancel.sqlite");
+    let first = open_lab(&path).await?;
+    let second = open(&path, Duration::from_millis(500)).await?;
+    seed_credential(&first, "LEGACY_BCRYPT", BCRYPT_HASH, "ACTIVE", None).await?;
+    let first_uow = SqliteUnitOfWork::new(first.clone());
+    let second_uow = SqliteUnitOfWork::new(second.clone());
+    let audit = FixtureAudit::new(false);
+    let limited = VerificationGate::new(1).unwrap_or_else(|error| panic!("gate: {error}"));
+
+    let slow = tokio::spawn({
+        let pool = first.clone();
+        let unit_of_work = first_uow.clone();
+        let audit = audit.clone();
+        let limited = limited.clone();
+        async move {
+            orchestrator(
+                &pool,
+                &unit_of_work,
+                attempt(PASSWORD, 20),
+                &audit,
+                &limited,
+            )
+            .await
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    let waiting = tokio::spawn({
+        let pool = second.clone();
+        let unit_of_work = second_uow.clone();
+        let audit = audit.clone();
+        let limited = limited.clone();
+        async move {
+            orchestrator(
+                &pool,
+                &unit_of_work,
+                attempt("wrong-secret-cancelled", 21),
+                &audit,
+                &limited,
+            )
+            .await
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    waiting.abort();
+    let _ = waiting.await;
+
+    assert_eq!(
+        slow.await?,
+        Ok(CredentialTransition::Verified {
+            rehash_performed: true
+        })
+    );
+    let current = stored(&first).await?;
+    assert_eq!(current.credential_version(), 2);
+    assert_eq!(current.failed_login_attempts(), 0);
+    assert_eq!(limited.available_permits(), 1);
     Ok(())
 }
