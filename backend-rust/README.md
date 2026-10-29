@@ -134,11 +134,15 @@ no cero. Un checkpoint **no es un backup**.
   reutiliza la conexión hasta procesarlo. Se prueban lock entre pools, WAL reader,
   CAS concurrente, rollback y fallo de commit sobre SQLite real; el detalle está
   en [`rust-increment-1d.md`](../docs/05-development/rust-increment-1d.md).
-- No hay auditoría productiva, RBAC DB-authoritative, importador, checkout,
-  outbox, cifrado de backups, sesiones ni transición BCrypt/Argon2id. Las tablas
-  actuales no habilitan operar en producción. La ficha Local de auditoría es una
-  propuesta sin DDL en
-  [`rust-local-audit-event-proposal.md`](../docs/05-development/rust-local-audit-event-proposal.md).
+- `pos-core::audit` contiene foundation pura de metadata JSON segura,
+  atribución USER/SYSTEM y contrato futuro fail-closed, y SQLite prueba sus
+  constraints/triggers mediante fixtures aisladas. No hay writer ni auditoría
+  productiva, RBAC DB-authoritative, sesiones, importador, checkout, outbox,
+  cifrado de backups ni transición BCrypt/Argon2id. Las tablas actuales no
+  habilitan operar en producción. La ficha Local sigue siendo una propuesta sin
+  DDL en [`rust-local-audit-event-proposal.md`](../docs/05-development/rust-local-audit-event-proposal.md);
+  ver el alcance y límites de 1E en
+  [`rust-increment-1e.md`](../docs/05-development/rust-increment-1e.md).
 
 `MoneyMinor` usa `i64` firmado y suma checked con moneda explícita. El importador
 **primitivo**, no el importador Java, convierte strings decimales solo si la
@@ -186,6 +190,7 @@ No ejecutar down migrations sobre bases reales.
 
 - [Informe, diccionario, bloqueos y validación](../docs/05-development/rust-foundation.md).
 - [Auditoría AS-IS y matriz de paridad](../docs/05-development/rust-parity-baseline.md).
+- [Foundation de auditoría Local 1E](../docs/05-development/rust-increment-1e.md).
 - [Especificación real del lab y artefactos](tools/migration-lab/README.md).
 - [ADR-0020](../docs/01-architecture/adr/0020-rust-foundation-sqlx-migration-boundary.md).
 - [CI y gate normativo obligatorio](../docs/05-development/ci.md).

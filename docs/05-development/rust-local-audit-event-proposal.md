@@ -43,6 +43,35 @@ confirmada por la ficha normativa. No se adopta por analogía el nombre Java
 La fila no almacenará JWTs, headers `Authorization`, refresh/access tokens,
 hashes, contraseñas, secretos, claves privadas ni PII que no sea necesaria.
 
+## Matriz de contrato físico revisable
+
+La siguiente matriz no es DDL ni autorización: convierte la evidencia Java y la foundation Rust en una ficha que el titular normativo debe confirmar. `Aprobado` significa que existe en Java V7; no significa que esté aprobado para Local.
+
+| Campo candidato | Tipo Rust actual | SQLite candidato | NULL | CHECK / FK / índice | Regla de negocio | Procedencia | Estado Local |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `id` | `AuditEventId(EntityId)` | `TEXT` UUID canónico | No | PK; validación UUID igual a agregados | identidad estable generada fuera de DB | Java V7; audit.md | Pendiente de aprobación física |
+| `organization_id` | `EntityId` | `TEXT` | No | FK `organization(id)`; prefijo de todos los índices de lectura | todo hecho tiene un único owner | Java V7; audit-model.md | Pendiente |
+| `branch_id` | `Option<EntityId>` | `TEXT` | Sí | FK compuesta `(branch_id, organization_id) -> branch(id, organization_id)` | una sucursal opcional nunca cruza org | Java V7; `0001` expone superkey futura | Pendiente |
+| `actor_type` | `AuditActor` | `TEXT` | No | `IN ('USER','SYSTEM')` | actor explícito y atribuible | Java V7; audit.md | Pendiente |
+| `actor_user_id` | `AuditActor::User` | `TEXT` | Condicional | `USER => NN`; `SYSTEM => NULL`; futura FK compuesta al usuario Local | no hay usuario técnico ficticio | Java V7; audit.md | Bloqueado por usuario Local |
+| `local_session_id` | No materializado | `TEXT` candidato | Por decidir | FK y lifecycle por definir | no copiar `token_jti` JWT ni inventar sesiones | F4–21 / propuesta 1D | Bloqueado por Auth Local |
+| `action` | `AuditAction` | `TEXT` candidato | No | no vacío tras trim; catálogo/límite a aprobar | código estable de negocio, normalmente `entity.action` | Java `AuditRecord`, V7 | Límite/catálogo pendientes |
+| `entity_type` | `AuditEntityType` | `TEXT` candidato | No | no vacío tras trim; catálogo/límite a aprobar | tipo estable, no nombre de clase | Java `AuditRecord`, V7 | Límite/catálogo pendientes |
+| `entity_id` | `Option<EntityId>` | `TEXT` | Sí | UUID si existe | entidad principal afectada | Java V7 | Pendiente representación UUID |
+| `reason` | `Option<AuditReason>` | `TEXT` candidato | Sí | límite/semántica por aprobar | reservado para ajustes, refunds y correcciones | Java V7 | Pendiente |
+| `metadata` | `AuditMetadata` | `TEXT` JSON candidato | Sí | `json_valid`; bytes UTF-8 ≤ 16384; validación Rust previa | JSON seguro, no request dump ni secretos | Java V7; audit.md | Fixture verificado; DDL pendiente |
+| `occurred_at` | `AuditOccurredAt` | `TEXT` UTC RFC 3339 candidato | No | validación de formato/precisión a aprobar | reloj inyectado, no reloj del cliente | Java V7; audit.md | Pendiente |
+
+Los índices candidatos se mantienen limitados a las consultas Java comprobadas: `(organization_id, occurred_at DESC, id DESC)`, y, tras confirmar el endpoint Local, compuestos por `branch_id`, `actor_user_id` y `(entity_type, entity_id)`. No se añade particionado, retención, búsqueda externa ni índices especulativos.
+
+## Decisiones cerradas y dependencias abiertas
+
+**Puede revisarse ahora:** UUID de evento; owner obligatorio; branch same-org; actor cerrado USER/SYSTEM; metadata JSON segura de 16 KiB; reloj UTC; append-only por trigger SQLite; mutación más evento en una UoW; y la ausencia de UPDATE/DELETE en el futuro repositorio.
+
+**No se puede cerrar sin Auth Local:** tabla/identidad de usuario, FK compuesta actor-owner, `local_session_id`, lifecycle/revocación de sesión, obligatoriedad de correlación para USER, y el mecanismo DB-authoritative que construye `AuditActor` sin aceptar actor desde el cliente. El contrato Java `token_jti` queda deliberadamente fuera: era correlación de un JWT y no prueba que exista un equivalente Local.
+
+**No se puede adoptar sin aceptación normativa:** nombre final singular/plural, representación UUID/timestamp/JSON, longitudes físicas de action/entity/reason, catálogo de entidades/acciones, índices de lectura Local, trigger exacto, política de retención y DDL aditivo. D01–D07 y ADR-0021/CC-0021 no sustituyen esta aceptación.
+
 ## Constraints, aislamiento e índices requeridos
 
 La ficha aceptada debe especificar, como mínimo:
