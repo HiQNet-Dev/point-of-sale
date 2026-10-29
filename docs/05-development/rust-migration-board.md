@@ -30,8 +30,8 @@ productiva: las tablas implicadas siguen sin aprobación física.
 | Bootstrap | `PERSISTENCE (fixture)` | Pruebas de one-shot, ownership compuesto y rollback; tramo Organization en Rust | Secreto pre-body, DDL aprobado, endpoint/servicio de producto |
 | Catálogo (categorías, productos) | `DOMAIN` | `pos-core::catalog`, 18 pruebas | DDL, adaptador, casos de uso, API |
 | Modificadores | `DOMAIN` | `pos-core::catalog`, semánticos derivados y plan de reemplazo | DDL, adaptador, casos de uso, API |
-| Cajas | `NOT_STARTED` | — | Todo |
-| Turnos | `NOT_STARTED` | — | Todo |
+| Cajas | `DOMAIN` | `pos-core::cash`, scope de sucursal y patch CAS | DDL, adaptador, casos de uso, API |
+| Turnos | `DOMAIN` | `pos-core::cash`, apertura/cierre, recuperación y no idempotencia | DDL, índice único parcial, port de ventas abiertas, API |
 | Ventas | `NOT_STARTED` | — | Todo |
 | Checkout y pagos | `NOT_STARTED` | — | Todo |
 | Inventario | `NOT_STARTED` | — | Todo |

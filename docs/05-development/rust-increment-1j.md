@@ -1,4 +1,4 @@
-# Incremento 1J — Dominio de catálogo y arranque inicial verificado
+# Incremento 1J — Dominio de catálogo, cajas y turnos; arranque inicial verificado
 
 **Estado: DOMINIO IMPLEMENTADO Y PROBADO. Sin DDL productivo de catálogo.**
 
@@ -24,8 +24,9 @@ El paquete **D-AUTH-01..08, D-AUTH-10, D-AUTH-11, D-INST-01, D-INST-02** y
 ADR-0022 sigue sin aceptación formal del titular. Ese bloqueo impide promover
 `0002`–`0007` a `migrations/local`, no impide avanzar en trabajo independiente.
 
-Este incremento ejecuta el **frente independiente A** del programa maestro:
-reglas puras de catálogo, productos y modificadores, sin persistencia ni DDL.
+Este incremento ejecuta los **frentes independientes A y B** del programa maestro:
+reglas puras de catálogo, productos, modificadores, cajas y turnos, sin
+persistencia ni DDL.
 
 ```mermaid
 graph TD
@@ -147,7 +148,39 @@ Evidencia (`pos-storage-sqlite/src/proposals_tests.rs`):
 Ambas pruebas parten de una base genuinamente vacía con `0001` y las propuestas
 aplicadas. No son migraciones del producto ni se cargan desde `pos-local`.
 
-## 6. Pruebas ejecutadas (Windows, SQLite real)
+## 6. Frente B: cajas y turnos
+
+`pos-core::cash` (nuevo módulo, sin dependencias de infraestructura).
+
+| Tipo | Responsabilidad | Regla principal |
+| --- | --- | --- |
+| `CashRegister` | Caja de sucursal | Pertenece a la **sucursal**; `code` único por sucursal e inmutable; `ACTIVE`/`INACTIVE` |
+| `NewCashRegister` | Creación | Scope explícito; revisión inicial `0` |
+| `CashRegisterPatch` | Modificación | Solo `name` y `status`; CAS por revisión |
+| `CashShift` | Turno histórico | Estado `OPEN`/`CLOSED`; `OPEN` sin datos de cierre, `CLOSED` con todos |
+| `NewCashShift` | Apertura | Scope derivado de la caja; exige caja activa |
+| `CloseCashShift` | Cierre | Importe declarado, actor autenticado, instante UTC y versión esperada |
+| `ensure_open_allowed` | Política de apertura | Sucursal activa → caja activa → sin turno abierto (orden Java) |
+| `ensure_close_allowed` | Política de cierre | Turno abierto y sin ventas abiertas; **sin** comprobar estado activo |
+
+Reglas preservadas:
+
+- El scope (`organization_id`, `branch_id`) se deriva de la caja y nunca se
+  acepta desde el cliente.
+- El cierre **no** es idempotente: un segundo cierre devuelve
+  `ShiftAlreadyClosed` y no altera el histórico.
+- El cierre funciona aunque la sucursal o la caja se hayan desactivado después
+  de abrir: es el flujo de recuperación que Java autoriza explícitamente.
+- Los importes reutilizan `catalog::UnitPrice` (no negativo, escala 4, máximo
+  `999999999999999.9999`), que coincide con la validación de `CashShift`.
+- El guard de "ventas abiertas" es un puerto de aplicación que debe evaluarse en
+  la misma transacción; el dominio solo expone la regla y el error tipado.
+
+Pruebas nuevas: `pos-core::cash_tests` (10 casos), incluidas la asimetría
+ apertura/cierre, la no idempotencia, el CAS obsoleto, el desbordamiento de
+revisión y el rechazo de filas incoherentes al rehidratar.
+
+## 7. Pruebas ejecutadas (Windows, SQLite real)
 
 ```bash
 cd backend-rust
@@ -159,12 +192,12 @@ cargo build --locked --workspace --all-features
 
 | Crate / binario | Pruebas | Resultado |
 | --- | --- | --- |
-| `pos-core` | 50 (18 nuevas de catálogo) | OK |
+| `pos-core` | 60 (18 de catálogo, 10 de cajas y turnos) | OK |
 | `pos-credentials` | 8 | OK |
 | `pos-storage-sqlite` | 57 (2 nuevas de primer arranque) | OK |
 | `pos-local` (lib, bin, integración) | 11 | OK |
 | `migration-lab` | 27 | OK |
-| **Total** | **143** | **0 fallos** |
+| **Total** | **153** | **0 fallos** |
 
 Cobertura nueva del dominio:
 
@@ -183,7 +216,7 @@ Cobertura nueva del dominio:
 No se ejecutó `--require-complete`, el Migration Lab PostgreSQL 17 ni ningún gate
 normativo; los resultados anteriores son exclusivamente SQLite/Windows.
 
-## 7. Estado normativo y de gates
+## 8. Estado normativo y de gates
 
 | Elemento | Estado |
 | --- | --- |
@@ -194,9 +227,9 @@ normativo; los resultados anteriores son exclusivamente SQLite/Windows.
 | D-INST-01, D-INST-02, ADR-0022 | **Pendientes** |
 | DDL13 / PAR / AS | Sin promoción; `PAR-08` sigue siendo el único PASS histórico |
 | CI de esta rama | No ejecutado en este entorno |
-| Migración de catálogo a SQLite | No iniciada: depende de aprobación física |
+| Migración de catálogo y cajas a SQLite | No iniciada: depende de aprobación física |
 
-## 8. Riesgos abiertos
+## 9. Riesgos abiertos
 
 1. El dominio de catálogo no tiene aún contrato físico Local. Un adaptador no
    puede implementarse hasta decidir la representación de importes (D3) y el
@@ -207,17 +240,25 @@ normativo; los resultados anteriores son exclusivamente SQLite/Windows.
 3. La búsqueda `q` de Java usa `LIKE` insensible a mayúsculas sobre nombre, SKU y
    barcode. En SQLite ese comportamiento debe resolverse con `COLLATE NOCASE`
    (ASCII) o normalización explícita, igual que D-AUTH-11 para el email.
-4. La autorización por permiso (`category.*`, `product.*`, `modifier.*`) existe en
-   el catálogo de 59 códigos, pero no hay casos de uso que la apliquen todavía.
+4. La autorización por permiso (`category.*`, `product.*`, `modifier.*`,
+   `cash-register.*`, `cash-shift.*`) existe en el catálogo de 59 códigos, pero no
+   hay casos de uso que la apliquen todavía.
+5. "Como máximo un turno `OPEN` por caja" solo puede garantizarlo el índice único
+   parcial del esquema físico. La regla de dominio es una precondición de
+   experiencia, nunca la autoridad ante una carrera.
+6. El cierre exige evaluar "ventas abiertas" en la misma transacción que la
+   transición de estado; esa composición requiere el esquema de ventas, todavía no
+   migrado.
 
-## 9. Próximo incremento recomendado
+## 10. Próximo incremento recomendado
 
 1. **Cerrar 1I** con la aceptación formal del paquete D-AUTH/D-INST o, en su
-   defecto, mantener el bloqueo y avanzar el frente independiente **B** (cajas y
-   turnos) y el **D** (máquina de estados de compras), ambos también de dominio
-   puro.
+   defecto, mantener el bloqueo y avanzar el frente independiente **C** (ledger de
+   inventario y recetas) y el **D** (máquina de estados de compras), ambos también
+   de dominio puro.
 2. Cuando exista aprobación física, promover `0002`–`0007`, añadir las tablas de
-   catálogo y sustituir los adaptadores `*_lab` por adaptadores canónicos.
+   catálogo, cajas y turnos, y sustituir los adaptadores `*_lab` por adaptadores
+   canónicos.
 3. No declarar Auth/RBAC/auditoría productivos hasta contar con DDL aprobado,
    verificación criptográfica de producto, principal autenticado, autorización
    persistente y pruebas de integración completas.

@@ -140,7 +140,9 @@ no cero. Un checkpoint **no es un backup**.
   DB-authoritative asíncronos; `pos-credentials` concentra verificación BCrypt,
   Argon2id y handles opacos. `pos-core::catalog` aporta las reglas puras de
   categorías, productos y modificadores (códigos, SKU, importes exactos, estados
-  derivados y plan de reasignación), sin persistencia. SQLite prueba las
+  derivados y plan de reasignación) y `pos-core::cash` las de cajas y turnos
+  (scope de sucursal, apertura/cierre, recuperación y no idempotencia), sin
+  persistencia. SQLite prueba las
   foundations de seguridad mediante fixtures aisladas y adaptadores de
   laboratorio (`identity_lab`, `credential_lab`). No hay
   writer ni auditoría productiva, autenticación/RBAC DB-authoritative concreta,
