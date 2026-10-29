@@ -47,7 +47,7 @@ fn timezone_currency_and_locale_cover_java_compatible_vectors() {
     for zone in ["America/Mexico_City", "Etc/GMT+5", "Z", "UTC", "GMT", "UT", "+18:00", "-1800", "UTC+05:30"] {
         assert!(Timezone::new(zone).is_ok(), "{zone}");
     }
-    for zone in ["+18:01", "-18:01", "+19:00", "UTC", "Europe/", "America//Mexico", " "] {
+    for zone in ["+18:01", "-18:01", "+19:00", "UTC+18:01", "Europe/", "America//Mexico", " "] {
         assert!(Timezone::new(zone).is_err(), "{zone}");
     }
     for currency in ["USD", "MXN", "eur", "XTS"] {
@@ -218,14 +218,18 @@ fn application_enforces_authorization_duplicate_scope_and_audit_rollback() {
     assert_eq!(branches.create(&organization_id, branch_input(" CENTER ")), Err(ApplicationError::BranchCodeAlreadyExists));
     let foreign = id("00000000-0000-0000-0000-000000000012");
     assert_eq!(branches.get(&foreign, &branch_id), Err(ApplicationError::OrganizationNotFound));
+    let updated = branches.update(&organization_id, &branch_id, BranchPatch { expected_revision: 0, name: Some(DisplayName::new("Otro nombre").unwrap_or_else(|error| panic!("name: {error}"))), timezone_override: TimezoneOverridePatch::Keep, status: None }).unwrap_or_else(|error| panic!("update branch: {error:?}"));
+    assert_eq!(updated.revision(), 1);
     let (mut uow, _, _) = branches.into_parts();
+    assert_eq!(uow.0.audit[1].action, "branch.updated");
+    assert_eq!(uow.0.audit[1].changed_fields, vec!["name"]);
     uow.0.fail_audit = true;
     let mut branches = BranchApplication::new(uow, FixedAuthorization(true), FixedIds(VecDeque::new()));
-    assert_eq!(branches.update(&organization_id, &branch_id, BranchPatch { expected_revision: 0, name: Some(DisplayName::new("Otro nombre").unwrap_or_else(|error| panic!("name: {error}"))), timezone_override: TimezoneOverridePatch::Keep, status: None }), Err(ApplicationError::Audit));
+    assert_eq!(branches.update(&organization_id, &branch_id, BranchPatch { expected_revision: 1, name: None, timezone_override: TimezoneOverridePatch::Keep, status: Some(Status::Inactive) }), Err(ApplicationError::Audit));
     let (uow, _, _) = branches.into_parts();
-    assert_eq!(uow.0.branches[0].name().as_str(), "Sucursal Centro");
-    assert_eq!(uow.0.branches[0].revision(), 0);
-    assert_eq!(uow.0.audit.len(), 1);
+    assert_eq!(uow.0.branches[0].name().as_str(), "Otro nombre");
+    assert_eq!(uow.0.branches[0].revision(), 1);
+    assert_eq!(uow.0.audit.len(), 2);
 }
 
 #[test]

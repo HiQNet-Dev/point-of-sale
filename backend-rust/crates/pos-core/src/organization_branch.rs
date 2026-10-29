@@ -563,6 +563,32 @@ pub struct AuditEvent {
     pub changed_fields: Vec<&'static str>,
 }
 
+/// Marca temporal UTC entregada por un reloj de infraestructura.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UtcTimestamp(String);
+
+impl UtcTimestamp {
+    /// Construye una marca no vacía y libre de NUL. La serialización RFC 3339 se
+    /// comprueba en el adaptador que conoce su reloj concreto.
+    pub fn new(value: &str) -> Result<Self, DomainError> {
+        if value.is_empty() || value.contains('\0') {
+            return Err(DomainError::InvalidPersistedValue);
+        }
+        Ok(Self(value.to_owned()))
+    }
+
+    /// Valor persistible de la marca temporal.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Reloj inyectable para adaptadores que deban sellar operaciones en UTC.
+pub trait Clock {
+    /// Devuelve el instante actual. Un fallo se propaga y debe abortar la UoW.
+    fn now_utc(&self) -> Result<UtcTimestamp, ApplicationError>;
+}
+
 /// Dependencia para generar UUIDs; una implementación productiva no puede reutilizar IDs.
 pub trait IdentityGenerator {
     /// Genera una identidad UUID canónica nueva.
