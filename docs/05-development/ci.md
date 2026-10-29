@@ -89,7 +89,11 @@ PostgreSQL: la integración real se ejecuta por el CLI y se valida con
 El incremento 0c añade ocho regresiones del verificador: valida SHA-256 real de
 los siete snapshots técnicos, inventario completo sin duplicados/rutas inesperadas,
 archivos/manifiesto ausentes, truncados o simbólicos. No acredita autenticidad ni
-aprueba DDL13. El step de tests es bloqueante y no altera `--require-complete`.
+aprueba DDL13. La preparación PRE0D-1 amplía la suite a **17 tests**: exige los
+30 IDs normativos exactos y únicos, estados válidos y contadores enteros derivados;
+una lista con caso faltante sustituido por duplicado ya no se acepta. Los tests
+sintéticos no acreditan los casos normativos. El step sigue bloqueante y no altera
+`--require-complete`.
 
 La ejecución normal devuelve **0 por ejecución técnica correcta, NO por
 aprobación normativa**. Los 41 checks técnicos pueden pasar, pero eso no basta

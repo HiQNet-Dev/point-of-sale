@@ -58,8 +58,9 @@ No se publican como hashes de datos de negocio.
 ## Evidencias
 
 - `baseline-manifest.json`: HEAD de Git, dirty observado y hash de la salida
-  porcelain (no hash del contenido del worktree), hashes SHA-256 de los **25
-  archivos Flyway leídos**, y las **37 tablas obtenidas del SQL fuente**.
+  porcelain (no hash del contenido del worktree), `flyway_worktree` con los paths
+  de migraciones modificadas o untracked en el checkout, hashes SHA-256 de los
+  **25 archivos Flyway leídos**, y las **37 tablas obtenidas del SQL fuente**.
   El inventario excluye `flyway_schema_history`, ignora comentarios/literales/
   cuerpos dollar-quoted y rechaza `DROP TABLE` o `CREATE TABLE` no soportado.
   No es una consulta a una BD viva ni un checksum CRC32 de Flyway.

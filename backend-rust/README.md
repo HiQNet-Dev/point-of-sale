@@ -18,7 +18,12 @@ El incremento 0c aporta [reconciliación Git/CI](../docs/05-development/rust-inc
 [CC-0021 sin aprobar](../docs/05-development/rust-adr0021-change-control.md).
 No se implementa DDL de esos candidatos antes de su aceptación. El
 [informe 0c](../docs/05-development/rust-increment-0c-report.md) reúne los 30
-estados normativos, comandos, digests y decisiones pendientes.
+estados normativos, comandos, digests y decisiones pendientes. La
+[versión de aprobación PRE0D-1](../docs/05-development/rust-0d-approval-package.md)
+concreta D01..D07, lo que puede empezar en 0d y lo que exige aceptación previa;
+ADR-0021 continúa PROPOSED y no cambia el gate. El
+[inventario Java AS-IS](../docs/05-development/rust-java-module-inventory.md)
+traza módulos, contratos, tablas y pruebas antes de portar.
 
 ## Arquitectura materializada
 
