@@ -19,7 +19,7 @@
 //! columna de revisión separada para esas tablas. Esa decisión sigue pendiente
 //! de aprobación documental.
 
-use std::{collections::BTreeSet, fmt};
+use std::{collections::BTreeSet, fmt, future::Future};
 
 use serde_json::{Map, Value};
 
@@ -77,6 +77,10 @@ pub enum IdentityError {
     OwnershipMismatch,
     /// El usuario no está activo.
     UserInactive,
+    /// El almacenamiento no pudo responder; nunca se interpreta como éxito.
+    StorageUnavailable,
+    /// El scope solicitado no existe, está inactivo o no pertenece al principal.
+    ScopeDenied,
     /// Un permiso no es un código técnico estable.
     InvalidPermission,
 }
@@ -98,6 +102,8 @@ impl fmt::Display for IdentityError {
             Self::SessionNotActive => "sesión no activa",
             Self::OwnershipMismatch => "identidad fuera de su organización",
             Self::UserInactive => "usuario inactivo",
+            Self::StorageUnavailable => "almacenamiento no disponible",
+            Self::ScopeDenied => "scope denegado",
             Self::InvalidPermission => "permiso inválido",
         })
     }
@@ -184,6 +190,29 @@ impl PosUser {
             revision: 0,
         }
     }
+
+    /// Rehidrata un usuario persistido conservando estado y revisión.
+    ///
+    /// Uso exclusivo de adaptadores de persistencia; el email y el nombre ya
+    /// llegan validados por sus value objects.
+    pub fn restore(
+        id: EntityId,
+        organization_id: EntityId,
+        display_name: DisplayName,
+        email: NormalizedEmail,
+        status: PosUserStatus,
+        revision: u64,
+    ) -> Self {
+        Self {
+            id,
+            organization_id,
+            display_name,
+            email,
+            status,
+            revision,
+        }
+    }
+
     /// Identidad estable.
     pub fn id(&self) -> &EntityId {
         &self.id
@@ -462,6 +491,47 @@ impl LocalCredential {
             updated_at: new.created_at,
         })
     }
+
+    /// Rehidrata una credencial persistida validando sus invariantes.
+    ///
+    /// Uso exclusivo de adaptadores de persistencia: no acepta datos de
+    /// transporte y conserva la versión almacenada para el control de CAS.
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        id: EntityId,
+        user_id: EntityId,
+        kind: CredentialKind,
+        algorithm: CredentialAlgorithm,
+        secret_hash: SecretHash,
+        parameters: CredentialParameters,
+        policy_id: &str,
+        state: CredentialState,
+        credential_version: u64,
+        failed_login_attempts: u32,
+        locked_until: Option<UtcSeconds>,
+        created_at: UtcSeconds,
+        updated_at: UtcSeconds,
+    ) -> Result<Self, IdentityError> {
+        validate_policy_id(policy_id)?;
+        if credential_version == 0 || updated_at < created_at {
+            return Err(IdentityError::StorageUnavailable);
+        }
+        Ok(Self {
+            id,
+            user_id,
+            kind,
+            algorithm,
+            secret_hash,
+            parameters,
+            policy_id: policy_id.to_owned(),
+            state,
+            credential_version,
+            failed_login_attempts,
+            locked_until,
+            created_at,
+            updated_at,
+        })
+    }
     /// Identidad estable.
     pub fn id(&self) -> &EntityId {
         &self.id
@@ -678,9 +748,11 @@ impl SessionHash {
         }
         Ok(Self(value.to_owned()))
     }
-    /// Uso exclusivo por repositorios/adaptadores de lookup; nunca para respuestas o logs.
-    #[allow(dead_code)]
-    pub(crate) fn for_lookup(&self) -> &str {
+    /// Uso exclusivo por repositorios/adaptadores de persistencia.
+    ///
+    /// Un hash SHA-256 no es un secreto, pero tampoco debe aparecer en
+    /// respuestas, trazas ni mensajes de error.
+    pub fn as_storage_str(&self) -> &str {
         &self.0
     }
 }
@@ -741,6 +813,36 @@ impl LocalSession {
             session_version: 1,
         })
     }
+    /// Rehidrata una sesión persistida validando versión y vigencia.
+    ///
+    /// Uso exclusivo de adaptadores; no revive sesiones ni reinterpreta la
+    /// revocación almacenada.
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        id: EntityId,
+        user_id: EntityId,
+        organization_id: EntityId,
+        session_hash: SessionHash,
+        created_at: UtcSeconds,
+        expires_at: UtcSeconds,
+        revoked_at: Option<UtcSeconds>,
+        session_version: u64,
+    ) -> Result<Self, IdentityError> {
+        if expires_at <= created_at || session_version == 0 {
+            return Err(IdentityError::StorageUnavailable);
+        }
+        Ok(Self {
+            id,
+            user_id,
+            organization_id,
+            session_hash,
+            created_at,
+            expires_at,
+            revoked_at,
+            session_version,
+        })
+    }
+
     /// Identidad estable que `audit_event.session_id` podrá referenciar.
     pub fn id(&self) -> &EntityId {
         &self.id
@@ -943,21 +1045,22 @@ impl VerifiedPrincipal {
 }
 
 /// Lecturas DB-authoritative requeridas para construir un principal.
+///
+/// Los métodos son asíncronos para permitir un adaptador SQLx real sin
+/// `block_on` ni conexiones clonadas. El adaptador debe devolver únicamente
+/// datos de identidad; nunca hashes, handles crudos ni material criptográfico.
 pub trait LocalIdentityRepository {
-    /// Busca por hash de handle ya calculado por el adaptador criptográfico.
-    ///
-    /// El adaptador debe devolver únicamente datos de identidad; nunca hashes,
-    /// handles crudos ni material criptográfico.
+    /// Busca por hash de sesión ya calculado por el adaptador criptográfico.
     fn find_session_by_hash(
-        &self,
+        &mut self,
         hash: &SessionHash,
-    ) -> Result<Option<LocalSession>, IdentityError>;
+    ) -> impl Future<Output = Result<Option<LocalSession>, IdentityError>> + Send;
     /// Busca el usuario dentro de la Organization derivada de la sesión.
     fn find_user(
-        &self,
+        &mut self,
         organization_id: &EntityId,
         user_id: &EntityId,
-    ) -> Result<Option<PosUser>, IdentityError>;
+    ) -> impl Future<Output = Result<Option<PosUser>, IdentityError>> + Send;
 }
 
 /// Resolución de permisos vigente en DB; no admite grants desde DTO/JWT.
@@ -967,51 +1070,57 @@ pub trait LocalIdentityRepository {
 /// - `branch_id = None`: devuelve solo las grants de alcance organización.
 /// - `branch_id = Some(b)`: devuelve la unión de las grants de organización y de
 ///   la membership activa del usuario en esa sucursal, y debe fallar cerrado si
-///   la sucursal no pertenece a la organización o está inactiva.
+///   la sucursal no pertenece a la organización, está inactiva o el usuario no
+///   tiene membership activa.
 pub trait PermissionAuthority {
     /// Devuelve las grants vigentes del usuario en el scope solicitado.
     fn resolve_permissions(
-        &self,
+        &mut self,
         user_id: &EntityId,
         organization_id: &EntityId,
         branch_id: Option<&EntityId>,
-    ) -> Result<BTreeSet<PermissionCode>, IdentityError>;
+    ) -> impl Future<Output = Result<BTreeSet<PermissionCode>, IdentityError>> + Send;
 }
 
-/// Coordinación de autenticación local: sesión validada → usuario activo → permisos.
-pub struct LocalPrincipalService<R, P> {
-    repository: R,
-    permissions: P,
+/// Coordinación de autenticación local sobre una única fuente DB-authoritative.
+///
+/// Identidad y permisos comparten la misma fuente para que la decisión no mezcle
+/// orígenes con estados distintos. Para mutaciones críticas el llamador debe
+/// construir este servicio sobre la conexión de la unidad de trabajo activa.
+pub struct LocalPrincipalService<S> {
+    source: S,
 }
-impl<R: LocalIdentityRepository, P: PermissionAuthority> LocalPrincipalService<R, P> {
-    /// Ensambla adaptadores explícitos; no existe implementación allow-all.
-    pub fn new(repository: R, permissions: P) -> Self {
-        Self {
-            repository,
-            permissions,
-        }
+impl<S: LocalIdentityRepository + PermissionAuthority> LocalPrincipalService<S> {
+    /// Ensambla la fuente explícita; no existe implementación allow-all.
+    pub fn new(source: S) -> Self {
+        Self { source }
     }
     /// Construye un principal para un scope exacto y falla cerrado en cualquier duda.
     ///
     /// La organización del principal procede siempre de la sesión y del usuario,
     /// nunca de la petición. La sucursal solicitada se resuelve en la autoridad
     /// de permisos, que debe rechazar sucursales ajenas o inactivas.
-    pub fn authenticate(
-        &self,
+    pub async fn authenticate(
+        &mut self,
         hash: &SessionHash,
         now: UtcSeconds,
         branch_id: Option<&EntityId>,
     ) -> Result<VerifiedPrincipal, AuditAttributionError> {
         let session = self
-            .repository
+            .source
             .find_session_by_hash(hash)
+            .await
             .map_err(|_| AuditAttributionError::UnattributablePrincipal)?
             .ok_or(AuditAttributionError::Unauthenticated)?;
         let user = self
-            .repository
+            .source
             .find_user(session.organization_id(), session.user_id())
+            .await
             .map_err(|_| AuditAttributionError::UnattributablePrincipal)?
             .ok_or(AuditAttributionError::Unauthenticated)?;
+        session
+            .ensure_owned_by(&user)
+            .map_err(|_| AuditAttributionError::UnattributablePrincipal)?;
         session
             .validate_for(user.id(), user.organization_id(), now)
             .map_err(|error| match error {
@@ -1022,8 +1131,9 @@ impl<R: LocalIdentityRepository, P: PermissionAuthority> LocalPrincipalService<R
             return Err(AuditAttributionError::Unauthenticated);
         }
         let permissions = self
-            .permissions
+            .source
             .resolve_permissions(user.id(), user.organization_id(), branch_id)
+            .await
             .map_err(|_| AuditAttributionError::ScopeDenied)?;
         Ok(VerifiedPrincipal {
             user_id: user.id().clone(),

@@ -1,7 +1,7 @@
 // Fixtures deterministas para reglas puras; no representan secretos de producto.
 #![allow(clippy::panic)]
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, future::Future};
 
 use serde_json::json;
 
@@ -369,49 +369,77 @@ fn session_alignment_version_ownership_and_revoke_are_enforced() {
     assert_eq!(session.revoke(2, moment(160)), Ok(false));
     assert_eq!(session.session_version(), 2);
     assert!(!format!("{session:?}").contains("012345"));
+    assert_eq!(
+        LocalSession::restore(
+            session.id().clone(),
+            session.user_id().clone(),
+            session.organization_id().clone(),
+            hash(),
+            moment(100),
+            moment(100),
+            None,
+            1
+        ),
+        Err(IdentityError::StorageUnavailable)
+    );
 }
 
-#[derive(Clone)]
-struct Repository {
+/// Fuente única de identidad y permisos para pruebas: nunca es un adaptador real.
+#[derive(Clone, Default)]
+struct Source {
     session: Option<LocalSession>,
     user: Option<PosUser>,
+    grants: Option<Result<BTreeSet<PermissionCode>, IdentityError>>,
     fail: bool,
 }
-impl LocalIdentityRepository for Repository {
-    fn find_session_by_hash(
-        &self,
-        provided: &SessionHash,
-    ) -> Result<Option<LocalSession>, IdentityError> {
-        if self.fail {
-            return Err(IdentityError::InvalidSessionHash);
+impl Source {
+    fn granting(session: LocalSession, user: PosUser, codes: &[&str]) -> Self {
+        Self {
+            session: Some(session),
+            user: Some(user),
+            grants: Some(Ok(codes.iter().map(|code| permission(code)).collect())),
+            fail: false,
         }
-        Ok(self
-            .session
-            .as_ref()
-            .filter(|session| session.session_hash() == provided)
-            .cloned())
+    }
+}
+impl LocalIdentityRepository for Source {
+    fn find_session_by_hash(
+        &mut self,
+        provided: &SessionHash,
+    ) -> impl Future<Output = Result<Option<LocalSession>, IdentityError>> + Send {
+        let result = if self.fail {
+            Err(IdentityError::StorageUnavailable)
+        } else {
+            Ok(self
+                .session
+                .as_ref()
+                .filter(|session| session.session_hash() == provided)
+                .cloned())
+        };
+        async move { result }
     }
     fn find_user(
-        &self,
+        &mut self,
         organization_id: &EntityId,
         user_id: &EntityId,
-    ) -> Result<Option<PosUser>, IdentityError> {
-        Ok(self
+    ) -> impl Future<Output = Result<Option<PosUser>, IdentityError>> + Send {
+        let result = Ok(self
             .user
             .as_ref()
             .filter(|user| user.organization_id() == organization_id && user.id() == user_id)
-            .cloned())
+            .cloned());
+        async move { result }
     }
 }
-struct Permissions(Result<BTreeSet<PermissionCode>, IdentityError>);
-impl PermissionAuthority for Permissions {
+impl PermissionAuthority for Source {
     fn resolve_permissions(
-        &self,
+        &mut self,
         _: &EntityId,
         _: &EntityId,
         _: Option<&EntityId>,
-    ) -> Result<BTreeSet<PermissionCode>, IdentityError> {
-        self.0.clone()
+    ) -> impl Future<Output = Result<BTreeSet<PermissionCode>, IdentityError>> + Send {
+        let result = self.grants.clone().unwrap_or_else(|| Ok(BTreeSet::new()));
+        async move { result }
     }
 }
 
@@ -427,26 +455,26 @@ fn active_session(owner: &PosUser) -> LocalSession {
     .unwrap_or_else(|error| panic!("session: {error}"))
 }
 
-fn grants(codes: &[&str]) -> BTreeSet<PermissionCode> {
-    codes.iter().map(|code| permission(code)).collect()
+async fn build_principal(
+    source: Source,
+    branch: Option<&EntityId>,
+) -> Result<crate::identity::VerifiedPrincipal, AuditAttributionError> {
+    LocalPrincipalService::new(source)
+        .authenticate(&hash(), moment(11), branch)
+        .await
 }
 
-#[test]
-fn principal_retains_branch_scope_and_denies_other_scopes() {
+#[tokio::test]
+async fn principal_retains_branch_scope_and_denies_other_scopes() {
     let owner = user();
     let branch_a = id("00000000-0000-0000-0000-000000000201");
     let branch_b = id("00000000-0000-0000-0000-000000000202");
-    let service = LocalPrincipalService::new(
-        Repository {
-            session: Some(active_session(&owner)),
-            user: Some(owner.clone()),
-            fail: false,
-        },
-        Permissions(Ok(grants(&["branch.update"]))),
-    );
-    let principal = service
-        .authenticate(&hash(), moment(11), Some(&branch_a))
-        .unwrap_or_else(|error| panic!("principal: {error}"));
+    let principal = build_principal(
+        Source::granting(active_session(&owner), owner.clone(), &["branch.update"]),
+        Some(&branch_a),
+    )
+    .await
+    .unwrap_or_else(|error| panic!("principal: {error}"));
     assert_eq!(principal.scope().organization_id(), owner.organization_id());
     assert_eq!(principal.scope().branch_id(), Some(&branch_a));
     let scope_a = PrincipalScope::new(owner.organization_id().clone(), Some(branch_a.clone()));
@@ -474,17 +502,16 @@ fn principal_retains_branch_scope_and_denies_other_scopes() {
         Err(AuthorizationError::ScopeMismatch)
     );
 
-    let org_service = LocalPrincipalService::new(
-        Repository {
-            session: Some(active_session(&owner)),
-            user: Some(owner.clone()),
-            fail: false,
-        },
-        Permissions(Ok(grants(&["organization.update"]))),
-    );
-    let org_principal = org_service
-        .authenticate(&hash(), moment(11), None)
-        .unwrap_or_else(|error| panic!("principal: {error}"));
+    let org_principal = build_principal(
+        Source::granting(
+            active_session(&owner),
+            owner.clone(),
+            &["organization.update"],
+        ),
+        None,
+    )
+    .await
+    .unwrap_or_else(|error| panic!("principal: {error}"));
     assert_eq!(
         org_principal.authorize(&permission("organization.update"), &scope_org),
         Ok(())
@@ -495,19 +522,11 @@ fn principal_retains_branch_scope_and_denies_other_scopes() {
     );
 }
 
-#[test]
-fn principal_fails_closed_for_unknown_inactive_expired_and_authority_errors() {
+#[tokio::test]
+async fn principal_fails_closed_for_unknown_inactive_expired_and_authority_errors() {
     let owner = user();
-    let missing = LocalPrincipalService::new(
-        Repository {
-            session: None,
-            user: Some(owner.clone()),
-            fail: false,
-        },
-        Permissions(Ok(BTreeSet::new())),
-    );
     assert_eq!(
-        missing.authenticate(&hash(), moment(11), None),
+        build_principal(Source::default(), None).await,
         Err(AuditAttributionError::Unauthenticated)
     );
 
@@ -520,91 +539,86 @@ fn principal_fails_closed_for_unknown_inactive_expired_and_authority_errors() {
             status: Some(PosUserStatus::Inactive),
         })
         .unwrap_or_else(|error| panic!("patch: {error}"));
-    let disabled = LocalPrincipalService::new(
-        Repository {
-            session: Some(active_session(&inactive)),
-            user: Some(inactive),
-            fail: false,
-        },
-        Permissions(Ok(BTreeSet::new())),
-    );
     assert_eq!(
-        disabled.authenticate(&hash(), moment(11), None),
+        build_principal(
+            Source {
+                session: Some(active_session(&inactive)),
+                user: Some(inactive),
+                ..Source::default()
+            },
+            None
+        )
+        .await,
         Err(AuditAttributionError::Unauthenticated)
     );
 
-    let expired = LocalPrincipalService::new(
-        Repository {
-            session: Some(active_session(&owner)),
-            user: Some(owner.clone()),
-            fail: false,
-        },
-        Permissions(Ok(BTreeSet::new())),
-    );
-    assert_eq!(
-        expired.authenticate(&hash(), moment(1_001), None),
-        Err(AuditAttributionError::Unauthenticated)
-    );
+    let expired = LocalPrincipalService::new(Source {
+        session: Some(active_session(&owner)),
+        user: Some(owner.clone()),
+        ..Source::default()
+    })
+    .authenticate(&hash(), moment(1_001), None)
+    .await;
+    assert_eq!(expired, Err(AuditAttributionError::Unauthenticated));
 
-    let storage_error = LocalPrincipalService::new(
-        Repository {
-            session: None,
-            user: None,
-            fail: true,
-        },
-        Permissions(Ok(BTreeSet::new())),
-    );
     assert_eq!(
-        storage_error.authenticate(&hash(), moment(11), None),
+        build_principal(
+            Source {
+                fail: true,
+                ..Source::default()
+            },
+            None
+        )
+        .await,
         Err(AuditAttributionError::UnattributablePrincipal)
     );
 
-    let authority_error = LocalPrincipalService::new(
-        Repository {
-            session: Some(active_session(&owner)),
-            user: Some(owner.clone()),
-            fail: false,
-        },
-        Permissions(Err(IdentityError::InvalidPermission)),
-    );
     assert_eq!(
-        authority_error.authenticate(&hash(), moment(11), None),
+        build_principal(
+            Source {
+                session: Some(active_session(&owner)),
+                user: Some(owner.clone()),
+                grants: Some(Err(IdentityError::InvalidPermission)),
+                fail: false,
+            },
+            None
+        )
+        .await,
         Err(AuditAttributionError::ScopeDenied)
     );
 }
 
-#[test]
-fn revoked_session_cannot_build_a_principal_or_an_actor() {
+#[tokio::test]
+async fn revoked_session_cannot_build_a_principal_or_an_actor() {
     let owner = user();
     let mut session = active_session(&owner);
     session
         .revoke(1, moment(20))
         .unwrap_or_else(|error| panic!("revoke: {error}"));
-    let service = LocalPrincipalService::new(
-        Repository {
-            session: Some(session),
-            user: Some(owner.clone()),
-            fail: false,
-        },
-        Permissions(Ok(grants(&["organization.update"]))),
-    );
     assert_eq!(
-        service.authenticate(&hash(), moment(21), None),
+        build_principal(
+            Source {
+                session: Some(session),
+                user: Some(owner.clone()),
+                ..Source::default()
+            },
+            None
+        )
+        .await,
         Err(AuditAttributionError::Unauthenticated)
     );
 
-    let live = LocalPrincipalService::new(
-        Repository {
-            session: Some(active_session(&owner)),
-            user: Some(owner.clone()),
-            fail: false,
-        },
-        Permissions(Ok(grants(&["organization.update"]))),
-    );
-    let principal = live
-        .authenticate(&hash(), moment(11), None)
-        .unwrap_or_else(|error| panic!("principal: {error}"));
-    let actor = principal.audit_actor();
+    let live = build_principal(
+        Source::granting(
+            active_session(&owner),
+            owner.clone(),
+            &["organization.update"],
+        ),
+        None,
+    )
+    .await
+    .unwrap_or_else(|error| panic!("principal: {error}"));
+    let actor = live.audit_actor();
     assert_eq!(actor.actor_type(), "USER");
     assert_eq!(actor.user_id(), Some(owner.id()));
     assert_eq!(actor.system_provenance(), None);
