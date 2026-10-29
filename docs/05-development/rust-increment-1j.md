@@ -197,7 +197,7 @@ cargo build --locked --workspace --all-features
 | `pos-storage-sqlite` | 57 (2 nuevas de primer arranque) | OK |
 | `pos-local` (lib, bin, integración) | 11 | OK |
 | `migration-lab` | 27 | OK |
-| **Total** | **153** | **0 fallos** |
+| **Total** | **163** | **0 fallos** |
 
 Cobertura nueva del dominio:
 
