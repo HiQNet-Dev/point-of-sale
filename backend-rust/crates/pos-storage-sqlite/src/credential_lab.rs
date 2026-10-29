@@ -28,6 +28,7 @@ use pos_core::{
 use pos_credentials::{
     Argon2Policy, VerificationOutcome, VerifyRequest, hash_password, verify_credential,
 };
+use sha2::{Digest, Sha256};
 use sqlx::{FromRow, SqliteConnection, SqlitePool};
 use tokio::sync::Semaphore;
 use zeroize::Zeroizing;
@@ -121,13 +122,15 @@ pub struct PreparedCredential {
 
 /// Identidad del material sobre el que se tomó la decisión.
 ///
-/// No deriva `Debug` para no exponer el hash en diagnósticos.
+/// No guarda el hash codificado: solo su digest SHA-256, para que ni `Debug` ni
+/// un volcado accidental del valor preparado expongan material reutilizable.
+/// El fingerprint no deriva `Debug`.
 #[derive(Clone, Eq, PartialEq)]
 struct MaterialFingerprint {
     algorithm: CredentialAlgorithm,
     policy_id: String,
     parameters: String,
-    secret_hash: String,
+    hash_digest: [u8; 32],
 }
 
 impl MaterialFingerprint {
@@ -136,9 +139,18 @@ impl MaterialFingerprint {
             algorithm: credential.algorithm(),
             policy_id: credential.policy_id().to_owned(),
             parameters: credential.parameters().canonical_json().to_owned(),
-            secret_hash: credential.secret_hash().expose_to_verifier().to_owned(),
+            hash_digest: digest(credential.secret_hash().expose_to_verifier()),
         }
     }
+}
+
+fn digest(value: &str) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(value.as_bytes());
+    let output = hasher.finalize();
+    let mut bytes = [0_u8; 32];
+    bytes.copy_from_slice(&output);
+    bytes
 }
 
 enum Decision {
