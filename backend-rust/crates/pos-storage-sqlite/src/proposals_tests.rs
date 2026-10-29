@@ -992,3 +992,223 @@ async fn permission_grammar_matches_rust_validation() -> Result<(), Box<dyn std:
     );
     Ok(())
 }
+
+/// El primer arranque exige el orden organización → instalación → bootstrap.
+///
+/// `installation_identity.organization_id` es obligatorio en F1–10 §16.3, por lo
+/// que no existe dependencia circular: la organización inicial se crea en la
+/// misma transacción, antes de la instalación. `bootstrap_record` permanece en
+/// `PENDING` sin organización (la FK compuesta no se evalúa con `NULL`) y solo
+/// pasa a `COMPLETED` cuando instalación, organización, administrador y rol son
+/// coherentes.
+#[tokio::test]
+async fn first_run_requires_organization_before_installation_and_commits_once()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("first-run.sqlite");
+    let pool = open_proposed(&path).await?;
+
+    // Sin organización no puede existir instalación: el owner es obligatorio.
+    let orphan = sqlx::query(
+        "INSERT INTO installation_identity (id, organization_id, public_key_fingerprint, initialized_at, updated_at) \
+         VALUES (?, ?, 'ed25519:synthetic-fingerprint', ?, ?)",
+    )
+    .bind(INSTALLATION)
+    .bind(ORG)
+    .bind(TIME)
+    .bind(TIME)
+    .execute(&pool)
+    .await;
+    assert!(
+        orphan.is_err(),
+        "la instalación no puede preceder a su organización"
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM installation_identity")
+            .fetch_one(&pool)
+            .await?,
+        0,
+        "el intento rechazado no deja filas"
+    );
+
+    // Primer arranque completo en un único commit.
+    let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+    let mut transaction = unit_of_work.begin().await?;
+    sqlx::query(
+        "INSERT INTO organization (id, code, name, currency, timezone, locale, stock_negative_policy, status, version, created_at, updated_at) \
+         VALUES (?, 'first-run', 'Instalación Inicial', 'MXN', 'UTC', 'es-MX', 'STRICT', 'ACTIVE', 0, ?, ?)",
+    )
+    .bind(ORG)
+    .bind(TIME)
+    .bind(TIME)
+    .execute(&mut *transaction.connection())
+    .await?;
+    sqlx::query(
+        "INSERT INTO installation_identity (id, organization_id, public_key_fingerprint, initialized_at, updated_at) \
+         VALUES (?, ?, 'ed25519:synthetic-fingerprint', ?, ?)",
+    )
+    .bind(INSTALLATION)
+    .bind(ORG)
+    .bind(TIME)
+    .bind(TIME)
+    .execute(&mut *transaction.connection())
+    .await?;
+    sqlx::query(
+        "INSERT INTO bootstrap_record (installation_id, state, updated_at) VALUES (?, 'PENDING', ?)",
+    )
+    .bind(INSTALLATION)
+    .bind(TIME)
+    .execute(&mut *transaction.connection())
+    .await?;
+    sqlx::query(
+        "INSERT INTO pos_user (id, organization_id, display_name, email, status, version, created_at, updated_at) \
+         VALUES (?, ?, 'Administrador', 'admin@first-run.test', 'ACTIVE', 0, ?, ?)",
+    )
+    .bind(USER)
+    .bind(ORG)
+    .bind(TIME)
+    .bind(TIME)
+    .execute(&mut *transaction.connection())
+    .await?;
+    sqlx::query(
+        "INSERT INTO role (id, organization_id, code, name, status, version, created_at, updated_at) \
+         VALUES (?, ?, 'administrator', 'Administrador', 'ACTIVE', 0, ?, ?)",
+    )
+    .bind(ROLE_ORG)
+    .bind(ORG)
+    .bind(TIME)
+    .bind(TIME)
+    .execute(&mut *transaction.connection())
+    .await?;
+    sqlx::query(
+        "UPDATE bootstrap_record SET state = 'COMPLETED', completed_at = ?, organization_id = ?, \
+         administrator_user_id = ?, administrator_role_id = ?, bootstrap_version = 1, updated_at = ? \
+         WHERE installation_id = ? AND state = 'PENDING'",
+    )
+    .bind(TIME)
+    .bind(ORG)
+    .bind(USER)
+    .bind(ROLE_ORG)
+    .bind(TIME)
+    .bind(INSTALLATION)
+    .execute(&mut *transaction.connection())
+    .await?;
+    sqlx::query(
+        "INSERT INTO audit_event (id, organization_id, actor_type, actor_user_id, session_id, action, entity_type, entity_id, occurred_at, event_version) \
+         VALUES ('00000000-0000-0000-0000-0000000000f7', ?, 'SYSTEM', NULL, NULL, 'bootstrap.completed', 'bootstrap_record', ?, ?, 1)",
+    )
+    .bind(ORG)
+    .bind(INSTALLATION)
+    .bind(TIME)
+    .execute(&mut *transaction.connection())
+    .await?;
+    transaction.commit().await?;
+
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT state FROM bootstrap_record WHERE installation_id = ?"
+        )
+        .bind(INSTALLATION)
+        .fetch_one(&pool)
+        .await?,
+        "COMPLETED"
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT organization_id FROM bootstrap_record WHERE installation_id = ?"
+        )
+        .bind(INSTALLATION)
+        .fetch_one(&pool)
+        .await?,
+        ORG
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, String>(
+            "SELECT actor_type FROM audit_event WHERE action = 'bootstrap.completed'"
+        )
+        .fetch_one(&pool)
+        .await?,
+        "SYSTEM"
+    );
+
+    pool.close().await;
+    let reopened = open(&path, Duration::from_millis(75)).await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM bootstrap_record WHERE state = 'COMPLETED'"
+        )
+        .fetch_one(&reopened)
+        .await?,
+        1
+    );
+    reopened.close().await;
+    Ok(())
+}
+
+/// Un fallo de auditoría revierte organización, instalación y bootstrap juntos.
+#[tokio::test]
+async fn first_run_rolls_back_everything_when_audit_fails() -> Result<(), Box<dyn std::error::Error>>
+{
+    let temp = tempfile::tempdir()?;
+    let pool = open_proposed(&temp.path().join("first-run-rollback.sqlite")).await?;
+    let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+    let mut transaction = unit_of_work.begin().await?;
+    sqlx::query(
+        "INSERT INTO organization (id, code, name, currency, timezone, locale, stock_negative_policy, status, version, created_at, updated_at) \
+         VALUES (?, 'first-run', 'Instalación Inicial', 'MXN', 'UTC', 'es-MX', 'STRICT', 'ACTIVE', 0, ?, ?)",
+    )
+    .bind(ORG)
+    .bind(TIME)
+    .bind(TIME)
+    .execute(&mut *transaction.connection())
+    .await?;
+    sqlx::query(
+        "INSERT INTO installation_identity (id, organization_id, public_key_fingerprint, initialized_at, updated_at) \
+         VALUES (?, ?, 'ed25519:synthetic-fingerprint', ?, ?)",
+    )
+    .bind(INSTALLATION)
+    .bind(ORG)
+    .bind(TIME)
+    .bind(TIME)
+    .execute(&mut *transaction.connection())
+    .await?;
+    sqlx::query(
+        "INSERT INTO bootstrap_record (installation_id, state, updated_at) VALUES (?, 'PENDING', ?)",
+    )
+    .bind(INSTALLATION)
+    .bind(TIME)
+    .execute(&mut *transaction.connection())
+    .await?;
+    // SYSTEM con usuario atribuido viola el contrato de actor: debe fallar.
+    let audit = sqlx::query(
+        "INSERT INTO audit_event (id, organization_id, actor_type, actor_user_id, session_id, action, entity_type, occurred_at, event_version) \
+         VALUES ('00000000-0000-0000-0000-0000000000f6', ?, 'SYSTEM', ?, NULL, 'bootstrap.completed', 'bootstrap_record', ?, 1)",
+    )
+    .bind(ORG)
+    .bind(USER)
+    .bind(TIME)
+    .execute(&mut *transaction.connection())
+    .await;
+    assert!(audit.is_err(), "SYSTEM no admite actor_user_id");
+    transaction.rollback().await?;
+
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM organization")
+            .fetch_one(&pool)
+            .await?,
+        0
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM installation_identity")
+            .fetch_one(&pool)
+            .await?,
+        0
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM bootstrap_record")
+            .fetch_one(&pool)
+            .await?,
+        0
+    );
+    Ok(())
+}
