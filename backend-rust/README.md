@@ -136,14 +136,16 @@ no cero. Un checkpoint **no es un backup**.
   en [`rust-increment-1d.md`](../docs/05-development/rust-increment-1d.md).
 - `pos-core::audit` contiene metadata JSON segura, atribución USER/SYSTEM y
   contrato fail-closed. `pos-core::identity` añade User/Credential/Session,
-  principal scoped y puertos DB-authoritative puros; SQLite prueba ambas
-  foundations mediante fixtures aisladas. No hay writer ni auditoría productiva,
-  autenticación/RBAC DB-authoritative concreta, sesiones productivas, importador,
-  checkout, outbox ni cifrado de backups. Las tablas actuales no habilitan operar
-  en producción. Las fichas Local siguen siendo propuestas sin DDL en
+  principal con scope contextual (`authorize(permiso, scope)`) y puertos
+  DB-authoritative asíncronos; SQLite prueba ambas foundations mediante fixtures
+  aisladas y un adaptador de laboratorio (`identity_lab`). No hay writer ni
+  auditoría productiva, autenticación/RBAC DB-authoritative concreta, sesiones
+  productivas, importador, checkout, outbox ni cifrado de backups. Las tablas
+  actuales no habilitan operar en producción. Las fichas Local siguen siendo
+  propuestas sin DDL en
   [`rust-local-audit-event-proposal.md`](../docs/05-development/rust-local-audit-event-proposal.md)
   y [`rust-local-identity-proposal.md`](../docs/05-development/rust-local-identity-proposal.md);
-  ver 1E/1F para límites verificables.
+  ver 1E/1F/1G para límites verificables.
 
 `MoneyMinor` usa `i64` firmado y suma checked con moneda explícita. El importador
 **primitivo**, no el importador Java, convierte strings decimales solo si la
@@ -193,6 +195,7 @@ No ejecutar down migrations sobre bases reales.
 - [Auditoría AS-IS y matriz de paridad](../docs/05-development/rust-parity-baseline.md).
 - [Foundation de auditoría Local 1E](../docs/05-development/rust-increment-1e.md).
 - [Foundation de identidad Local 1F](../docs/05-development/rust-increment-1f.md).
+- [Adaptador de identidad y permisos 1G](../docs/05-development/rust-increment-1g.md).
 - [Especificación real del lab y artefactos](tools/migration-lab/README.md).
 - [ADR-0020](../docs/01-architecture/adr/0020-rust-foundation-sqlx-migration-boundary.md).
 - [CI y gate normativo obligatorio](../docs/05-development/ci.md).

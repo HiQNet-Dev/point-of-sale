@@ -131,8 +131,9 @@ Contrato de `PermissionAuthority`:
 Consistencia: `authenticate` es una decisión puntual. Para mutaciones críticas la
 identidad, sesión, membership, estado de sucursal y permisos deben resolverse
 dentro de la misma unidad de trabajo que la mutación (`BEGIN IMMEDIATE` + RAII de
-SQLx), sin cachés de permisos como autoridad de escritura. Esa composición se
-implementa en el incremento 1G con tablas de laboratorio.
+SQLx), sin cachés de permisos como autoridad de escritura. Los puertos son
+asíncronos y comparten una única fuente (`LocalPrincipalService<S>`), y el
+incremento 1G implementa esa composición con tablas de laboratorio.
 
 ## Decisiones abiertas
 
