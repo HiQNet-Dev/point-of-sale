@@ -12,7 +12,7 @@ license = "LicenseRef-HiQNet-Proprietary"
 pos-core = { path = "crates/pos-core" }
 pos-storage-sqlite = { path = "crates/pos-storage-sqlite" }
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
-tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "signal"] }
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.1"

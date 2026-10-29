@@ -5,10 +5,11 @@ use std::{path::Path, time::Duration};
 use pos_core::organization_branch::{
     ApplicationError, AuditEvent, Authorization, Branch, BranchPatch, BusinessCode, DisplayName,
     DomainError, EntityId, IdentityGenerator, IsoCurrency, LocaleTag, NegativeStockPolicy,
-    NewBranch, Organization, Permission, Status, Timezone,
+    NewBranch, NewOrganization, Organization, OrganizationPatch, Permission, Status, Timezone,
+    branch_changed_fields, organization_changed_fields,
 };
 use sqlx::{
-    ConnectOptions, Sqlite, SqliteConnection, SqlitePool, Transaction,
+    ConnectOptions, SqlStr, Sqlite, SqliteConnection, SqlitePool, Transaction,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
 };
 
@@ -463,14 +464,34 @@ impl SqliteUnitOfWork {
         Self { pool }
     }
 
-    /// Adquiere una conexión y abre una transacción de escritura real.
+    /// Abre una transacción de escritura con reserva inmediata de SQLite.
+    ///
+    /// `BEGIN IMMEDIATE` se entrega a la construcción nativa de
+    /// [`Transaction`], por lo que conserva su rollback RAII si el futuro se
+    /// cancela o el valor se abandona antes de confirmar. La sentencia es
+    /// estática; no se construye a partir de datos de entrada.
     pub async fn begin(&self) -> Result<SqliteTransaction, OrganizationBranchStorageError> {
-        let transaction = self
+        let connection = self
             .pool
-            .begin()
+            .acquire()
             .await
             .map_err(|_| OrganizationBranchStorageError::Database)?;
+        let transaction =
+            Transaction::begin(connection, Some(SqlStr::from_static("BEGIN IMMEDIATE")))
+                .await
+                .map_err(|_| OrganizationBranchStorageError::Database)?;
         Ok(SqliteTransaction { transaction })
+    }
+
+    /// Lee sin abrir una transacción de escritura; las lecturas no deben tomar
+    /// la reserva inmediata destinada a mutaciones auditables.
+    pub async fn get_organization(
+        &self,
+        organization_id: &EntityId,
+    ) -> Result<Option<Organization>, OrganizationBranchStorageError> {
+        SqliteOrganizationBranchStore::new(self.pool.clone())
+            .get_organization(organization_id)
+            .await
     }
 }
 
@@ -509,6 +530,71 @@ impl SqliteTransaction {
             .await
             .map_err(|_| OrganizationBranchStorageError::Database)?;
         row.map(BranchRow::into_domain).transpose()
+    }
+
+    /// Inserta una organización dentro de la transacción abierta.
+    pub async fn insert_organization(
+        &mut self,
+        organization: &Organization,
+        occurred_at: &str,
+    ) -> Result<(), OrganizationBranchStorageError> {
+        sqlx::query(
+            "INSERT INTO organization (id, code, name, currency, timezone, locale, stock_negative_policy, status, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(organization.id().as_str())
+        .bind(organization.code().as_str())
+        .bind(organization.name().as_str())
+        .bind(organization.currency().as_str())
+        .bind(organization.timezone().as_str())
+        .bind(organization.locale().as_str())
+        .bind(organization.negative_stock_policy().as_str())
+        .bind(organization.status().as_str())
+        .bind(revision_to_i64(organization.revision())?)
+        .bind(occurred_at)
+        .bind(occurred_at)
+        .execute(&mut *self.transaction)
+        .await
+        .map_err(map_organization_write_error)?;
+        Ok(())
+    }
+
+    /// Actualiza una organización mediante CAS de revisión dentro de la UoW.
+    pub async fn update_organization_cas(
+        &mut self,
+        previous_revision: u64,
+        organization: &Organization,
+        occurred_at: &str,
+    ) -> Result<CasOutcome, OrganizationBranchStorageError> {
+        let result = sqlx::query(
+            "UPDATE organization SET name = ?, currency = ?, timezone = ?, locale = ?, stock_negative_policy = ?, status = ?, version = ?, updated_at = ? WHERE id = ? AND version = ?",
+        )
+        .bind(organization.name().as_str())
+        .bind(organization.currency().as_str())
+        .bind(organization.timezone().as_str())
+        .bind(organization.locale().as_str())
+        .bind(organization.negative_stock_policy().as_str())
+        .bind(organization.status().as_str())
+        .bind(revision_to_i64(organization.revision())?)
+        .bind(occurred_at)
+        .bind(organization.id().as_str())
+        .bind(revision_to_i64(previous_revision)?)
+        .execute(&mut *self.transaction)
+        .await
+        .map_err(|_| OrganizationBranchStorageError::Database)?;
+        if result.rows_affected() == 1 {
+            return Ok(CasOutcome::Updated);
+        }
+        let exists =
+            sqlx::query_scalar::<_, i64>("SELECT EXISTS(SELECT 1 FROM organization WHERE id = ?)")
+                .bind(organization.id().as_str())
+                .fetch_one(&mut *self.transaction)
+                .await
+                .map_err(|_| OrganizationBranchStorageError::Database)?;
+        Ok(if exists == 0 {
+            CasOutcome::Missing
+        } else {
+            CasOutcome::Conflict
+        })
     }
 
     /// Inserta una sucursal dentro de la transacción abierta.
@@ -607,6 +693,156 @@ pub trait TransactionalAuditWriter {
     ) -> impl std::future::Future<Output = Result<(), ApplicationError>> + Send;
 }
 
+/// Composición asíncrona experimental de Organization contra SQLite real.
+///
+/// La creación representa únicamente el tramo Organization del bootstrap Java:
+/// exige una capacidad de bootstrap explícita, registra `organization.created`
+/// y comparte la transacción con el writer. No sustituye el guard secreto, el
+/// estado one-shot ni el provisioning de usuario/rol que todavía no existen en
+/// el esquema Local.
+pub struct SqliteOrganizationApplication<A> {
+    unit_of_work: SqliteUnitOfWork,
+    audit: A,
+}
+
+impl<A: TransactionalAuditWriter> SqliteOrganizationApplication<A> {
+    /// Ensambla la composición experimental sin habilitar bootstrap por defecto.
+    pub fn new(unit_of_work: SqliteUnitOfWork, audit: A) -> Self {
+        Self {
+            unit_of_work,
+            audit,
+        }
+    }
+
+    /// Crea la organización durante un bootstrap previamente autorizado.
+    pub async fn bootstrap_create<I: IdentityGenerator, Z: Authorization>(
+        &self,
+        authorization: &Z,
+        identities: &mut I,
+        input: NewOrganization,
+        occurred_at: &str,
+    ) -> Result<Organization, ApplicationError> {
+        if !authorization.is_allowed(Permission::BootstrapOrganization, None, None) {
+            return Err(ApplicationError::Forbidden);
+        }
+        let id = identities.next_id()?;
+        let mut transaction = self.unit_of_work.begin().await.map_err(storage_error)?;
+        let operation = async {
+            let organization = Organization::create(id, input);
+            transaction
+                .insert_organization(&organization, occurred_at)
+                .await
+                .map_err(storage_error)?;
+            self.audit
+                .append(
+                    &mut transaction,
+                    &AuditEvent {
+                        organization_id: organization.id().clone(),
+                        branch_id: None,
+                        action: "organization.created",
+                        entity_type: "organization",
+                        entity_id: organization.id().clone(),
+                        changed_fields: Vec::new(),
+                    },
+                    occurred_at,
+                )
+                .await?;
+            Ok(organization)
+        }
+        .await;
+        match operation {
+            Ok(organization) => {
+                transaction.commit().await.map_err(storage_error)?;
+                Ok(organization)
+            }
+            Err(error) => {
+                if transaction.rollback().await.is_err() {
+                    return Err(ApplicationError::Storage);
+                }
+                Err(error)
+            }
+        }
+    }
+
+    /// Obtiene una organización sin tomar un lock de escritor.
+    pub async fn get<Z: Authorization>(
+        &self,
+        authorization: &Z,
+        organization_id: &EntityId,
+    ) -> Result<Organization, ApplicationError> {
+        if !authorization.is_allowed(Permission::OrganizationRead, Some(organization_id), None) {
+            return Err(ApplicationError::Forbidden);
+        }
+        self.unit_of_work
+            .get_organization(organization_id)
+            .await
+            .map_err(storage_error)?
+            .ok_or(ApplicationError::OrganizationNotFound)
+    }
+
+    /// Aplica un patch CAS y registra solo una modificación material.
+    pub async fn update<Z: Authorization>(
+        &self,
+        authorization: &Z,
+        organization_id: &EntityId,
+        patch: OrganizationPatch,
+        occurred_at: &str,
+    ) -> Result<Organization, ApplicationError> {
+        if !authorization.is_allowed(Permission::OrganizationUpdate, Some(organization_id), None) {
+            return Err(ApplicationError::Forbidden);
+        }
+        let mut transaction = self.unit_of_work.begin().await.map_err(storage_error)?;
+        let operation = async {
+            let mut organization = transaction
+                .get_organization(organization_id)
+                .await
+                .map_err(storage_error)?
+                .ok_or(ApplicationError::OrganizationNotFound)?;
+            let before = organization.clone();
+            let previous_revision = organization.revision();
+            if !organization.patch(patch)? {
+                return Ok(organization);
+            }
+            if transaction
+                .update_organization_cas(previous_revision, &organization, occurred_at)
+                .await
+                .map_err(storage_error)?
+                != CasOutcome::Updated
+            {
+                return Err(ApplicationError::ConcurrentModification);
+            }
+            self.audit
+                .append(
+                    &mut transaction,
+                    &AuditEvent {
+                        organization_id: organization_id.clone(),
+                        branch_id: None,
+                        action: "organization.updated",
+                        entity_type: "organization",
+                        entity_id: organization_id.clone(),
+                        changed_fields: organization_changed_fields(&before, &organization),
+                    },
+                    occurred_at,
+                )
+                .await?;
+            Ok(organization)
+        }
+        .await;
+        match operation {
+            Ok(organization) => {
+                transaction.commit().await.map_err(storage_error)?;
+                Ok(organization)
+            }
+            Err(error) => {
+                if transaction.rollback().await.is_err() {
+                    return Err(ApplicationError::Storage);
+                }
+                Err(error)
+            }
+        }
+    }
+}
+
 /// Composición asíncrona experimental de los casos Branch contra SQLite real.
 ///
 /// La autorización se evalúa antes de abrir la transacción; no hay política
@@ -676,7 +912,9 @@ impl<A: TransactionalAuditWriter> SqliteBranchApplication<A> {
                 Ok(branch)
             }
             Err(error) => {
-                let _ = transaction.rollback().await;
+                if transaction.rollback().await.is_err() {
+                    return Err(ApplicationError::Storage);
+                }
                 Err(error)
             }
         }
@@ -750,7 +988,9 @@ impl<A: TransactionalAuditWriter> SqliteBranchApplication<A> {
                 Ok(branch)
             }
             Err(error) => {
-                let _ = transaction.rollback().await;
+                if transaction.rollback().await.is_err() {
+                    return Err(ApplicationError::Storage);
+                }
                 Err(error)
             }
         }
@@ -767,20 +1007,6 @@ fn storage_error(error: OrganizationBranchStorageError) -> ApplicationError {
         }
         _ => ApplicationError::Storage,
     }
-}
-
-fn branch_changed_fields(before: &Branch, after: &Branch) -> Vec<&'static str> {
-    let mut fields = Vec::new();
-    if before.name() != after.name() {
-        fields.push("name");
-    }
-    if before.timezone_override() != after.timezone_override() {
-        fields.push("timezone");
-    }
-    if before.status() != after.status() {
-        fields.push("status");
-    }
-    fields
 }
 
 #[cfg(test)]

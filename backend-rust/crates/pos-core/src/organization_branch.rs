@@ -888,7 +888,14 @@ impl From<DomainError> for ApplicationError {
     }
 }
 
-fn organization_changed_fields(before: &Organization, after: &Organization) -> Vec<&'static str> {
+/// Devuelve los nombres estables de los campos Organization modificados.
+///
+/// Tanto composiciones síncronas como asíncronas deben reutilizar esta función
+/// para que la metadata de auditoría conserve paridad semántica con Java.
+pub fn organization_changed_fields(
+    before: &Organization,
+    after: &Organization,
+) -> Vec<&'static str> {
     let mut fields = Vec::new();
     if before.name() != after.name() {
         fields.push("name");
@@ -911,7 +918,11 @@ fn organization_changed_fields(before: &Organization, after: &Organization) -> V
     fields
 }
 
-fn branch_changed_fields(before: &Branch, after: &Branch) -> Vec<&'static str> {
+/// Devuelve los nombres estables de los campos Branch modificados.
+///
+/// Evita que adaptadores de infraestructura reconstruyan su propia lista de
+/// cambios auditables.
+pub fn branch_changed_fields(before: &Branch, after: &Branch) -> Vec<&'static str> {
     let mut fields = Vec::new();
     if before.name() != after.name() {
         fields.push("name");

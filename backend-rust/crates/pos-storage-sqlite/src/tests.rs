@@ -6,9 +6,10 @@ use super::*;
 use pos_core::organization_branch::{
     ApplicationError, AuditEvent, Authorization, Branch, BranchPatch, BusinessCode, DisplayName,
     EntityId, IdentityGenerator, IsoCurrency, LocaleTag, NewBranch, NewOrganization, Organization,
-    Permission, Timezone, TimezoneOverridePatch,
+    OrganizationPatch, Permission, Timezone, TimezoneOverridePatch,
 };
-use std::{collections::VecDeque, time::Duration};
+use std::{collections::VecDeque, future::pending, time::Duration};
+use tokio::{sync::oneshot, time::timeout};
 
 fn id(value: &str) -> EntityId {
     EntityId::parse(value).unwrap_or_else(|error| panic!("fixture UUID: {error}"))
@@ -296,6 +297,275 @@ async fn organization_branch_store_persists_scopes_constraints_and_cas()
 }
 
 #[tokio::test]
+async fn dropped_transaction_rolls_back_before_the_connection_is_reused()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open(&temp.path().join("drop.sqlite"), Duration::from_millis(75)).await?;
+    migrate(&pool).await?;
+    let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+    let abandoned = organization("00000000-0000-0000-0000-000000000041", "abandoned");
+
+    let mut transaction = unit_of_work.begin().await?;
+    transaction.insert_organization(&abandoned, TIME).await?;
+    drop(transaction);
+
+    // SQLx encola rollback en Drop; la siguiente operación de la conexión lo
+    // procesa antes de reutilizarla. El timeout evita que el test oculte un
+    // lock que haya quedado abierto.
+    timeout(Duration::from_secs(1), unit_of_work.begin())
+        .await??
+        .rollback()
+        .await?;
+    assert!(
+        SqliteOrganizationBranchStore::new(pool.clone())
+            .get_organization(abandoned.id())
+            .await?
+            .is_none()
+    );
+    pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn aborted_task_rolls_back_and_the_pool_recovers() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open(&temp.path().join("abort.sqlite"), Duration::from_millis(75)).await?;
+    migrate(&pool).await?;
+    let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+    let written = organization("00000000-0000-0000-0000-000000000042", "cancelled");
+    let (ready, received) = oneshot::channel();
+    let worker_uow = unit_of_work.clone();
+    let worker_organization = written.clone();
+    let worker = tokio::spawn(async move {
+        let mut transaction = worker_uow.begin().await?;
+        transaction
+            .insert_organization(&worker_organization, TIME)
+            .await?;
+        let _ = ready.send(());
+        pending::<()>().await;
+        #[allow(unreachable_code)]
+        Ok::<(), OrganizationBranchStorageError>(())
+    });
+    received.await?;
+    worker.abort();
+    assert!(worker.await.is_err_and(|error| error.is_cancelled()));
+
+    timeout(Duration::from_secs(1), unit_of_work.begin())
+        .await??
+        .rollback()
+        .await?;
+    assert!(
+        SqliteOrganizationBranchStore::new(pool.clone())
+            .get_organization(written.id())
+            .await?
+            .is_none()
+    );
+    pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn begin_immediate_blocks_an_independent_writer_but_not_a_wal_reader()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("immediate.sqlite");
+    let first_pool = open(&path, Duration::from_millis(75)).await?;
+    migrate(&first_pool).await?;
+    let second_pool = open(&path, Duration::from_millis(75)).await?;
+    let first = SqliteUnitOfWork::new(first_pool.clone());
+    let second = SqliteUnitOfWork::new(second_pool.clone());
+
+    let transaction = first.begin().await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM organization")
+            .fetch_one(&second_pool)
+            .await?,
+        0
+    );
+    assert!(matches!(
+        second.begin().await,
+        Err(OrganizationBranchStorageError::Database)
+    ));
+    drop(transaction);
+
+    timeout(Duration::from_secs(1), second.begin())
+        .await??
+        .rollback()
+        .await?;
+    first_pool.close().await;
+    second_pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn explicit_rollback_and_failed_commit_never_report_a_business_success()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open(
+        &temp.path().join("commit.sqlite"),
+        Duration::from_millis(75),
+    )
+    .await?;
+    migrate(&pool).await?;
+    sqlx::raw_sql(
+        "CREATE TABLE commit_parent (id INTEGER PRIMARY KEY) STRICT;
+         CREATE TABLE commit_child (id INTEGER PRIMARY KEY, parent_id INTEGER NOT NULL REFERENCES commit_parent(id) DEFERRABLE INITIALLY DEFERRED) STRICT;",
+    )
+    .execute(&pool)
+    .await?;
+    let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+
+    let rolled_back = organization("00000000-0000-0000-0000-000000000043", "explicit");
+    let mut transaction = unit_of_work.begin().await?;
+    transaction.insert_organization(&rolled_back, TIME).await?;
+    transaction.rollback().await?;
+    assert!(
+        SqliteOrganizationBranchStore::new(pool.clone())
+            .get_organization(rolled_back.id())
+            .await?
+            .is_none()
+    );
+
+    let mut transaction = unit_of_work.begin().await?;
+    sqlx::query("INSERT INTO commit_child (id, parent_id) VALUES (1, 999)")
+        .execute(transaction.connection())
+        .await?;
+    assert_eq!(
+        transaction.commit().await,
+        Err(OrganizationBranchStorageError::Database)
+    );
+    timeout(Duration::from_secs(1), unit_of_work.begin())
+        .await??
+        .rollback()
+        .await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM commit_child")
+            .fetch_one(&pool)
+            .await?,
+        0
+    );
+    pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn concurrent_cas_allows_one_organization_and_branch_writer_per_revision()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("cas-concurrent.sqlite");
+    let first_pool = open(&path, Duration::from_millis(500)).await?;
+    migrate(&first_pool).await?;
+    let second_pool = open(&path, Duration::from_millis(500)).await?;
+    let first_store = SqliteOrganizationBranchStore::new(first_pool.clone());
+    let second_store = SqliteOrganizationBranchStore::new(second_pool.clone());
+    let organization = organization("00000000-0000-0000-0000-000000000044", "cas-org");
+    first_store
+        .insert_organization(&organization, TIME, TIME)
+        .await?;
+    let branch = branch(
+        "00000000-0000-0000-0000-000000000045",
+        organization.id().clone(),
+        "cas-branch",
+    );
+    first_store.insert_branch(&branch, TIME, TIME).await?;
+
+    let mut first_organization = first_store
+        .get_organization(organization.id())
+        .await?
+        .ok_or_else(|| std::io::Error::other("missing organization"))?;
+    let mut second_organization = second_store
+        .get_organization(organization.id())
+        .await?
+        .ok_or_else(|| std::io::Error::other("missing organization"))?;
+    assert!(first_organization.patch(OrganizationPatch {
+        expected_revision: 0,
+        name: Some(DisplayName::new("Primera organización")?),
+        timezone: None,
+        currency: None,
+        locale: None,
+        status: None,
+        negative_stock_policy: None,
+    })?);
+    assert!(second_organization.patch(OrganizationPatch {
+        expected_revision: 0,
+        name: Some(DisplayName::new("Segunda organización")?),
+        timezone: None,
+        currency: None,
+        locale: None,
+        status: None,
+        negative_stock_policy: None,
+    })?);
+    let (first_result, second_result) = tokio::join!(
+        first_store.update_organization_cas(0, &first_organization, TIME),
+        second_store.update_organization_cas(0, &second_organization, TIME)
+    );
+    let organization_outcomes = [first_result?, second_result?];
+    assert_eq!(
+        organization_outcomes
+            .into_iter()
+            .filter(|outcome| *outcome == CasOutcome::Updated)
+            .count(),
+        1
+    );
+    assert_eq!(
+        organization_outcomes
+            .into_iter()
+            .filter(|outcome| *outcome == CasOutcome::Conflict)
+            .count(),
+        1
+    );
+
+    let mut first_branch = first_store
+        .get_branch(organization.id(), branch.id())
+        .await?
+        .ok_or_else(|| std::io::Error::other("missing branch"))?;
+    let mut second_branch = second_store
+        .get_branch(organization.id(), branch.id())
+        .await?
+        .ok_or_else(|| std::io::Error::other("missing branch"))?;
+    assert!(first_branch.patch(
+        organization.id(),
+        BranchPatch {
+            expected_revision: 0,
+            name: Some(DisplayName::new("Primera sucursal")?),
+            timezone_override: TimezoneOverridePatch::Keep,
+            status: None,
+        },
+    )?);
+    assert!(second_branch.patch(
+        organization.id(),
+        BranchPatch {
+            expected_revision: 0,
+            name: Some(DisplayName::new("Segunda sucursal")?),
+            timezone_override: TimezoneOverridePatch::Keep,
+            status: None,
+        },
+    )?);
+    let (first_result, second_result) = tokio::join!(
+        first_store.update_branch_cas(organization.id(), 0, &first_branch, TIME),
+        second_store.update_branch_cas(organization.id(), 0, &second_branch, TIME)
+    );
+    let branch_outcomes = [first_result?, second_result?];
+    assert_eq!(
+        branch_outcomes
+            .into_iter()
+            .filter(|outcome| *outcome == CasOutcome::Updated)
+            .count(),
+        1
+    );
+    assert_eq!(
+        branch_outcomes
+            .into_iter()
+            .filter(|outcome| *outcome == CasOutcome::Conflict)
+            .count(),
+        1
+    );
+    first_pool.close().await;
+    second_pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn real_sqlite_transaction_rolls_back_business_write_when_audit_fixture_fails()
 -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
@@ -372,6 +642,137 @@ impl TransactionalAuditWriter for FixtureAudit {
             .map_err(|_| ApplicationError::Audit)?;
         Ok(())
     }
+}
+
+#[tokio::test]
+async fn async_organization_bootstrap_get_update_and_audit_are_atomic()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open(
+        &temp.path().join("organization-uow.sqlite"),
+        Duration::from_millis(75),
+    )
+    .await?;
+    migrate(&pool).await?;
+    sqlx::query("CREATE TABLE audit_fixture (organization_id TEXT NOT NULL, branch_id TEXT, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, occurred_at TEXT NOT NULL) STRICT")
+        .execute(&pool)
+        .await?;
+    let organization_id = id("00000000-0000-0000-0000-000000000051");
+    let mut ids = FixtureIds(VecDeque::from([organization_id.clone()]));
+    let application = SqliteOrganizationApplication::new(
+        SqliteUnitOfWork::new(pool.clone()),
+        FixtureAudit { fail: false },
+    );
+    let created = application
+        .bootstrap_create(
+            &FixtureAuthorization(true),
+            &mut ids,
+            NewOrganization {
+                name: DisplayName::new("Principal")?,
+                code: BusinessCode::new("main")?,
+                timezone: Timezone::new("UTC")?,
+                currency: IsoCurrency::new("MXN")?,
+                locale: LocaleTag::new("es-MX")?,
+            },
+            TIME,
+        )
+        .await?;
+    assert_eq!(created.id(), &organization_id);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM audit_fixture WHERE action = 'organization.created'"
+        )
+        .fetch_one(&pool)
+        .await?,
+        1
+    );
+    assert_eq!(
+        application
+            .get(&FixtureAuthorization(true), &organization_id)
+            .await?,
+        created
+    );
+
+    let updated = application
+        .update(
+            &FixtureAuthorization(true),
+            &organization_id,
+            OrganizationPatch {
+                expected_revision: 0,
+                name: Some(DisplayName::new("Principal Norte")?),
+                timezone: None,
+                currency: None,
+                locale: None,
+                status: None,
+                negative_stock_policy: None,
+            },
+            TIME,
+        )
+        .await?;
+    assert_eq!(updated.revision(), 1);
+    let no_op = application
+        .update(
+            &FixtureAuthorization(true),
+            &organization_id,
+            OrganizationPatch {
+                expected_revision: 1,
+                name: None,
+                timezone: None,
+                currency: None,
+                locale: None,
+                status: None,
+                negative_stock_policy: None,
+            },
+            TIME,
+        )
+        .await?;
+    assert_eq!(no_op.revision(), 1);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM audit_fixture WHERE action = 'organization.updated'"
+        )
+        .fetch_one(&pool)
+        .await?,
+        1
+    );
+
+    let failing = SqliteOrganizationApplication::new(
+        SqliteUnitOfWork::new(pool.clone()),
+        FixtureAudit { fail: true },
+    );
+    assert_eq!(
+        failing
+            .update(
+                &FixtureAuthorization(true),
+                &organization_id,
+                OrganizationPatch {
+                    expected_revision: 1,
+                    name: Some(DisplayName::new("No confirma")?),
+                    timezone: None,
+                    currency: None,
+                    locale: None,
+                    status: None,
+                    negative_stock_policy: None,
+                },
+                TIME,
+            )
+            .await,
+        Err(ApplicationError::Audit)
+    );
+    let persisted = SqliteOrganizationBranchStore::new(pool.clone())
+        .get_organization(&organization_id)
+        .await?
+        .ok_or_else(|| std::io::Error::other("missing organization"))?;
+    assert_eq!(persisted.name().as_str(), "Principal Norte");
+    assert_eq!(persisted.revision(), 1);
+    assert_eq!(
+        application
+            .get(&FixtureAuthorization(false), &organization_id)
+            .await,
+        Err(ApplicationError::Forbidden)
+    );
+    pool.close().await;
+    Ok(())
 }
 
 #[tokio::test]
