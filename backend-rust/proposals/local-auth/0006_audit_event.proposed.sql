@@ -1,5 +1,5 @@
 -- PROPUESTA D-AUTH-07/08. No ejecutar sin aceptación formal.
--- Depende de 0001 (organization, branch), 0002 (pos_user, local_session).
+-- Depende de 0001 (organization, branch) y 0003 (pos_user, local_session).
 
 CREATE TABLE audit_event (
     id TEXT PRIMARY KEY NOT NULL CHECK (

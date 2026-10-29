@@ -1,5 +1,5 @@
 -- PROPUESTA D-AUTH-06 (memberships). No ejecutar sin aceptación formal.
--- Depende de 0001 (branch), 0002 (pos_user) y 0003 (role).
+-- Depende de 0001 (branch), 0003 (pos_user) y 0004 (role).
 
 CREATE TABLE branch_membership (
     id TEXT PRIMARY KEY NOT NULL CHECK (

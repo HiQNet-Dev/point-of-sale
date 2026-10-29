@@ -1,11 +1,18 @@
 -- PROPUESTA D-AUTH-06. No ejecutar sin aceptación formal.
--- Depende de 0002 (pos_user) y 0001 (organization).
+-- Depende de 0003 (pos_user) y 0001 (organization).
 -- Catálogo: 59 códigos exactos del backend Java (V5-V25), inventariados en
 -- docs/05-development/rust-parity-baseline.md §4.3. No concede nada a roles.
 
 CREATE TABLE permission (
     code TEXT PRIMARY KEY NOT NULL CHECK (
-        length(code) BETWEEN 3 AND 64 AND code NOT GLOB '*[^a-z0-9._-]*'
+        length(code) BETWEEN 3 AND 64
+        -- Mismo lenguaje que Rust `PermissionCode`: segmentos no vacíos, puntos
+        -- como separador, minúsculas ASCII, dígitos, `_` y `-`, sin comodines.
+        AND code GLOB '[a-z0-9_-]*'
+        AND code NOT GLOB '*[^a-z0-9._-]*'
+        AND instr(code,'..')=0
+        AND substr(code,1,1) <> '.'
+        AND substr(code,-1,1) <> '.'
     ),
     description TEXT NOT NULL CHECK (length(trim(description)) > 0)
 ) STRICT;

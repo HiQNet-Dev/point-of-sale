@@ -1,14 +1,11 @@
 -- PROPUESTA D-AUTH-10. No ejecutar sin aceptación formal.
--- Depende de installation_identity (§16.3), 0001 (organization), 0002 (pos_user)
--- y 0003 (role).
---
--- BLOQUEO NORMATIVO: F1-10 §16.3 (installation_identity) no está transcrita en
--- este checkout. No se inventan sus columnas. Esta migración asume que una
--- migración aditiva aprobada previa crea `installation_identity(id TEXT PRIMARY
--- KEY NOT NULL, ...)` y debe aplicarse después. Mientras §16.3 no se acepte, esta
--- propuesta no es ejecutable en producto.
+-- Depende de 0002 (installation_identity), 0001 (organization), 0003 (pos_user)
+-- y 0004 (role).
 --
 -- El bootstrap es one-shot por instalación: una fila por installation_id.
+-- PENDING puede existir antes de que haya organización; COMPLETED exige que la
+-- instalación y la organización pertenezcan entre sí (FK compuesta), y que
+-- administrador y rol sean de esa misma organización.
 -- El secreto de bootstrap vive en configuración de despliegue, nunca aquí.
 
 CREATE TABLE bootstrap_record (
@@ -34,6 +31,11 @@ CREATE TABLE bootstrap_record (
             AND administrator_user_id IS NOT NULL AND administrator_role_id IS NOT NULL)
     ),
     FOREIGN KEY (installation_id) REFERENCES installation_identity(id),
+    -- Ownership compuesta: la organización del bootstrap debe ser la de la
+    -- instalación. Con organization_id NULL (PENDING) la FK no se evalúa; la FK
+    -- simple anterior garantiza que la instalación existe.
+    FOREIGN KEY (installation_id, organization_id)
+        REFERENCES installation_identity(id, organization_id),
     FOREIGN KEY (organization_id) REFERENCES organization(id),
     -- Administrador y rol pertenecen a la misma organización.
     FOREIGN KEY (administrator_user_id, organization_id)

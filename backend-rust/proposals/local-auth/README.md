@@ -4,73 +4,75 @@
 
 Estos archivos viven fuera de `backend-rust/migrations/` a propósito: SQLx solo
 descubre `migrations/local`, y ninguna de estas sentencias debe aplicarse mientras
-D-AUTH-01..10 no tenga aceptación formal del titular.
+el paquete D-AUTH/D-INST no tenga aceptación formal del titular.
 
-## Orden de aplicación propuesto
+## Orden definitivo propuesto
 
-| Orden | Objeto | Depende de | Estado |
+| Orden | Migración candidata | Depende de | Estado |
 | --- | --- | --- | --- |
-| 0 | `0001_organization_branch.sql` (existente) | — | Publicada |
-| 1 | `installation_identity` (§16.3) | — | **BLOQUEADA**: §16.3 no transcrita |
-| 2 | `0002_user_credential_session.proposed.sql` | `0001` | Propuesta |
-| 3 | `0003_rbac_catalog.proposed.sql` | `0002` | Propuesta |
-| 4 | `0004_branch_membership.proposed.sql` | `0001`–`0003` | Propuesta |
-| 5 | `0005_audit_event.proposed.sql` | `0001`–`0003` | Propuesta |
-| 6 | `0006_bootstrap_record.proposed.sql` | `installation_identity`, `0001`–`0003` | Propuesta bloqueada |
+| 0001 | `0001_organization_branch.sql` (existente) | — | Publicada, intocable |
+| 0002 | `0002_installation_identity.proposed.sql` | `0001` | Propuesta |
+| 0003 | `0003_user_credential_session.proposed.sql` | `0001`, `0002` | Propuesta |
+| 0004 | `0004_rbac_catalog.proposed.sql` | `0001`, `0003` | Propuesta |
+| 0005 | `0005_branch_membership.proposed.sql` | `0001`, `0003`, `0004` | Propuesta |
+| 0006 | `0006_audit_event.proposed.sql` | `0001`, `0003` | Propuesta |
+| 0007 | `0007_bootstrap_record.proposed.sql` | `0001`–`0004` | Propuesta |
 
-`0006` no crea `installation_identity`: F1–10 §16.3 no está transcrita en este
-checkout y no se inventan sus columnas. La suite de pruebas usa un sustituto
-**solo de test** (`id TEXT PRIMARY KEY`) y lo marca como tal. Al aprobarse §16.3,
-la migración aditiva correspondiente debe ejecutarse antes de `0006`.
+Los nombres son candidatos: SQLx versiona por prefijo numérico y descripción; al
+aprobarse se moverán a `migrations/local/` conservando el orden. `0001` no se
+modifica.
 
-## Decisiones que deben aceptarse
+## `installation_identity` (F1–10 §16.3)
 
-- **D-AUTH-01** tablas y campos canónicos, incluido `display_name`.
-- **D-AUTH-02** `local_credential.state = ACTIVE/PASSWORD_RESET_REQUIRED`; la
-  desactivación vive en `pos_user.status`.
-- **D-AUTH-03** `local_session.state` es columna física.
-- **D-AUTH-04** `local_session` sin `organization_id`; ownership por FK.
-- **D-AUTH-05** `credential_version`/`session_version` iniciales en 1.
-- **D-AUTH-06** catálogo exacto de 59 permisos, sembrado idempotente.
-- **D-AUTH-07** `audit_event.session_id` nullable; SYSTEM no lleva sesión.
-- **D-AUTH-08** append-only por trigger.
-- **D-AUTH-10** `bootstrap_record` por instalación.
-- **D-AUTH-11 (nuevo)** política de normalización de email frente a `lower()`
-  ASCII de SQLite.
-- **D-AUTH-09** parámetros Argon2id comerciales: **bloqueada**.
+Campos: `id` UUID PK, `organization_id` FK, `generation` (default 1, `>= 1`),
+`public_key_fingerprint`, `status` (inicial `ACTIVE`), `initialized_at`,
+`updated_at`. La clave privada Ed25519 no se persiste en SQLite.
 
-## Semántica de `local_session.state`
+Decisiones pendientes:
 
-- Se crea con `ACTIVE` y `revoked_at NULL`.
-- Revocar escribe en una sola sentencia `state='REVOKED'`, `revoked_at` y
-  `session_version = session_version + 1` con CAS.
-- La autenticación **siempre** evalúa `expires_at > now`; una fila `ACTIVE`
-  vencida no autentica aunque el estado físico no se haya materializado.
-- `EXPIRED` es una materialización opcional en una transición explícita, nunca
-  coexiste con `revoked_at`, y no requiere tarea en segundo plano.
-- `CHECK` impide `ACTIVE` con `revoked_at`, `REVOKED` sin `revoked_at` y
-  `EXPIRED` con `revoked_at`.
+- **D-INST-01**: catálogo completo de `status`. Solo `ACTIVE` está confirmado; el
+  `CHECK` provisional solo lo admite.
+- **D-INST-02**: unicidad de `public_key_fingerprint` (global o por organización)
+  y formato exacto de la huella. No se añade `UNIQUE` todavía.
 
-## Normalización de email
+## Ownership del bootstrap
 
-SQLite `lower()` solo pliega ASCII. Java `String.toLowerCase(Locale.ROOT)` y Rust
-`str::to_lowercase` pliegan Unicode. Por eso el `CHECK` físico exige el valor ya
-recortado y con forma básica, pero **no** intenta reproducir el plegado Unicode.
-La autoridad de normalización es la aplicación. D-AUTH-11 debe decidir si el
-contrato Local restringe el email a ASCII o acepta que la unicidad dependa de la
-normalización aplicada antes de insertar.
+`0007` usa dos FKs sobre `installation_identity`:
 
-## Catálogo RBAC
+- `installation_id → installation_identity(id)`: la instalación existe incluso en
+  `PENDING` (cuando `organization_id` es NULL).
+- `(installation_id, organization_id) → installation_identity(id, organization_id)`:
+  cuando el bootstrap está `COMPLETED`, la organización debe ser la de la
+  instalación.
 
-El seed contiene los 59 códigos exactos inventariados en
-`docs/05-development/rust-parity-baseline.md` §4.3. La validación Rust
-(`pos_core::identity::PERMISSION_CATALOG` y `PermissionCode`) acepta el mismo
-lenguaje: minúsculas, dígitos, `_` y `-` por segmento. Las pruebas comparan el
-contenido SQL con la constante Rust y verifican idempotencia.
+Además, administrador y rol usan FKs compuestas same-org con `pos_user` y `role`.
+
+## Gramática de permisos
+
+Rust y SQLite aceptan el mismo lenguaje: segmentos no vacíos separados por puntos,
+minúsculas ASCII, dígitos, `_` y `-`; sin comodines ni puntos iniciales, finales o
+consecutivos. El seed conserva exactamente los 59 códigos de V5–V25.
+
+## D-AUTH-11 — email Unicode
+
+SQLite `lower()` solo pliega ASCII; Java/Rust pliegan Unicode.
+
+**Opción A (recomendada, no aprobada).** Mantener compatibilidad Java: la
+normalización (`java_trim` + `to_lowercase`) ocurre en la aplicación y la unicidad
+se evalúa sobre el valor canónico. El `CHECK` físico solo exige el valor recortado
+y con forma básica. Garantía frente a escrituras SQL directas: parcial; podría
+añadirse un `CHECK (email = lower(email))` que detecta mayúsculas ASCII, pero no
+pliega Unicode (`Ü` seguiría pasando). Riesgo: una escritura directa con distinta
+capitalización puede crear duplicados semánticos.
+
+**Opción B.** Restringir el email a ASCII imprimible y exigir minúsculas en Rust y
+SQLite. Garantía fuerte, pero rompe la importación de correos Unicode de Java y
+obliga a una política de rechazo.
 
 ## Evidencia de validación
 
-`pos-storage-sqlite/src/proposals_tests.rs` aplica `0001` y las propuestas sobre
-una base vacía y comprueba CHECK, FKs compuestas, unicidad, estados de sesión,
-catálogo, resolución org/branch, bootstrap one-shot, auditoría append-only,
-rollback por integridad y reapertura. No se ejecuta desde `pos-local`.
+`pos-storage-sqlite/src/proposals_tests.rs` (10 pruebas) aplica `0001` y las
+propuestas sobre una base vacía y comprueba CHECK, FKs compuestas, unicidad,
+estados de sesión, catálogo, gramática de permisos, resolución org/branch,
+bootstrap one-shot y ownership, auditoría append-only, rollback por integridad y
+reapertura. No se ejecuta desde `pos-local`.

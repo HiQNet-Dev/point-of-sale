@@ -14,21 +14,18 @@ use pos_core::{
 
 use super::*;
 
-const PROPOSAL_0002: &str =
-    include_str!("../../../proposals/local-auth/0002_user_credential_session.proposed.sql");
-const PROPOSAL_0003: &str =
-    include_str!("../../../proposals/local-auth/0003_rbac_catalog.proposed.sql");
-const PROPOSAL_0004: &str =
-    include_str!("../../../proposals/local-auth/0004_branch_membership.proposed.sql");
-const PROPOSAL_0005: &str =
-    include_str!("../../../proposals/local-auth/0005_audit_event.proposed.sql");
-const PROPOSAL_0006: &str =
-    include_str!("../../../proposals/local-auth/0006_bootstrap_record.proposed.sql");
-
-/// Sustituto **solo de test** de `installation_identity` (§16.3 no transcrita).
-const INSTALLATION_FIXTURE: &str = "CREATE TABLE installation_identity (
-    id TEXT PRIMARY KEY NOT NULL CHECK (length(id) = 36)
-) STRICT";
+const PROPOSAL_INSTALLATION: &str =
+    include_str!("../../../proposals/local-auth/0002_installation_identity.proposed.sql");
+const PROPOSAL_IDENTITY: &str =
+    include_str!("../../../proposals/local-auth/0003_user_credential_session.proposed.sql");
+const PROPOSAL_RBAC: &str =
+    include_str!("../../../proposals/local-auth/0004_rbac_catalog.proposed.sql");
+const PROPOSAL_MEMBERSHIP: &str =
+    include_str!("../../../proposals/local-auth/0005_branch_membership.proposed.sql");
+const PROPOSAL_AUDIT: &str =
+    include_str!("../../../proposals/local-auth/0006_audit_event.proposed.sql");
+const PROPOSAL_BOOTSTRAP: &str =
+    include_str!("../../../proposals/local-auth/0007_bootstrap_record.proposed.sql");
 
 const ORG: &str = "00000000-0000-0000-0000-000000000080";
 const ORG_TWO: &str = "00000000-0000-0000-0000-000000000081";
@@ -64,13 +61,13 @@ fn organization(value: &str, code: &str) -> Organization {
 }
 
 async fn apply_proposals(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
-    sqlx::raw_sql(INSTALLATION_FIXTURE).execute(pool).await?;
     for statement in [
-        PROPOSAL_0002,
-        PROPOSAL_0003,
-        PROPOSAL_0004,
-        PROPOSAL_0005,
-        PROPOSAL_0006,
+        PROPOSAL_INSTALLATION,
+        PROPOSAL_IDENTITY,
+        PROPOSAL_RBAC,
+        PROPOSAL_MEMBERSHIP,
+        PROPOSAL_AUDIT,
+        PROPOSAL_BOOTSTRAP,
     ] {
         sqlx::raw_sql(statement).execute(pool).await?;
     }
@@ -81,14 +78,6 @@ async fn open_proposed(path: &std::path::Path) -> Result<SqlitePool, Box<dyn std
     let pool = open(path, Duration::from_millis(75)).await?;
     migrate(&pool).await?;
     apply_proposals(&pool).await?;
-    sqlx::query("INSERT INTO installation_identity (id) VALUES (?)")
-        .bind(INSTALLATION)
-        .execute(&pool)
-        .await?;
-    sqlx::query("INSERT INTO installation_identity (id) VALUES (?)")
-        .bind(INSTALLATION_TWO)
-        .execute(&pool)
-        .await?;
     Ok(pool)
 }
 
@@ -98,6 +87,22 @@ async fn seed(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
         store
             .insert_organization(&organization(value, code), TIME, TIME)
             .await?;
+    }
+    for (installation, owner, fingerprint) in [
+        (INSTALLATION, ORG, "ed25519:test-fingerprint-a"),
+        (INSTALLATION_TWO, ORG, "ed25519:test-fingerprint-b"),
+    ] {
+        sqlx::query(
+            "INSERT INTO installation_identity (id, organization_id, public_key_fingerprint, initialized_at, updated_at) \
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(installation)
+        .bind(owner)
+        .bind(fingerprint)
+        .bind(TIME)
+        .bind(TIME)
+        .execute(pool)
+        .await?;
     }
     let branch = Branch::create(
         id(BRANCH_A),
@@ -304,7 +309,12 @@ async fn proposal_set_applies_from_empty_database_and_rejects_reapplication()
     let pool = open_proposed(&path).await?;
     seed(&pool).await?;
     // Reaplicar una migración ya ejecutada debe fallar: contrato one-shot.
-    assert!(sqlx::raw_sql(PROPOSAL_0002).execute(&pool).await.is_err());
+    assert!(
+        sqlx::raw_sql(PROPOSAL_IDENTITY)
+            .execute(&pool)
+            .await
+            .is_err()
+    );
 
     pool.close().await;
     let reopened = open(&path, Duration::from_millis(75)).await?;
@@ -533,24 +543,33 @@ async fn bootstrap_is_one_shot_per_installation_and_complete()
     .execute(&pool)
     .await?;
 
-    // Administrador de otra organización rechazado por FK compuesta.
+    // Instalación de Organization A no puede completar con Organization B.
     sqlx::query(
-        "INSERT INTO installation_identity (id) VALUES ('00000000-0000-0000-0000-0000000000f2')",
+        "INSERT INTO role (id, organization_id, code, name, status, version, created_at, updated_at) \
+         VALUES ('00000000-0000-0000-0000-0000000000b2', ?, 'org-b-role', 'Rol B', 'ACTIVE', 0, ?, ?)",
     )
+    .bind(ORG_TWO)
+    .bind(TIME)
+    .bind(TIME)
     .execute(&pool)
     .await?;
     let cross = sqlx::query(
-        "INSERT INTO bootstrap_record (installation_id, state, completed_at, organization_id, administrator_user_id, administrator_role_id, bootstrap_version, updated_at) \
-         VALUES ('00000000-0000-0000-0000-0000000000f2', 'COMPLETED', ?, ?, ?, ?, 1, ?)",
+        "UPDATE bootstrap_record SET state = 'COMPLETED', completed_at = ?, organization_id = ?, \
+         administrator_user_id = ?, administrator_role_id = ?, updated_at = ? \
+         WHERE installation_id = ? AND state = 'PENDING'",
     )
     .bind(LATER)
-    .bind(ORG)
+    .bind(ORG_TWO)
     .bind(USER_TWO)
-    .bind(ROLE_ORG)
+    .bind("00000000-0000-0000-0000-0000000000b2")
     .bind(LATER)
+    .bind(INSTALLATION_TWO)
     .execute(&pool)
     .await;
-    assert!(cross.is_err(), "administrador cross-org debe rechazarse");
+    assert!(
+        cross.is_err(),
+        "la instalación y su organización deben pertenecer entre sí"
+    );
 
     // Fallo de auditoría revierte el bootstrap dentro de la misma transacción.
     let unit_of_work = SqliteUnitOfWork::new(pool.clone());
@@ -858,5 +877,118 @@ async fn integrity_errors_roll_back_and_survive_reopen() -> Result<(), Box<dyn s
         "el trigger append-only sobrevive a la reapertura"
     );
     reopened.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn installation_identity_matches_the_canonical_section()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open_proposed(&temp.path().join("installation.sqlite")).await?;
+    seed(&pool).await?;
+
+    let row = sqlx::query_as::<_, (String, i64, String, String)>(
+        "SELECT organization_id, generation, status, public_key_fingerprint \
+         FROM installation_identity WHERE id = ?",
+    )
+    .bind(INSTALLATION)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(row.0, ORG);
+    assert_eq!(row.1, 1);
+    assert_eq!(row.2, "ACTIVE");
+    assert_eq!(row.3, "ed25519:test-fingerprint-a");
+
+    let insert = |id_value: &'static str, owner: &'static str, generation: i64| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query(
+                "INSERT INTO installation_identity (id, organization_id, generation, public_key_fingerprint, initialized_at, updated_at) \
+                 VALUES (?, ?, ?, 'ed25519:test', ?, ?)",
+            )
+            .bind(id_value)
+            .bind(owner)
+            .bind(generation)
+            .bind(TIME)
+            .bind(TIME)
+            .execute(&pool)
+            .await
+        }
+    };
+    assert!(
+        insert("00000000-0000-0000-0000-0000000000f5", ORG, 0)
+            .await
+            .is_err(),
+        "generation debe ser >= 1"
+    );
+    assert!(
+        insert("00000000-0000-0000-0000-0000000000F6", ORG, 1)
+            .await
+            .is_err(),
+        "UUID en mayúsculas rechazado"
+    );
+    assert!(
+        insert("00000000-0000-0000-0000-0000000000f7", ORG_TWO, 1)
+            .await
+            .is_ok(),
+        "una organización existente es válida"
+    );
+    assert!(
+        insert(
+            "00000000-0000-0000-0000-0000000000f8",
+            "00000000-0000-0000-0000-000000000099",
+            1
+        )
+        .await
+        .is_err(),
+        "organización inexistente rechazada"
+    );
+    assert!(
+        sqlx::query("INSERT INTO installation_identity (id, organization_id, initialized_at, updated_at) VALUES ('00000000-0000-0000-0000-0000000000f9', ?, ?, ?)")
+            .bind(ORG)
+            .bind(TIME)
+            .bind(TIME)
+            .execute(&pool)
+            .await
+            .is_err(),
+        "public_key_fingerprint es obligatoria"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn permission_grammar_matches_rust_validation() -> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open_proposed(&temp.path().join("permission-grammar.sqlite")).await?;
+
+    let invalid = [
+        ".organization.read",
+        "organization..read",
+        "organization.read.",
+        "Organization.read",
+        "organization read",
+        "organization.*",
+        "organization/read",
+    ];
+    for code in invalid {
+        assert!(
+            pos_core::identity::PermissionCode::new(code).is_err(),
+            "Rust aceptó {code}"
+        );
+        let inserted = sqlx::query("INSERT INTO permission (code, description) VALUES (?, 'x')")
+            .bind(code)
+            .execute(&pool)
+            .await;
+        assert!(inserted.is_err(), "SQLite aceptó {code}");
+    }
+    assert!(
+        sqlx::query(
+            "INSERT INTO permission (code, description) VALUES ('cash-register.read', 'x')"
+        )
+        .execute(&pool)
+        .await
+        .is_err(),
+        "el código ya existe en el seed"
+    );
     Ok(())
 }
