@@ -262,8 +262,41 @@ fn organization_rejects_invalid_codes_timezones_currencies_and_locales() {
             Err(DomainError::InvalidTimezone)
         );
     }
-    for timezone in ["+01:00", "UTC+01:00", "GMT+01:00", "UT+01:00"] {
+    for timezone in [
+        "Z",
+        "+1",
+        "+01",
+        "+0130",
+        "+01:30",
+        "+01:30:15",
+        "+18:00",
+        "UTC",
+        "GMT",
+        "UT",
+        "UTC+01",
+        "GMT+01",
+        "UT+01",
+    ] {
         assert!(IanaTimezone::parse(timezone).is_ok(), "timezone {timezone}");
+    }
+    for timezone in [
+        "+",
+        "+001",
+        "+1:30",
+        "+01:3",
+        "+01:30:1",
+        "+01:30:15:00",
+        "+18:01",
+        "+19",
+        "UTCZ",
+        "GMTZ",
+        "UTZ",
+    ] {
+        assert_eq!(
+            IanaTimezone::parse(timezone),
+            Err(DomainError::InvalidTimezone),
+            "timezone {timezone}"
+        );
     }
     for currency in ["", "US", "USDD", "XYZ", "12$"] {
         assert_eq!(
@@ -275,6 +308,39 @@ fn organization_rejects_invalid_codes_timezones_currencies_and_locales() {
         assert_eq!(LocaleTag::parse(locale), Err(DomainError::InvalidLocale));
     }
     assert!(LocaleTag::parse("en-u-ca-gregory").is_ok());
+}
+
+#[test]
+fn java_zone_id_fixed_offset_forms_accept_ascii_and_reject_invalid_input() {
+    for sign in ['+', '-'] {
+        for suffix in ["1", "01", "0130", "01:30", "013015", "01:30:15"] {
+            let offset = format!("{sign}{suffix}");
+            assert!(IanaTimezone::parse(&offset).is_ok(), "offset {offset}");
+            for prefix in ["UTC", "GMT", "UT"] {
+                let prefixed = format!("{prefix}{offset}");
+                assert!(IanaTimezone::parse(&prefixed).is_ok(), "offset {prefixed}");
+            }
+        }
+    }
+    for offset in ["+18", "+1800", "+180000", "-18:00"] {
+        assert!(IanaTimezone::parse(offset).is_ok(), "offset {offset}");
+    }
+    for offset in [
+        "+1801",
+        "+180001",
+        "+18:01",
+        "+18:00:01",
+        "+01:60",
+        "+01:00:60",
+        "+€a",
+        "+€abc",
+    ] {
+        assert_eq!(
+            IanaTimezone::parse(offset),
+            Err(DomainError::InvalidTimezone),
+            "offset {offset}"
+        );
+    }
 }
 
 #[test]

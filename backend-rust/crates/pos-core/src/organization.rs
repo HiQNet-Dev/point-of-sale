@@ -5,7 +5,6 @@
 
 use std::{fmt, str::FromStr};
 
-use chrono::FixedOffset;
 use chrono_tz::Tz;
 use icu_locale_core::Locale;
 use iso_currency::Currency as IsoCurrency;
@@ -18,7 +17,7 @@ pub enum DomainError {
     InvalidName,
     /// El código no es un slug canónico válido.
     InvalidCode,
-    /// La zona no pertenece al catálogo IANA embebido.
+    /// La zona no es un `ZoneId` Java válido.
     InvalidTimezone,
     /// La moneda no pertenece al catálogo ISO 4217.
     InvalidCurrency,
@@ -35,7 +34,7 @@ impl fmt::Display for DomainError {
         formatter.write_str(match self {
             Self::InvalidName => "nombre inválido",
             Self::InvalidCode => "código inválido",
-            Self::InvalidTimezone => "zona horaria IANA inválida",
+            Self::InvalidTimezone => "zona horaria ZoneId inválida",
             Self::InvalidCurrency => "moneda ISO 4217 inválida",
             Self::InvalidLocale => "locale BCP-47 inválido",
             Self::VersionMismatch => "la revisión esperada no coincide",
@@ -138,12 +137,7 @@ impl IanaTimezone {
     /// `GMT+01:00` o `UT+01:00`) que `ZoneId.of` también admite.
     pub fn parse(value: &str) -> Result<Self, DomainError> {
         let named_zone = Tz::from_str(value).is_ok();
-        let fixed_offset = FixedOffset::from_str(value).is_ok()
-            || ["UTC", "GMT", "UT"].iter().any(|prefix| {
-                value
-                    .strip_prefix(prefix)
-                    .is_some_and(|offset| FixedOffset::from_str(offset).is_ok())
-            });
+        let fixed_offset = is_java_fixed_offset(value);
         if value.is_empty() || value.len() > 64 || (!named_zone && !fixed_offset) {
             return Err(DomainError::InvalidTimezone);
         }
@@ -156,6 +150,69 @@ impl IanaTimezone {
     pub fn as_str(&self) -> &str {
         &self.value
     }
+}
+
+/// Reconoce las formas de offset de `ZoneId.of`: `Z`, `+H`, `+HH`, `+HHMM`,
+/// `+HH:MM` y las variantes con segundos. No acepta una zona libre ni formas
+/// ambiguas como `+1:30`.
+fn is_java_fixed_offset(value: &str) -> bool {
+    if value == "Z" || is_signed_java_offset(value) {
+        return true;
+    }
+
+    ["UTC", "GMT", "UT"].iter().any(|prefix| {
+        value == *prefix
+            || value
+                .strip_prefix(prefix)
+                .is_some_and(is_signed_java_offset)
+    })
+}
+
+fn is_signed_java_offset(value: &str) -> bool {
+    let Some(rest) = value.strip_prefix('+').or_else(|| value.strip_prefix('-')) else {
+        return false;
+    };
+    // La longitud de `str` se mide en bytes. Se comprueba ASCII antes de segmentar
+    // offsets compactos para que una entrada UTF-8 inválida nunca provoque `panic`.
+    if !rest.is_ascii() {
+        return false;
+    }
+
+    let (hours, minutes, seconds) = if rest.contains(':') {
+        let mut parts = rest.split(':');
+        let Some(hours) = parts.next() else {
+            return false;
+        };
+        let Some(minutes) = parts.next() else {
+            return false;
+        };
+        let seconds = parts.next().unwrap_or("00");
+        if parts.next().is_some() || hours.len() != 2 || minutes.len() != 2 || seconds.len() != 2 {
+            return false;
+        }
+        (hours, minutes, seconds)
+    } else {
+        match rest.len() {
+            1 | 2 => (rest, "00", "00"),
+            4 => (&rest[..2], &rest[2..], "00"),
+            6 => (&rest[..2], &rest[2..4], &rest[4..]),
+            _ => return false,
+        }
+    };
+
+    let parse = |part: &str| {
+        if part.bytes().all(|byte| byte.is_ascii_digit()) {
+            part.parse::<u8>().ok()
+        } else {
+            None
+        }
+    };
+    let (Some(hours), Some(minutes), Some(seconds)) =
+        (parse(hours), parse(minutes), parse(seconds))
+    else {
+        return false;
+    };
+    hours <= 18 && minutes <= 59 && seconds <= 59 && (hours != 18 || (minutes == 0 && seconds == 0))
 }
 
 /// Código ISO 4217 validado y normalizado a mayúsculas.

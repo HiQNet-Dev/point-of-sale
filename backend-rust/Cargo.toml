@@ -20,7 +20,7 @@ tempfile = "3.27.0"
 thiserror = "2.0.21"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["json"] }
-chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+
 chrono-tz = "0.10.4"
 icu_locale_core = { version = "2.4.0", features = ["alloc"] }
 iso_currency = "0.7.1"

@@ -10,7 +10,7 @@ publish = false
 workspace = true
 
 [dependencies]
-chrono.workspace = true
+
 chrono-tz.workspace = true
 icu_locale_core.workspace = true
 iso_currency.workspace = true
