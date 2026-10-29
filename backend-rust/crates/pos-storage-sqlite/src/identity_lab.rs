@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 use pos_core::{
     identity::{
         IdentityError, LocalIdentityRepository, LocalSession, NormalizedEmail, PermissionAuthority,
-        PermissionCode, PosUser, PosUserStatus, SessionHash, UtcSeconds,
+        PermissionCode, PosUser, PosUserStatus, SessionHash, UtcSeconds, VerifiedPrincipal,
     },
     organization_branch::{DisplayName, EntityId},
 };
@@ -53,6 +53,7 @@ pub const LAB_SCHEMA_STATEMENTS: [&str; 6] = [
         id TEXT PRIMARY KEY NOT NULL, \
         organization_id TEXT NOT NULL REFERENCES organization(id), \
         code TEXT NOT NULL, \
+        status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE')), \
         UNIQUE (id, organization_id)\
      ) STRICT",
     "CREATE TABLE IF NOT EXISTS identity_role_permission_lab (\
@@ -154,80 +155,67 @@ impl<'a> SqliteIdentityLab<'a> {
         row.map(UserRow::into_domain).transpose()
     }
 
-    /// Resuelve permisos para organización o para una sucursal activa.
+    /// Resuelve permisos como Java `hasBranchPermission`.
     ///
-    /// Un scope de sucursal exige sucursal activa, pertenencia a la organización
-    /// y membership activa; de lo contrario falla cerrado con
-    /// [`IdentityError::ScopeDenied`].
+    /// Incluye siempre las grants de organización (override) y añade la pierna
+    /// de sucursal solo cuando la sucursal existe en la organización, está
+    /// ACTIVA, la membership está ACTIVA y el rol ACTIVO. Una sucursal
+    /// inexistente o ajena no produce error ni revela su existencia: no aporta
+    /// permisos.
     pub async fn effective_permissions(
         &mut self,
         user_id: &EntityId,
         organization_id: &EntityId,
         branch_id: Option<&EntityId>,
     ) -> Result<BTreeSet<PermissionCode>, IdentityError> {
-        let Some(branch_id) = branch_id else {
-            return self
-                .organization_permissions(user_id, organization_id)
-                .await;
-        };
-        let branch_status = sqlx::query_scalar::<_, String>(
-            "SELECT status FROM branch WHERE organization_id = ? AND id = ?",
-        )
-        .bind(organization_id.as_str())
-        .bind(branch_id.as_str())
-        .fetch_optional(&mut *self.connection)
-        .await
-        .map_err(|_| IdentityError::StorageUnavailable)?
-        .ok_or(IdentityError::ScopeDenied)?;
-        if branch_status != "ACTIVE" {
-            return Err(IdentityError::ScopeDenied);
+        let mut granted = self
+            .organization_permissions(user_id, organization_id)
+            .await?;
+        if let Some(branch_id) = branch_id {
+            granted.extend(
+                self.branch_permissions(user_id, organization_id, branch_id, true)
+                    .await?,
+            );
         }
-        let membership = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM identity_membership_lab \
-             WHERE organization_id = ? AND branch_id = ? AND user_id = ? AND status = 'ACTIVE'",
-        )
-        .bind(organization_id.as_str())
-        .bind(branch_id.as_str())
-        .bind(user_id.as_str())
-        .fetch_one(&mut *self.connection)
-        .await
-        .map_err(|_| IdentityError::StorageUnavailable)?;
-        if membership == 0 {
-            return Err(IdentityError::ScopeDenied);
-        }
-        let codes = sqlx::query_scalar::<_, String>(
-            "SELECT permission_code FROM (\
-                SELECT rp.permission_code FROM identity_user_role_lab ur \
-                    JOIN identity_role_permission_lab rp ON rp.role_id = ur.role_id \
-                    WHERE ur.organization_id = ? AND ur.user_id = ? \
-                UNION \
-                SELECT rp.permission_code FROM identity_membership_lab m \
-                    JOIN identity_membership_role_lab mr \
-                        ON mr.membership_id = m.id AND mr.organization_id = m.organization_id \
-                    JOIN identity_role_permission_lab rp ON rp.role_id = mr.role_id \
-                    WHERE m.organization_id = ? AND m.branch_id = ? AND m.user_id = ? AND m.status = 'ACTIVE'\
-             ) ORDER BY permission_code",
-        )
-        .bind(organization_id.as_str())
-        .bind(user_id.as_str())
-        .bind(organization_id.as_str())
-        .bind(branch_id.as_str())
-        .bind(user_id.as_str())
-        .fetch_all(&mut *self.connection)
-        .await
-        .map_err(|_| IdentityError::StorageUnavailable)?;
-        codes.into_iter().map(parse_permission).collect()
+        Ok(granted)
     }
 
+    /// Resuelve permisos como Java `hasBranchPermissionIgnoringBranchStatus`.
+    ///
+    /// Idéntico al scope de sucursal salvo que no exige `branch.status =
+    /// 'ACTIVE'`; usuario, organización, membership y rol siguen siendo
+    /// obligatoriamente ACTIVOS. Solo para flujos de recuperación explícitos.
+    pub async fn effective_permissions_for_recovery(
+        &mut self,
+        user_id: &EntityId,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+    ) -> Result<BTreeSet<PermissionCode>, IdentityError> {
+        let mut granted = self
+            .organization_permissions(user_id, organization_id)
+            .await?;
+        granted.extend(
+            self.branch_permissions(user_id, organization_id, branch_id, false)
+                .await?,
+        );
+        Ok(granted)
+    }
+
+    /// Grants de alcance organización: usuario, organización y rol ACTIVOS.
     async fn organization_permissions(
         &mut self,
         user_id: &EntityId,
         organization_id: &EntityId,
     ) -> Result<BTreeSet<PermissionCode>, IdentityError> {
         let codes = sqlx::query_scalar::<_, String>(
-            "SELECT rp.permission_code FROM identity_user_role_lab ur \
-             JOIN identity_role_permission_lab rp ON rp.role_id = ur.role_id \
+            "SELECT DISTINCT rp.permission_code \
+             FROM identity_user_role_lab ur \
+             JOIN identity_user_lab u ON u.id = ur.user_id AND u.organization_id = ur.organization_id \
+             JOIN identity_role_lab r ON r.id = ur.role_id AND r.organization_id = ur.organization_id \
+             JOIN identity_role_permission_lab rp ON rp.role_id = r.id \
+             JOIN organization o ON o.id = ur.organization_id \
              WHERE ur.organization_id = ? AND ur.user_id = ? \
+               AND u.status = 'ACTIVE' AND r.status = 'ACTIVE' AND o.status = 'ACTIVE' \
              ORDER BY rp.permission_code",
         )
         .bind(organization_id.as_str())
@@ -238,39 +226,80 @@ impl<'a> SqliteIdentityLab<'a> {
         codes.into_iter().map(parse_permission).collect()
     }
 
-    /// Revoca una sesión con CAS sobre `session_version`, sobre la misma conexión.
+    /// Pierna de sucursal; `require_active_branch` distingue normal de recuperación.
+    async fn branch_permissions(
+        &mut self,
+        user_id: &EntityId,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+        require_active_branch: bool,
+    ) -> Result<BTreeSet<PermissionCode>, IdentityError> {
+        // Dos sentencias estáticas: el modo no se interpola en SQL dinámico.
+        let codes = if require_active_branch {
+            sqlx::query_scalar::<_, String>(BRANCH_PERMISSIONS_SQL)
+                .bind(organization_id.as_str())
+                .bind(branch_id.as_str())
+                .bind(user_id.as_str())
+                .fetch_all(&mut *self.connection)
+                .await
+        } else {
+            sqlx::query_scalar::<_, String>(BRANCH_PERMISSIONS_RECOVERY_SQL)
+                .bind(organization_id.as_str())
+                .bind(branch_id.as_str())
+                .bind(user_id.as_str())
+                .fetch_all(&mut *self.connection)
+                .await
+        }
+        .map_err(|_| IdentityError::StorageUnavailable)?;
+        codes.into_iter().map(parse_permission).collect()
+    }
+
+    /// Revoca una sesión del principal autenticado con CAS sobre `session_version`.
     ///
-    /// Devuelve [`CasOutcome::Missing`] si la sesión no existe y
-    /// [`CasOutcome::Conflict`] si la versión no coincide o ya estaba revocada.
-    /// No distingue organizaciones: el llamador autorizado ya fijó el scope.
+    /// El scope de usuario y organización procede del principal, no de la
+    /// petición: conocer un UUID ajeno no habilita la operación. Una sesión de
+    /// otro usuario u organización responde [`CasOutcome::Missing`], igual que
+    /// una inexistente, sin revelar recursos de otros tenants.
     pub async fn revoke_session_cas(
         &mut self,
+        principal: &VerifiedPrincipal,
         session_id: &EntityId,
         expected_version: u64,
         revoked_at: i64,
     ) -> Result<CasOutcome, IdentityError> {
         let expected =
             i64::try_from(expected_version).map_err(|_| IdentityError::StorageUnavailable)?;
+        let user_id = principal.user_id().as_str();
+        let organization_id = principal.scope().organization_id().as_str();
         let result = sqlx::query(
             "UPDATE identity_session_lab SET revoked_at = ?, session_version = session_version + 1 \
-             WHERE id = ? AND session_version = ? AND revoked_at IS NULL",
+             WHERE id = ? AND session_version = ? AND revoked_at IS NULL AND user_id = ? \
+               AND EXISTS (SELECT 1 FROM identity_user_lab u \
+                           WHERE u.id = identity_session_lab.user_id AND u.organization_id = ?)",
         )
         .bind(revoked_at)
         .bind(session_id.as_str())
         .bind(expected)
+        .bind(user_id)
+        .bind(organization_id)
         .execute(&mut *self.connection)
         .await
         .map_err(|_| IdentityError::StorageUnavailable)?;
         if result.rows_affected() == 1 {
             return Ok(CasOutcome::Updated);
         }
-        let exists =
-            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM identity_session_lab WHERE id = ?")
-                .bind(session_id.as_str())
-                .fetch_one(&mut *self.connection)
-                .await
-                .map_err(|_| IdentityError::StorageUnavailable)?;
-        Ok(if exists == 0 {
+        let owned = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM identity_session_lab s \
+             JOIN identity_user_lab u ON u.id = s.user_id \
+             WHERE s.id = ? AND s.user_id = ? AND u.organization_id = ?",
+        )
+        .bind(session_id.as_str())
+        .bind(user_id)
+        .bind(organization_id)
+        .fetch_one(&mut *self.connection)
+        .await
+        .map_err(|_| IdentityError::StorageUnavailable)?;
+        Ok(if owned == 0 {
             CasOutcome::Missing
         } else {
             CasOutcome::Conflict
@@ -304,7 +333,46 @@ impl PermissionAuthority for SqliteIdentityLab<'_> {
         self.effective_permissions(user_id, organization_id, branch_id)
             .await
     }
+    async fn resolve_permissions_for_recovery(
+        &mut self,
+        user_id: &EntityId,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+    ) -> Result<BTreeSet<PermissionCode>, IdentityError> {
+        self.effective_permissions_for_recovery(user_id, organization_id, branch_id)
+            .await
+    }
 }
+
+/// Pierna de sucursal normal: exige sucursal ACTIVA.
+const BRANCH_PERMISSIONS_SQL: &str = "SELECT DISTINCT rp.permission_code \
+     FROM identity_membership_lab m \
+     JOIN identity_user_lab u ON u.id = m.user_id AND u.organization_id = m.organization_id \
+     JOIN branch b ON b.id = m.branch_id AND b.organization_id = m.organization_id \
+     JOIN identity_membership_role_lab mr \
+         ON mr.membership_id = m.id AND mr.organization_id = m.organization_id \
+     JOIN identity_role_lab r ON r.id = mr.role_id AND r.organization_id = mr.organization_id \
+     JOIN identity_role_permission_lab rp ON rp.role_id = r.id \
+     JOIN organization o ON o.id = m.organization_id \
+     WHERE m.organization_id = ? AND m.branch_id = ? AND m.user_id = ? \
+       AND m.status = 'ACTIVE' AND b.status = 'ACTIVE' AND u.status = 'ACTIVE' \
+       AND r.status = 'ACTIVE' AND o.status = 'ACTIVE' \
+     ORDER BY rp.permission_code";
+
+/// Pierna de sucursal de recuperación: no exige sucursal ACTIVA.
+const BRANCH_PERMISSIONS_RECOVERY_SQL: &str = "SELECT DISTINCT rp.permission_code \
+     FROM identity_membership_lab m \
+     JOIN identity_user_lab u ON u.id = m.user_id AND u.organization_id = m.organization_id \
+     JOIN branch b ON b.id = m.branch_id AND b.organization_id = m.organization_id \
+     JOIN identity_membership_role_lab mr \
+         ON mr.membership_id = m.id AND mr.organization_id = m.organization_id \
+     JOIN identity_role_lab r ON r.id = mr.role_id AND r.organization_id = mr.organization_id \
+     JOIN identity_role_permission_lab rp ON rp.role_id = r.id \
+     JOIN organization o ON o.id = m.organization_id \
+     WHERE m.organization_id = ? AND m.branch_id = ? AND m.user_id = ? \
+       AND m.status = 'ACTIVE' AND u.status = 'ACTIVE' \
+       AND r.status = 'ACTIVE' AND o.status = 'ACTIVE' \
+     ORDER BY rp.permission_code";
 
 fn parse_permission(code: String) -> Result<PermissionCode, IdentityError> {
     PermissionCode::new(&code).map_err(|_| IdentityError::StorageUnavailable)
