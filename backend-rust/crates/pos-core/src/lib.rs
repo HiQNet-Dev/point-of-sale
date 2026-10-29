@@ -13,6 +13,8 @@ pub mod cash;
 pub mod catalog;
 /// Identidad, credenciales y sesiones Locales, sin secretos en sus APIs públicas.
 pub mod identity;
+/// Inventario: artículos, cantidades exactas, balances y ledger, sin persistencia.
+pub mod inventory;
 /// Dominio Organization/Branch y puertos de aplicación reconstruidos tras INC-RECOVERY-01.
 pub mod organization_branch;
 
@@ -198,6 +200,8 @@ mod cash_tests;
 mod catalog_tests;
 #[cfg(test)]
 mod identity_tests;
+#[cfg(test)]
+mod inventory_tests;
 #[cfg(test)]
 mod organization_branch_tests;
 #[cfg(test)]
