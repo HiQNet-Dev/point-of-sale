@@ -39,6 +39,12 @@ Local. `SYSTEM` se reserva a caminos internos explícitos (`SecureBootstrap`,
 mantenimiento controlado o flujo interno); un principal autenticado no
 atribuible no puede degradarse a SYSTEM.
 
+> **Actualización 1F.** `AuditActorResolver` se retiró: un trait público que
+devolvía `AuditActor` habilitaba atribución no verificada desde adaptadores
+externos. La sustituye `pos-core::identity::LocalPrincipalService`, que entrega
+un `VerifiedPrincipal` de campos privados desde el que se deriva el actor. El
+campo canónico es `session_id`; ver [`rust-increment-1f.md`](rust-increment-1f.md).
+
 ## Contrato transaccional y SQLite
 
 La composición existente se conserva sin duplicarla:
