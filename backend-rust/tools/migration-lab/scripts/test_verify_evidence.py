@@ -43,7 +43,9 @@ class VerifyEvidenceTests(unittest.TestCase):
             "normative_approved": 1,
             "normative_blocked": 29,
             "normative_complete": False,
+            "normative_status": "BLOCKED",
             "exit_code": 0,
+            "require_complete": False,
             "technical_status": "PASSED",
             "technical_checks": [
                 {"id": f"SYNTHETIC-{index}", "status": "PASSED"} for index in range(41)
@@ -150,6 +152,7 @@ class VerifyEvidenceTests(unittest.TestCase):
                 "table_inventory": {"observed_count": 37},
             },
         )
+        self.write_execution_summaries()
         (self.root / "schema-snapshots").mkdir()
         self.manifest = {
             "scope": "synthetic_technical_or_storage_subset",
@@ -171,9 +174,59 @@ class VerifyEvidenceTests(unittest.TestCase):
 
     def write_json(self, relative, value):
         (self.root / relative).write_text(json.dumps(value), encoding="utf-8")
+        if (
+            relative == "parity-report.json"
+            and (self.root / "baseline-manifest.json").is_file()
+        ):
+            self.write_execution_summaries()
 
     def write_manifest(self):
         self.write_json("schema-snapshots/technical-digests.json", self.manifest)
+
+    def write_execution_summaries(self):
+        baseline_digest = hashlib.sha256(
+            (self.root / "baseline-manifest.json").read_bytes()
+        ).hexdigest()
+        complete = self.parity["require_complete"]
+        code = self.parity["exit_code"]
+        gate = "BLOCKED" if complete else "NOT_REQUESTED"
+        self.write_json(
+            "run-result.json",
+            {
+                "schema_version": 1,
+                "technical_status": "PASSED",
+                "normative_status": "BLOCKED",
+                "normative_complete": False,
+                "normative_approved": 1,
+                "normative_blocked": 29,
+                "require_complete": complete,
+                "exit_code": code,
+                "baseline_evidence": {
+                    "path": "baseline-manifest.json",
+                    "sha256": baseline_digest,
+                },
+            },
+        )
+        self.write_json(
+            "aggregate-status.json",
+            {
+                "schema_version": 1,
+                "status": "BLOCKED",
+                "technical_status": "PASSED",
+                "normative_status": "BLOCKED",
+                "baseline_evidence_status": "VERIFIED_SOURCE_INVENTORY",
+                "gate": {
+                    "require_complete": complete,
+                    "status": gate,
+                    "exit_code": code,
+                },
+                "sources": {
+                    "run_result": "run-result.json",
+                    "parity_report": "parity-report.json",
+                    "baseline_manifest": "baseline-manifest.json",
+                },
+            },
+        )
 
     def verify(self, exit_code=0):
         return subprocess.run(
@@ -200,16 +253,22 @@ class VerifyEvidenceTests(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr)
 
     def test_valid_evidence_preserves_normal_and_incomplete_gate_results(self):
-        for exit_code in (0, 2):
-            with self.subTest(exit_code=exit_code):
+        for require_complete, exit_code in ((False, 0), (True, 2)):
+            with self.subTest(require_complete=require_complete):
+                self.parity["require_complete"] = require_complete
                 self.parity["exit_code"] = exit_code
                 self.write_json("parity-report.json", self.parity)
+                self.write_execution_summaries()
                 self.manifest["exit_code"] = exit_code
                 self.write_manifest()
                 result = self.verify(exit_code)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("normative_passed=1, normative_blocked=29", result.stdout)
                 self.assertIn(f"exit={exit_code}", result.stdout)
+
+    def test_inconsistent_execution_summaries_are_rejected(self):
+        self.write_json("run-result.json", {"schema_version": 1})
+        self.assert_rejected("run result")
 
     def test_missing_normative_case_replaced_by_duplicate_is_rejected(self):
         original = self.parity["normative_cases"]

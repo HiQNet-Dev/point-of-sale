@@ -25,6 +25,63 @@ def fail(message):
     raise SystemExit(1)
 
 
+def verify_execution_summaries(root, parity, baseline):
+    try:
+        run = load(root / "run-result.json")
+        aggregate = load(root / "aggregate-status.json")
+    except (OSError, ValueError):
+        fail("run result or aggregate status missing or unreadable")
+    if type(parity.get("require_complete")) is not bool:
+        fail("run result requires boolean require_complete in parity report")
+    expected_exit = 2 if parity["require_complete"] else 0
+    if parity.get("exit_code") != expected_exit:
+        fail("run result exit code conflicts with incomplete normative gate")
+    expected_run = {
+        "schema_version": 1,
+        "technical_status": parity["technical_status"],
+        "normative_status": parity.get("normative_status"),
+        "normative_complete": parity["normative_complete"],
+        "normative_approved": parity["normative_approved"],
+        "normative_blocked": parity["normative_blocked"],
+        "require_complete": parity["require_complete"],
+        "exit_code": parity["exit_code"],
+    }
+    if not isinstance(run, dict) or any(
+        run.get(key) != value for key, value in expected_run.items()
+    ):
+        fail("run result disagrees with parity report")
+    evidence = run.get("baseline_evidence")
+    digest = hashlib.sha256((root / "baseline-manifest.json").read_bytes()).hexdigest()
+    if (
+        not isinstance(evidence, dict)
+        or evidence.get("path") != "baseline-manifest.json"
+        or evidence.get("sha256") != digest
+    ):
+        fail("run result baseline evidence digest is invalid")
+    gate_status = "BLOCKED" if parity["require_complete"] else "NOT_REQUESTED"
+    expected_aggregate = {
+        "schema_version": 1,
+        "status": "BLOCKED",
+        "technical_status": parity["technical_status"],
+        "normative_status": "BLOCKED",
+        "baseline_evidence_status": baseline.get("status"),
+        "gate": {
+            "require_complete": parity["require_complete"],
+            "status": gate_status,
+            "exit_code": parity["exit_code"],
+        },
+        "sources": {
+            "run_result": "run-result.json",
+            "parity_report": "parity-report.json",
+            "baseline_manifest": "baseline-manifest.json",
+        },
+    }
+    if not isinstance(aggregate, dict) or any(
+        aggregate.get(key) != value for key, value in expected_aggregate.items()
+    ):
+        fail("aggregate status is not derived from execution evidence")
+
+
 def verify_snapshot_digests(root):
     directory = root / "schema-snapshots"
     if directory.is_symlink():
@@ -244,6 +301,7 @@ def main():
     if baseline.get("table_inventory", {}).get("observed_count") != 37:
         fail("AS-IS table count is not 37")
 
+    verify_execution_summaries(root, parity, baseline)
     verify_snapshot_digests(root)
 
     if any((root / name).exists() for name in ("bundle-1.json", "bundle-2.json")):

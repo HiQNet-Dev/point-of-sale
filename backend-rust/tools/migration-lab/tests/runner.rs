@@ -88,8 +88,31 @@ fn executable_emits_honest_reports_and_refuses_existing_output() -> Result<(), B
         serde_json::from_slice(&fs::read(normal.join("baseline-manifest.json"))?)?;
     assert_eq!(baseline["flyway"]["observed_count"], 25);
     assert_eq!(baseline["table_inventory"]["observed_count"], 37);
+    let run_result: Value = serde_json::from_slice(&fs::read(normal.join("run-result.json"))?)?;
+    assert_eq!(run_result["technical_status"], "PASSED");
+    assert_eq!(run_result["normative_status"], "BLOCKED");
+    assert_eq!(run_result["require_complete"], false);
+    assert_eq!(run_result["exit_code"], 0);
+    assert_eq!(
+        run_result["baseline_evidence"]["path"],
+        "baseline-manifest.json"
+    );
+    assert!(run_result["baseline_evidence"]["sha256"].is_string());
+    let aggregate: Value =
+        serde_json::from_slice(&fs::read(normal.join("aggregate-status.json"))?)?;
+    assert_eq!(aggregate["status"], "BLOCKED");
+    assert_eq!(aggregate["technical_status"], "PASSED");
+    assert_eq!(aggregate["normative_status"], "BLOCKED");
+    assert_eq!(
+        aggregate["baseline_evidence_status"],
+        "VERIFIED_SOURCE_INVENTORY"
+    );
+    assert_eq!(aggregate["gate"]["status"], "NOT_REQUESTED");
+    assert_eq!(aggregate["gate"]["exit_code"], 0);
     for path in [
         "migration-manifest.json",
+        "run-result.json",
+        "aggregate-status.json",
         "counts.json",
         "integrity.json",
         "money-vectors.json",
@@ -134,6 +157,14 @@ fn executable_emits_honest_reports_and_refuses_existing_output() -> Result<(), B
         serde_json::from_slice(&fs::read(strict.join("parity-report.json"))?)?;
     assert_eq!(strict_report["technical_status"], "PASSED");
     assert_eq!(strict_report["exit_code"], 2);
+    let strict_run: Value = serde_json::from_slice(&fs::read(strict.join("run-result.json"))?)?;
+    let strict_aggregate: Value =
+        serde_json::from_slice(&fs::read(strict.join("aggregate-status.json"))?)?;
+    assert_eq!(strict_run["require_complete"], true);
+    assert_eq!(strict_run["exit_code"], 2);
+    assert_eq!(strict_aggregate["status"], "BLOCKED");
+    assert_eq!(strict_aggregate["gate"]["status"], "BLOCKED");
+    assert_eq!(strict_aggregate["gate"]["exit_code"], 2);
     Ok(())
 }
 

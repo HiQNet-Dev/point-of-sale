@@ -8,7 +8,7 @@ mod report;
 mod source;
 mod sqlite;
 
-use std::{path::Path, process::ExitCode};
+use std::{fs, path::Path, process::ExitCode};
 
 use serde_json::{Value, json};
 
@@ -342,6 +342,55 @@ fn write_result_reports(
         "offline_network_denied": {"status": "NOT_RUN", "reason": OFFLINE_LIMITATION},
         "exit_code": code, "require_complete": require_complete,
     }))?;
+    let baseline_bytes = fs::read(evidence.root.join("baseline-manifest.json"))?;
+    let baseline_evidence: Value = serde_json::from_slice(&baseline_bytes)?;
+    let gate_status = if code == 1 {
+        "NOT_EVALUATED"
+    } else if require_complete {
+        if code == 2 { "BLOCKED" } else { "PASSED" }
+    } else {
+        "NOT_REQUESTED"
+    };
+    let aggregate_status = if code == 1 { "FAILED" } else { "BLOCKED" };
+    // Estos resúmenes no añaden evidencia normativa: enlazan cada ejecución con
+    // el inventario de fuentes exacto que observó el runner.
+    evidence.json(
+        "run-result.json",
+        &json!({
+            "schema_version": 1,
+            "technical_status": technical_status,
+            "normative_status": "BLOCKED",
+            "normative_complete": false,
+            "normative_approved": normative_passed,
+            "normative_blocked": normative_blocked,
+            "require_complete": require_complete,
+            "exit_code": code,
+            "baseline_evidence": {
+                "path": "baseline-manifest.json",
+                "sha256": provenance::sha256(baseline_bytes),
+            },
+        }),
+    )?;
+    evidence.json(
+        "aggregate-status.json",
+        &json!({
+            "schema_version": 1,
+            "status": aggregate_status,
+            "technical_status": technical_status,
+            "normative_status": "BLOCKED",
+            "baseline_evidence_status": baseline_evidence["status"],
+            "gate": {
+                "require_complete": require_complete,
+                "status": gate_status,
+                "exit_code": code,
+            },
+            "sources": {
+                "run_result": "run-result.json",
+                "parity_report": "parity-report.json",
+                "baseline_manifest": "baseline-manifest.json",
+            },
+        }),
+    )?;
     evidence.write(
         "parity-report.xml",
         report::parity_junit(&results.cases, &normative),
@@ -585,6 +634,10 @@ mod tests {
     fn technical_failure_is_visible_in_global_json_junit_summary_and_logs() -> Result<()> {
         let temp = tempfile::tempdir()?;
         let evidence = Evidence::create(&temp.path().join("failed-evidence"))?;
+        evidence.json(
+            "baseline-manifest.json",
+            &json!({"status": "FAILED", "reason": "fixture de fallo técnico"}),
+        )?;
         let results = sqlite::Results {
             cases: vec![Case::technical(
                 "failed_check",
@@ -603,6 +656,10 @@ mod tests {
         assert_eq!(parity["normative_status"], "BLOCKED");
         assert_eq!(parity["technical_status"], "FAILED");
         assert_eq!(parity["exit_code"], 1);
+        let aggregate: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(evidence.root.join("aggregate-status.json"))?)?;
+        assert_eq!(aggregate["status"], "FAILED");
+        assert_eq!(aggregate["gate"]["status"], "NOT_EVALUATED");
         let xml = std::fs::read_to_string(evidence.root.join("parity-report.xml"))?;
         assert!(xml.contains("tests=\"31\" failures=\"1\" errors=\"0\" skipped=\"30\""));
         assert_eq!(xml.matches("<failure ").count(), 1);
