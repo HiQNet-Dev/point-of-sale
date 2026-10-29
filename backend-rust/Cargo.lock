@@ -874,6 +874,7 @@ dependencies = [
 name = "pos-storage-sqlite"
 version = "0.1.0"
 dependencies = [
+ "pos-core",
  "sqlx",
  "tempfile",
  "thiserror",

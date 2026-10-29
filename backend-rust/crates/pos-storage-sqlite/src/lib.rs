@@ -2,7 +2,12 @@
 
 use std::{path::Path, time::Duration};
 
+use pos_core::organization_branch::{
+    Branch, BusinessCode, DisplayName, DomainError, EntityId, IsoCurrency, LocaleTag,
+    NegativeStockPolicy, Organization, Status, Timezone,
+};
 use sqlx::{
+    error::DatabaseError,
     ConnectOptions, SqlitePool,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
 };
@@ -100,6 +105,299 @@ pub async fn checkpoint(pool: &SqlitePool) -> Result<(), StorageError> {
         return Err(StorageError::Checkpoint);
     }
     Ok(())
+}
+
+/// Resultado de una actualización CAS scoped.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CasOutcome {
+    /// La fila fue actualizada y su versión ya fue incrementada por el dominio.
+    Updated,
+    /// No existe una fila en el scope solicitado.
+    Missing,
+    /// Existe una fila en el scope, pero su versión ya no coincide.
+    Conflict,
+}
+
+/// Error tipado del adaptador experimental Organization/Branch.
+#[derive(Debug, thiserror::Error)]
+pub enum OrganizationBranchStorageError {
+    /// Un código de organización ya está ocupado.
+    #[error("código de organización duplicado")]
+    DuplicateOrganizationCode,
+    /// Un código de sucursal ya está ocupado dentro de su organización.
+    #[error("código de sucursal duplicado")]
+    DuplicateBranchCode,
+    /// La organización referenciada por la sucursal no existe.
+    #[error("organización referenciada inexistente")]
+    ForeignKey,
+    /// Una fila de almacenamiento no cumple los invariantes del núcleo.
+    #[error("fila Organization/Branch inválida")]
+    InvalidRow,
+    /// La operación SQLite falló sin exponer SQL ni valores.
+    #[error("operación SQLite Organization/Branch fallida")]
+    Database,
+}
+
+impl From<DomainError> for OrganizationBranchStorageError {
+    fn from(_: DomainError) -> Self {
+        Self::InvalidRow
+    }
+}
+
+/// Adaptador SQLite experimental para el subconjunto Organization/Branch.
+///
+/// No es un adaptador productivo: el root Local no contiene aún el esquema de
+/// auditoría aprobado. Todos los métodos de sucursal exigen `organization_id`.
+#[derive(Clone)]
+pub struct SqliteOrganizationBranchStore {
+    pool: SqlitePool,
+}
+
+impl SqliteOrganizationBranchStore {
+    /// Construye el adaptador sobre un pool ya migrado por [`migrate`].
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+
+    /// Inserta una organización usando parámetros SQL.
+    pub async fn insert_organization(
+        &self,
+        organization: &Organization,
+        created_at: &str,
+        updated_at: &str,
+    ) -> Result<(), OrganizationBranchStorageError> {
+        sqlx::query(
+            "INSERT INTO organization (id, code, name, currency, timezone, locale, stock_negative_policy, status, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(organization.id().as_str())
+        .bind(organization.code().as_str())
+        .bind(organization.name().as_str())
+        .bind(organization.currency().as_str())
+        .bind(organization.timezone().as_str())
+        .bind(organization.locale().as_str())
+        .bind(organization.negative_stock_policy().as_str())
+        .bind(organization.status().as_str())
+        .bind(revision_to_i64(organization.revision())?)
+        .bind(created_at)
+        .bind(updated_at)
+        .execute(&self.pool)
+        .await
+        .map_err(map_organization_write_error)?;
+        Ok(())
+    }
+
+    /// Lee y revalida una organización por UUID.
+    pub async fn get_organization(
+        &self,
+        organization_id: &EntityId,
+    ) -> Result<Option<Organization>, OrganizationBranchStorageError> {
+        let row = sqlx::query_as::<_, OrganizationRow>("SELECT id, code, name, currency, timezone, locale, stock_negative_policy, status, version FROM organization WHERE id = ?")
+            .bind(organization_id.as_str())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|_| OrganizationBranchStorageError::Database)?;
+        row.map(OrganizationRow::into_domain).transpose()
+    }
+
+    /// Actualiza todos los campos mutables mediante CAS de versión.
+    pub async fn update_organization_cas(
+        &self,
+        previous_revision: u64,
+        organization: &Organization,
+        updated_at: &str,
+    ) -> Result<CasOutcome, OrganizationBranchStorageError> {
+        let result = sqlx::query(
+            "UPDATE organization SET name = ?, currency = ?, timezone = ?, locale = ?, stock_negative_policy = ?, status = ?, version = ?, updated_at = ? WHERE id = ? AND version = ?",
+        )
+        .bind(organization.name().as_str())
+        .bind(organization.currency().as_str())
+        .bind(organization.timezone().as_str())
+        .bind(organization.locale().as_str())
+        .bind(organization.negative_stock_policy().as_str())
+        .bind(organization.status().as_str())
+        .bind(revision_to_i64(organization.revision())?)
+        .bind(updated_at)
+        .bind(organization.id().as_str())
+        .bind(revision_to_i64(previous_revision)?)
+        .execute(&self.pool)
+        .await
+        .map_err(|_| OrganizationBranchStorageError::Database)?;
+        if result.rows_affected() == 1 {
+            return Ok(CasOutcome::Updated);
+        }
+        let exists = sqlx::query_scalar::<_, i64>("SELECT EXISTS(SELECT 1 FROM organization WHERE id = ?)")
+            .bind(organization.id().as_str())
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|_| OrganizationBranchStorageError::Database)?;
+        Ok(if exists == 0 { CasOutcome::Missing } else { CasOutcome::Conflict })
+    }
+
+    /// Inserta una sucursal; la FK se verifica por SQLite real.
+    pub async fn insert_branch(
+        &self,
+        branch: &Branch,
+        created_at: &str,
+        updated_at: &str,
+    ) -> Result<(), OrganizationBranchStorageError> {
+        sqlx::query(
+            "INSERT INTO branch (id, organization_id, code, name, status, timezone_override, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(branch.id().as_str())
+        .bind(branch.organization_id().as_str())
+        .bind(branch.code().as_str())
+        .bind(branch.name().as_str())
+        .bind(branch.status().as_str())
+        .bind(branch.timezone_override().map(Timezone::as_str))
+        .bind(revision_to_i64(branch.revision())?)
+        .bind(created_at)
+        .bind(updated_at)
+        .execute(&self.pool)
+        .await
+        .map_err(map_branch_write_error)?;
+        Ok(())
+    }
+
+    /// Lee una sucursal solo dentro de la organización indicada.
+    pub async fn get_branch(
+        &self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+    ) -> Result<Option<Branch>, OrganizationBranchStorageError> {
+        let row = sqlx::query_as::<_, BranchRow>("SELECT id, organization_id, code, name, status, timezone_override, version FROM branch WHERE organization_id = ? AND id = ?")
+            .bind(organization_id.as_str())
+            .bind(branch_id.as_str())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|_| OrganizationBranchStorageError::Database)?;
+        row.map(BranchRow::into_domain).transpose()
+    }
+
+    /// Lista únicamente sucursales del owner solicitado.
+    pub async fn list_branches(
+        &self,
+        organization_id: &EntityId,
+    ) -> Result<Vec<Branch>, OrganizationBranchStorageError> {
+        let rows = sqlx::query_as::<_, BranchRow>("SELECT id, organization_id, code, name, status, timezone_override, version FROM branch WHERE organization_id = ? ORDER BY code")
+            .bind(organization_id.as_str())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|_| OrganizationBranchStorageError::Database)?;
+        rows.into_iter().map(BranchRow::into_domain).collect()
+    }
+
+    /// Actualiza una sucursal usando owner, UUID y versión como condición CAS.
+    pub async fn update_branch_cas(
+        &self,
+        organization_id: &EntityId,
+        previous_revision: u64,
+        branch: &Branch,
+        updated_at: &str,
+    ) -> Result<CasOutcome, OrganizationBranchStorageError> {
+        let result = sqlx::query(
+            "UPDATE branch SET name = ?, status = ?, timezone_override = ?, version = ?, updated_at = ? WHERE organization_id = ? AND id = ? AND version = ?",
+        )
+        .bind(branch.name().as_str())
+        .bind(branch.status().as_str())
+        .bind(branch.timezone_override().map(Timezone::as_str))
+        .bind(revision_to_i64(branch.revision())?)
+        .bind(updated_at)
+        .bind(organization_id.as_str())
+        .bind(branch.id().as_str())
+        .bind(revision_to_i64(previous_revision)?)
+        .execute(&self.pool)
+        .await
+        .map_err(|_| OrganizationBranchStorageError::Database)?;
+        if result.rows_affected() == 1 {
+            return Ok(CasOutcome::Updated);
+        }
+        let exists = sqlx::query_scalar::<_, i64>("SELECT EXISTS(SELECT 1 FROM branch WHERE organization_id = ? AND id = ?)")
+            .bind(organization_id.as_str())
+            .bind(branch.id().as_str())
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|_| OrganizationBranchStorageError::Database)?;
+        Ok(if exists == 0 { CasOutcome::Missing } else { CasOutcome::Conflict })
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct OrganizationRow {
+    id: String,
+    code: String,
+    name: String,
+    currency: String,
+    timezone: String,
+    locale: String,
+    stock_negative_policy: String,
+    status: String,
+    version: i64,
+}
+
+impl OrganizationRow {
+    fn into_domain(self) -> Result<Organization, OrganizationBranchStorageError> {
+        let revision = u64::try_from(self.version).map_err(|_| OrganizationBranchStorageError::InvalidRow)?;
+        Ok(Organization::rehydrate(
+            EntityId::parse(&self.id)?,
+            DisplayName::new(&self.name)?,
+            BusinessCode::new(&self.code)?,
+            Timezone::new(&self.timezone)?,
+            IsoCurrency::new(&self.currency)?,
+            LocaleTag::new(&self.locale)?,
+            Status::parse(&self.status)?,
+            NegativeStockPolicy::parse(&self.stock_negative_policy)?,
+            revision,
+        ))
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct BranchRow {
+    id: String,
+    organization_id: String,
+    code: String,
+    name: String,
+    status: String,
+    timezone_override: Option<String>,
+    version: i64,
+}
+
+impl BranchRow {
+    fn into_domain(self) -> Result<Branch, OrganizationBranchStorageError> {
+        let revision = u64::try_from(self.version).map_err(|_| OrganizationBranchStorageError::InvalidRow)?;
+        let timezone_override = self.timezone_override.map(|value| Timezone::new(&value)).transpose()?;
+        Ok(Branch::rehydrate(
+            EntityId::parse(&self.id)?,
+            EntityId::parse(&self.organization_id)?,
+            DisplayName::new(&self.name)?,
+            BusinessCode::new(&self.code)?,
+            timezone_override,
+            Status::parse(&self.status)?,
+            revision,
+        ))
+    }
+}
+
+fn revision_to_i64(revision: u64) -> Result<i64, OrganizationBranchStorageError> {
+    i64::try_from(revision).map_err(|_| OrganizationBranchStorageError::InvalidRow)
+}
+
+fn map_organization_write_error(error: sqlx::Error) -> OrganizationBranchStorageError {
+    if error.as_database_error().is_some_and(|database| database.is_unique_violation()) {
+        OrganizationBranchStorageError::DuplicateOrganizationCode
+    } else {
+        OrganizationBranchStorageError::Database
+    }
+}
+
+fn map_branch_write_error(error: sqlx::Error) -> OrganizationBranchStorageError {
+    if error.as_database_error().is_some_and(|database| database.is_unique_violation()) {
+        OrganizationBranchStorageError::DuplicateBranchCode
+    } else if error.as_database_error().is_some_and(|database| database.is_foreign_key_violation()) {
+        OrganizationBranchStorageError::ForeignKey
+    } else {
+        OrganizationBranchStorageError::Database
+    }
 }
 
 #[cfg(test)]

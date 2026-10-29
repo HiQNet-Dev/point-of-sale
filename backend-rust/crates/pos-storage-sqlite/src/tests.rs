@@ -1,5 +1,40 @@
 use super::*;
+use pos_core::organization_branch::{
+    Branch, BranchPatch, BusinessCode, DisplayName, EntityId, IsoCurrency, LocaleTag,
+    NewBranch, NewOrganization, Organization, Timezone, TimezoneOverridePatch,
+};
 use std::time::Duration;
+
+fn id(value: &str) -> EntityId {
+    EntityId::parse(value).unwrap_or_else(|error| panic!("fixture UUID: {error}"))
+}
+
+fn organization(id_value: &str, code: &str) -> Organization {
+    Organization::create(
+        id(id_value),
+        NewOrganization {
+            name: DisplayName::new("Laboratorio").unwrap_or_else(|error| panic!("name: {error}")),
+            code: BusinessCode::new(code).unwrap_or_else(|error| panic!("code: {error}")),
+            timezone: Timezone::new("UTC").unwrap_or_else(|error| panic!("timezone: {error}")),
+            currency: IsoCurrency::new("MXN").unwrap_or_else(|error| panic!("currency: {error}")),
+            locale: LocaleTag::new("es-MX").unwrap_or_else(|error| panic!("locale: {error}")),
+        },
+    )
+}
+
+fn branch(id_value: &str, organization_id: EntityId, code: &str) -> Branch {
+    Branch::create(
+        id(id_value),
+        organization_id,
+        NewBranch {
+            name: DisplayName::new("Sucursal").unwrap_or_else(|error| panic!("name: {error}")),
+            code: BusinessCode::new(code).unwrap_or_else(|error| panic!("code: {error}")),
+            timezone_override: None,
+        },
+    )
+}
+
+const TIME: &str = "2026-10-29T00:00:00Z";
 
 #[tokio::test]
 async fn validates_file_and_timeout_before_opening() -> Result<(), Box<dyn std::error::Error>> {
@@ -146,6 +181,82 @@ async fn rejects_noncanonical_ids_and_currency_including_nul_suffixes()
             .await?,
         1
     );
+    pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn organization_branch_store_persists_scopes_constraints_and_cas()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("organization-branch.sqlite");
+    let pool = open(&path, Duration::from_millis(75)).await?;
+    migrate(&pool).await?;
+    let store = SqliteOrganizationBranchStore::new(pool.clone());
+    let first = organization("00000000-0000-0000-0000-000000000010", "main");
+    let second = organization("00000000-0000-0000-0000-000000000020", "other");
+    store.insert_organization(&first, TIME, TIME).await?;
+    store.insert_organization(&second, TIME, TIME).await?;
+    assert_eq!(store.insert_organization(&organization("00000000-0000-0000-0000-000000000030", " MAIN "), TIME, TIME).await, Err(OrganizationBranchStorageError::DuplicateOrganizationCode));
+    let first_branch = branch("00000000-0000-0000-0000-000000000011", first.id().clone(), "center");
+    store.insert_branch(&first_branch, TIME, TIME).await?;
+    assert_eq!(store.insert_branch(&branch("00000000-0000-0000-0000-000000000012", id("00000000-0000-0000-0000-000000000099"), "orphan"), TIME, TIME).await, Err(OrganizationBranchStorageError::ForeignKey));
+    assert_eq!(store.get_branch(second.id(), first_branch.id()).await?, None);
+    assert_eq!(store.list_branches(first.id()).await?.len(), 1);
+    assert!(store.list_branches(second.id()).await?.is_empty());
+
+    let mut changed = store
+        .get_branch(first.id(), first_branch.id())
+        .await?
+        .ok_or_else(|| std::io::Error::other("missing fixture branch"))?;
+    assert!(changed.patch(first.id(), BranchPatch { expected_revision: 0, name: Some(DisplayName::new("Sucursal Norte")?), timezone_override: TimezoneOverridePatch::Keep, status: None })?);
+    assert_eq!(store.update_branch_cas(first.id(), 0, &changed, TIME).await?, CasOutcome::Updated);
+    assert_eq!(store.update_branch_cas(first.id(), 0, &changed, TIME).await?, CasOutcome::Conflict);
+    assert_eq!(store.update_branch_cas(second.id(), 1, &changed, TIME).await?, CasOutcome::Missing);
+    assert_eq!(
+        store
+            .get_branch(first.id(), first_branch.id())
+            .await?
+            .ok_or_else(|| std::io::Error::other("missing persisted branch"))?
+            .revision(),
+        1
+    );
+    pool.close().await;
+
+    let reopened = open(&path, Duration::from_millis(75)).await?;
+    let reloaded = SqliteOrganizationBranchStore::new(reopened.clone()).get_organization(first.id()).await?;
+    assert_eq!(
+        reloaded
+            .ok_or_else(|| std::io::Error::other("missing durable organization"))?
+            .code()
+            .as_str(),
+        "main"
+    );
+    reopened.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn real_sqlite_transaction_rolls_back_business_write_when_audit_fixture_fails()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open(&temp.path().join("rollback.sqlite"), Duration::from_millis(75)).await?;
+    migrate(&pool).await?;
+    sqlx::query("CREATE TABLE audit_fixture (action TEXT NOT NULL CHECK(action <> 'forced-failure')) STRICT")
+        .execute(&pool)
+        .await?;
+    let mut transaction = pool.begin().await?;
+    sqlx::query("INSERT INTO organization (id, code, name, currency, timezone, locale, stock_negative_policy, status, version, created_at, updated_at) VALUES ('00000000-0000-0000-0000-000000000010', 'rollback', 'Rollback', 'MXN', 'UTC', 'es-MX', 'STRICT', 'ACTIVE', 0, ?, ?)")
+        .bind(TIME)
+        .bind(TIME)
+        .execute(&mut *transaction)
+        .await?;
+    assert!(sqlx::query("INSERT INTO audit_fixture (action) VALUES ('forced-failure')")
+        .execute(&mut *transaction)
+        .await
+        .is_err());
+    transaction.rollback().await?;
+    assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM organization WHERE code = 'rollback'").fetch_one(&pool).await?, 0);
     pool.close().await;
     Ok(())
 }
