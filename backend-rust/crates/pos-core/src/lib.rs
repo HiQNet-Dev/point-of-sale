@@ -7,6 +7,8 @@ use std::fmt;
 
 /// Foundation pura de auditoría Local, independiente de DDL y adaptadores.
 pub mod audit;
+/// Catálogo organizacional: categorías, productos y modificadores, sin persistencia.
+pub mod catalog;
 /// Identidad, credenciales y sesiones Locales, sin secretos en sus APIs públicas.
 pub mod identity;
 /// Dominio Organization/Branch y puertos de aplicación reconstruidos tras INC-RECOVERY-01.
@@ -188,6 +190,8 @@ impl std::error::Error for MoneyError {}
 
 #[cfg(test)]
 mod audit_tests;
+#[cfg(test)]
+mod catalog_tests;
 #[cfg(test)]
 mod identity_tests;
 #[cfg(test)]
