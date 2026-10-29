@@ -39,7 +39,8 @@ pub async fn open(path: &Path, busy_timeout: Duration) -> Result<SqlitePool, Sto
     let name = path.to_str().ok_or(StorageError::InvalidConfiguration)?;
     if name.trim().is_empty()
         || has_disallowed_path_colon(name)
-        || name.contains(['?', '#', '\0'])
+        || has_disallowed_path_question_mark(name)
+        || name.contains(['#', '\0'])
         || path.is_dir()
         || busy_timeout < Duration::from_millis(1)
         || busy_timeout > Duration::from_secs(60)
@@ -87,16 +88,25 @@ pub async fn open(path: &Path, busy_timeout: Duration) -> Result<SqlitePool, Sto
 
 fn has_disallowed_path_colon(value: &str) -> bool {
     if cfg!(windows) {
-        value.bytes().enumerate().any(|(index, byte)| {
-            byte == b':'
-                && !(index == 1
-                    && value
-                        .as_bytes()
-                        .first()
+        let bytes = value.as_bytes();
+        let drive_index = if bytes.starts_with(b"\\\\?\\") { 5 } else { 1 };
+        bytes.iter().enumerate().any(|(index, byte)| {
+            *byte == b':'
+                && !(index == drive_index
+                    && bytes
+                        .get(drive_index.saturating_sub(1))
                         .is_some_and(u8::is_ascii_alphabetic))
         })
     } else {
         value.contains(':')
+    }
+}
+
+fn has_disallowed_path_question_mark(value: &str) -> bool {
+    if cfg!(windows) && value.as_bytes().starts_with(b"\\\\?\\") {
+        value.as_bytes()[3..].contains(&b'?')
+    } else {
+        value.contains('?')
     }
 }
 
