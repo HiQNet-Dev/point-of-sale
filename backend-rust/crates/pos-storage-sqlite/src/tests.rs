@@ -3,11 +3,16 @@
 #![allow(clippy::panic)]
 
 use super::*;
-use pos_core::organization_branch::{
-    ApplicationError, AuditEvent, Authorization, Branch, BranchPatch, BusinessCode, DisplayName,
-    EntityId, IdentityGenerator, IsoCurrency, LocaleTag, NewBranch, NewOrganization, Organization,
-    OrganizationPatch, Permission, Timezone, TimezoneOverridePatch,
+use pos_core::{
+    audit::AuditMetadata,
+    organization_branch::{
+        ApplicationError, AuditEvent, Authorization, Branch, BranchPatch, BusinessCode,
+        DisplayName, EntityId, IdentityGenerator, IsoCurrency, LocaleTag, NewBranch,
+        NewOrganization, Organization, OrganizationPatch, Permission, Timezone,
+        TimezoneOverridePatch,
+    },
 };
+use serde_json::json;
 use std::{collections::VecDeque, future::pending, time::Duration};
 use tokio::{sync::oneshot, time::timeout};
 
@@ -562,6 +567,208 @@ async fn concurrent_cas_allows_one_organization_and_branch_writer_per_revision()
     );
     first_pool.close().await;
     second_pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn audit_event_fixture_enforces_append_only_actor_scope_metadata_and_atomicity()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open(
+        &temp.path().join("audit-event.sqlite"),
+        Duration::from_millis(75),
+    )
+    .await?;
+    migrate(&pool).await?;
+    let store = SqliteOrganizationBranchStore::new(pool.clone());
+    let organization_a = organization("00000000-0000-0000-0000-000000000070", "audit-a");
+    let organization_b = organization("00000000-0000-0000-0000-000000000071", "audit-b");
+    let branch_b = branch(
+        "00000000-0000-0000-0000-000000000072",
+        organization_b.id().clone(),
+        "audit-b-branch",
+    );
+    store
+        .insert_organization(&organization_a, TIME, TIME)
+        .await?;
+    store
+        .insert_organization(&organization_b, TIME, TIME)
+        .await?;
+    store.insert_branch(&branch_b, TIME, TIME).await?;
+    sqlx::query(
+        "CREATE TABLE audit_event_fixture (
+            id TEXT PRIMARY KEY NOT NULL,
+            organization_id TEXT NOT NULL REFERENCES organization(id),
+            branch_id TEXT,
+            actor_type TEXT NOT NULL CHECK (actor_type IN ('USER', 'SYSTEM')),
+            actor_user_id TEXT,
+            action TEXT NOT NULL CHECK (length(trim(action)) > 0),
+            entity_type TEXT NOT NULL CHECK (length(trim(entity_type)) > 0),
+            metadata TEXT CHECK (metadata IS NULL OR (json_valid(metadata) AND length(CAST(metadata AS BLOB)) <= 16384)),
+            occurred_at TEXT NOT NULL,
+            CHECK ((actor_type = 'USER' AND actor_user_id IS NOT NULL) OR (actor_type = 'SYSTEM' AND actor_user_id IS NULL)),
+            FOREIGN KEY (branch_id, organization_id) REFERENCES branch(id, organization_id)
+        ) STRICT",
+    )
+    .execute(&pool)
+    .await?;
+    sqlx::query("CREATE TRIGGER audit_event_fixture_reject_update BEFORE UPDATE ON audit_event_fixture BEGIN SELECT RAISE(ABORT, 'audit fixture is append-only'); END")
+        .execute(&pool)
+        .await?;
+    sqlx::query("CREATE TRIGGER audit_event_fixture_reject_delete BEFORE DELETE ON audit_event_fixture BEGIN SELECT RAISE(ABORT, 'audit fixture is append-only'); END")
+        .execute(&pool)
+        .await?;
+
+    let metadata = AuditMetadata::new(json!({ "changedFields": ["name"] }))?;
+    let mut transaction = SqliteUnitOfWork::new(pool.clone()).begin().await?;
+    sqlx::query("UPDATE organization SET name = 'Audited change' WHERE id = ?")
+        .bind(organization_a.id().as_str())
+        .execute(transaction.connection())
+        .await?;
+    sqlx::query("INSERT INTO audit_event_fixture (id, organization_id, branch_id, actor_type, actor_user_id, action, entity_type, metadata, occurred_at) VALUES (?, ?, NULL, 'SYSTEM', NULL, 'organization.updated', 'organization', ?, ?)")
+        .bind("00000000-0000-0000-0000-000000000073")
+        .bind(organization_a.id().as_str())
+        .bind(metadata.canonical_json())
+        .bind(TIME)
+        .execute(transaction.connection())
+        .await?;
+    transaction.commit().await?;
+
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT name FROM organization WHERE id = ?")
+            .bind(organization_a.id().as_str())
+            .fetch_one(&pool)
+            .await?,
+        "Audited change"
+    );
+    assert!(
+        sqlx::query("UPDATE audit_event_fixture SET action = 'hacked'")
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    assert!(
+        sqlx::query("DELETE FROM audit_event_fixture")
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM audit_event_fixture")
+            .fetch_one(&pool)
+            .await?,
+        1
+    );
+    assert!(sqlx::query("INSERT INTO audit_event_fixture (id, organization_id, actor_type, actor_user_id, action, entity_type, occurred_at) VALUES (?, ?, 'USER', NULL, 'x.updated', 'x', ?)")
+        .bind("00000000-0000-0000-0000-000000000074")
+        .bind(organization_a.id().as_str())
+        .bind(TIME)
+        .execute(&pool)
+        .await
+        .is_err());
+    assert!(sqlx::query("INSERT INTO audit_event_fixture (id, organization_id, branch_id, actor_type, action, entity_type, occurred_at) VALUES (?, ?, ?, 'SYSTEM', 'x.updated', 'x', ?)")
+        .bind("00000000-0000-0000-0000-000000000075")
+        .bind(organization_a.id().as_str())
+        .bind(branch_b.id().as_str())
+        .bind(TIME)
+        .execute(&pool)
+        .await
+        .is_err());
+    assert!(sqlx::query("INSERT INTO audit_event_fixture (id, organization_id, actor_type, action, entity_type, metadata, occurred_at) VALUES (?, ?, 'SYSTEM', 'x.updated', 'x', 'not-json', ?)")
+        .bind("00000000-0000-0000-0000-000000000076")
+        .bind(organization_a.id().as_str())
+        .bind(TIME)
+        .execute(&pool)
+        .await
+        .is_err());
+
+    let mut rollback = SqliteUnitOfWork::new(pool.clone()).begin().await?;
+    sqlx::query("UPDATE organization SET name = 'Must rollback' WHERE id = ?")
+        .bind(organization_a.id().as_str())
+        .execute(rollback.connection())
+        .await?;
+    assert!(sqlx::query("INSERT INTO audit_event_fixture (id, organization_id, actor_type, actor_user_id, action, entity_type, occurred_at) VALUES (?, ?, 'USER', NULL, 'x.updated', 'x', ?)")
+        .bind("00000000-0000-0000-0000-000000000077")
+        .bind(organization_a.id().as_str())
+        .bind(TIME)
+        .execute(rollback.connection())
+        .await
+        .is_err());
+    rollback.rollback().await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT name FROM organization WHERE id = ?")
+            .bind(organization_a.id().as_str())
+            .fetch_one(&pool)
+            .await?,
+        "Audited change"
+    );
+    pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn audit_fixture_event_is_rolled_back_when_its_task_is_cancelled()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open(
+        &temp.path().join("audit-cancel.sqlite"),
+        Duration::from_millis(75),
+    )
+    .await?;
+    migrate(&pool).await?;
+    let organization = organization("00000000-0000-0000-0000-000000000078", "audit-cancel");
+    SqliteOrganizationBranchStore::new(pool.clone())
+        .insert_organization(&organization, TIME, TIME)
+        .await?;
+    sqlx::query("CREATE TABLE audit_event_fixture (id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES organization(id), action TEXT NOT NULL, occurred_at TEXT NOT NULL) STRICT")
+        .execute(&pool)
+        .await?;
+    let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+    let (ready, received) = oneshot::channel();
+    let organization_id = organization.id().clone();
+    let worker = tokio::spawn(async move {
+        let mut transaction = unit_of_work.begin().await?;
+        sqlx::query("UPDATE organization SET name = 'Cancelled audit' WHERE id = ?")
+            .bind(organization_id.as_str())
+            .execute(transaction.connection())
+            .await
+            .map_err(|_| OrganizationBranchStorageError::Database)?;
+        sqlx::query("INSERT INTO audit_event_fixture (id, organization_id, action, occurred_at) VALUES (?, ?, 'organization.updated', ?)")
+            .bind("00000000-0000-0000-0000-000000000079")
+            .bind(organization_id.as_str())
+            .bind(TIME)
+            .execute(transaction.connection())
+            .await
+            .map_err(|_| OrganizationBranchStorageError::Database)?;
+        let _ = ready.send(());
+        pending::<()>().await;
+        #[allow(unreachable_code)]
+        Ok::<(), OrganizationBranchStorageError>(())
+    });
+    received.await?;
+    worker.abort();
+    assert!(worker.await.is_err_and(|error| error.is_cancelled()));
+    timeout(
+        Duration::from_secs(1),
+        SqliteUnitOfWork::new(pool.clone()).begin(),
+    )
+    .await??
+    .rollback()
+    .await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, String>("SELECT name FROM organization WHERE id = ?")
+            .bind(organization.id().as_str())
+            .fetch_one(&pool)
+            .await?,
+        "Laboratorio"
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM audit_event_fixture")
+            .fetch_one(&pool)
+            .await?,
+        0
+    );
+    pool.close().await;
     Ok(())
 }
 
