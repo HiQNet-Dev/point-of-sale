@@ -15,7 +15,9 @@ impl EntityId {
     pub fn parse(value: &str) -> Result<Self, DomainError> {
         let bytes = value.as_bytes();
         if bytes.len() != 36
-            || ![8, 13, 18, 23].into_iter().all(|index| bytes[index] == b'-')
+            || ![8, 13, 18, 23]
+                .into_iter()
+                .all(|index| bytes[index] == b'-')
             || !bytes.iter().enumerate().all(|(index, byte)| {
                 [8, 13, 18, 23].contains(&index)
                     || byte.is_ascii_digit()
@@ -259,7 +261,11 @@ fn valid_offset(value: &str) -> bool {
     let (Some(hour), Some(minute)) = (hour, minute) else {
         return false;
     };
-    if !hour.into_iter().chain(minute).all(|digit| digit.is_ascii_digit()) {
+    if !hour
+        .into_iter()
+        .chain(minute)
+        .all(|digit| digit.is_ascii_digit())
+    {
         return false;
     }
     let hours = u16::from(hour[0] - b'0') * 10 + u16::from(hour[1] - b'0');
@@ -301,7 +307,24 @@ impl IsoCurrency {
 }
 
 const JAVA_CURRENCIES: &[&str] = &[
-    "ADP", "AED", "AFA", "AFN", "ALL", "AMD", "ANG", "AOA", "ARS", "ATS", "AUD", "AWG", "AYM", "AZM", "AZN", "BAM", "BBD", "BDT", "BEF", "BGL", "BGN", "BHD", "BIF", "BMD", "BND", "BOB", "BOV", "BRL", "BSD", "BTN", "BWP", "BYB", "BYN", "BYR", "BZD", "CAD", "CDF", "CHE", "CHF", "CHW", "CLF", "CLP", "CNY", "COP", "COU", "CRC", "CSD", "CUC", "CUP", "CVE", "CYP", "CZK", "DEM", "DJF", "DKK", "DOP", "DZD", "EEK", "EGP", "ERN", "ESP", "ETB", "EUR", "FIM", "FJD", "FKP", "FRF", "GBP", "GEL", "GHC", "GHS", "GIP", "GMD", "GNF", "GRD", "GTQ", "GWP", "GYD", "HKD", "HNL", "HRK", "HTG", "HUF", "IDR", "IEP", "ILS", "INR", "IQD", "IRR", "ISK", "ITL", "JMD", "JOD", "JPY", "KES", "KGS", "KHR", "KMF", "KPW", "KRW", "KWD", "KYD", "KZT", "LAK", "LBP", "LKR", "LRD", "LSL", "LTL", "LUF", "LVL", "LYD", "MAD", "MDL", "MGA", "MGF", "MKD", "MMK", "MNT", "MOP", "MRO", "MRU", "MTL", "MUR", "MVR", "MWK", "MXN", "MXV", "MYR", "MZM", "MZN", "NAD", "NGN", "NIO", "NLG", "NOK", "NPR", "NZD", "OMR", "PAB", "PEN", "PGK", "PHP", "PKR", "PLN", "PTE", "PYG", "QAR", "ROL", "RON", "RSD", "RUB", "RUR", "RWF", "SAR", "SBD", "SCR", "SDD", "SDG", "SEK", "SGD", "SHP", "SIT", "SKK", "SLE", "SLL", "SOS", "SRD", "SRG", "SSP", "STD", "STN", "SVC", "SYP", "SZL", "THB", "TJS", "TMM", "TMT", "TND", "TOP", "TPE", "TRL", "TRY", "TTD", "TWD", "TZS", "UAH", "UGX", "USD", "USN", "USS", "UYI", "UYU", "UZS", "VEB", "VED", "VEF", "VES", "VND", "VUV", "WST", "XAD", "XAF", "XAG", "XAU", "XBA", "XBB", "XBC", "XBD", "XCD", "XCG", "XDR", "XFO", "XFU", "XOF", "XPD", "XPF", "XPT", "XSU", "XTS", "XUA", "XXX", "YER", "YUM", "ZAR", "ZMK", "ZMW", "ZWD", "ZWG", "ZWL", "ZWN", "ZWR",
+    "ADP", "AED", "AFA", "AFN", "ALL", "AMD", "ANG", "AOA", "ARS", "ATS", "AUD", "AWG", "AYM",
+    "AZM", "AZN", "BAM", "BBD", "BDT", "BEF", "BGL", "BGN", "BHD", "BIF", "BMD", "BND", "BOB",
+    "BOV", "BRL", "BSD", "BTN", "BWP", "BYB", "BYN", "BYR", "BZD", "CAD", "CDF", "CHE", "CHF",
+    "CHW", "CLF", "CLP", "CNY", "COP", "COU", "CRC", "CSD", "CUC", "CUP", "CVE", "CYP", "CZK",
+    "DEM", "DJF", "DKK", "DOP", "DZD", "EEK", "EGP", "ERN", "ESP", "ETB", "EUR", "FIM", "FJD",
+    "FKP", "FRF", "GBP", "GEL", "GHC", "GHS", "GIP", "GMD", "GNF", "GRD", "GTQ", "GWP", "GYD",
+    "HKD", "HNL", "HRK", "HTG", "HUF", "IDR", "IEP", "ILS", "INR", "IQD", "IRR", "ISK", "ITL",
+    "JMD", "JOD", "JPY", "KES", "KGS", "KHR", "KMF", "KPW", "KRW", "KWD", "KYD", "KZT", "LAK",
+    "LBP", "LKR", "LRD", "LSL", "LTL", "LUF", "LVL", "LYD", "MAD", "MDL", "MGA", "MGF", "MKD",
+    "MMK", "MNT", "MOP", "MRO", "MRU", "MTL", "MUR", "MVR", "MWK", "MXN", "MXV", "MYR", "MZM",
+    "MZN", "NAD", "NGN", "NIO", "NLG", "NOK", "NPR", "NZD", "OMR", "PAB", "PEN", "PGK", "PHP",
+    "PKR", "PLN", "PTE", "PYG", "QAR", "ROL", "RON", "RSD", "RUB", "RUR", "RWF", "SAR", "SBD",
+    "SCR", "SDD", "SDG", "SEK", "SGD", "SHP", "SIT", "SKK", "SLE", "SLL", "SOS", "SRD", "SRG",
+    "SSP", "STD", "STN", "SVC", "SYP", "SZL", "THB", "TJS", "TMM", "TMT", "TND", "TOP", "TPE",
+    "TRL", "TRY", "TTD", "TWD", "TZS", "UAH", "UGX", "USD", "USN", "USS", "UYI", "UYU", "UZS",
+    "VEB", "VED", "VEF", "VES", "VND", "VUV", "WST", "XAD", "XAF", "XAG", "XAU", "XBA", "XBB",
+    "XBC", "XBD", "XCD", "XCG", "XDR", "XFO", "XFU", "XOF", "XPD", "XPF", "XPT", "XSU", "XTS",
+    "XUA", "XXX", "YER", "YUM", "ZAR", "ZMK", "ZMW", "ZWD", "ZWG", "ZWL", "ZWN", "ZWR",
 ];
 
 /// Locale BCP-47 validado con el perfil de tags bien formados que necesita el dominio.
@@ -318,7 +341,9 @@ impl LocaleTag {
         let Some(language) = parts.next() else {
             return Err(DomainError::InvalidLocale);
         };
-        if !(2..=8).contains(&language.len()) || !language.bytes().all(|byte| byte.is_ascii_alphabetic()) {
+        if !(2..=8).contains(&language.len())
+            || !language.bytes().all(|byte| byte.is_ascii_alphabetic())
+        {
             return Err(DomainError::InvalidLocale);
         }
         if !parts.all(|part| {
@@ -393,40 +418,93 @@ impl Organization {
         negative_stock_policy: NegativeStockPolicy,
         revision: u64,
     ) -> Self {
-        Self { id, name, code, timezone, currency, locale, status, negative_stock_policy, revision }
+        Self {
+            id,
+            name,
+            code,
+            timezone,
+            currency,
+            locale,
+            status,
+            negative_stock_policy,
+            revision,
+        }
     }
 
     /// Identidad estable.
-    pub fn id(&self) -> &EntityId { &self.id }
+    pub fn id(&self) -> &EntityId {
+        &self.id
+    }
     /// Código inmutable.
-    pub fn code(&self) -> &BusinessCode { &self.code }
+    pub fn code(&self) -> &BusinessCode {
+        &self.code
+    }
     /// Nombre visible.
-    pub fn name(&self) -> &DisplayName { &self.name }
+    pub fn name(&self) -> &DisplayName {
+        &self.name
+    }
     /// Zona horaria raíz.
-    pub fn timezone(&self) -> &Timezone { &self.timezone }
+    pub fn timezone(&self) -> &Timezone {
+        &self.timezone
+    }
     /// Moneda de la organización.
-    pub fn currency(&self) -> &IsoCurrency { &self.currency }
+    pub fn currency(&self) -> &IsoCurrency {
+        &self.currency
+    }
     /// Locale de la organización.
-    pub fn locale(&self) -> &LocaleTag { &self.locale }
+    pub fn locale(&self) -> &LocaleTag {
+        &self.locale
+    }
     /// Estado operacional.
-    pub fn status(&self) -> Status { self.status }
+    pub fn status(&self) -> Status {
+        self.status
+    }
     /// Política negativa heredada.
-    pub fn negative_stock_policy(&self) -> NegativeStockPolicy { self.negative_stock_policy }
+    pub fn negative_stock_policy(&self) -> NegativeStockPolicy {
+        self.negative_stock_policy
+    }
     /// Revisión optimista actual.
-    pub fn revision(&self) -> u64 { self.revision }
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
 
     /// Aplica un patch de forma atómica; un error deja el agregado intacto.
     pub fn patch(&mut self, patch: OrganizationPatch) -> Result<bool, DomainError> {
-        if self.revision != patch.expected_revision { return Err(DomainError::StaleRevision); }
+        if self.revision != patch.expected_revision {
+            return Err(DomainError::StaleRevision);
+        }
         let mut next = self.clone();
         let mut changed = false;
-        if let Some(value) = patch.name { changed |= next.name != value; next.name = value; }
-        if let Some(value) = patch.timezone { changed |= next.timezone != value; next.timezone = value; }
-        if let Some(value) = patch.currency { changed |= next.currency != value; next.currency = value; }
-        if let Some(value) = patch.locale { changed |= next.locale != value; next.locale = value; }
-        if let Some(value) = patch.status { changed |= next.status != value; next.status = value; }
-        if let Some(value) = patch.negative_stock_policy { changed |= next.negative_stock_policy != value; next.negative_stock_policy = value; }
-        if changed { next.revision = next.revision.checked_add(1).ok_or(DomainError::RevisionOverflow)?; }
+        if let Some(value) = patch.name {
+            changed |= next.name != value;
+            next.name = value;
+        }
+        if let Some(value) = patch.timezone {
+            changed |= next.timezone != value;
+            next.timezone = value;
+        }
+        if let Some(value) = patch.currency {
+            changed |= next.currency != value;
+            next.currency = value;
+        }
+        if let Some(value) = patch.locale {
+            changed |= next.locale != value;
+            next.locale = value;
+        }
+        if let Some(value) = patch.status {
+            changed |= next.status != value;
+            next.status = value;
+        }
+        if let Some(value) = patch.negative_stock_policy {
+            changed |= next.negative_stock_policy != value;
+            next.negative_stock_policy = value;
+        }
+        if changed {
+            next.revision = next
+                .revision
+                .checked_add(1)
+                .ok_or(DomainError::RevisionOverflow)?;
+        }
         *self = next;
         Ok(changed)
     }
@@ -488,46 +566,113 @@ pub struct Branch {
 impl Branch {
     /// Crea una sucursal activa con revisión cero.
     pub fn create(id: EntityId, organization_id: EntityId, input: NewBranch) -> Self {
-        Self { id, organization_id, name: input.name, code: input.code, timezone_override: input.timezone_override, status: Status::Active, revision: 0 }
+        Self {
+            id,
+            organization_id,
+            name: input.name,
+            code: input.code,
+            timezone_override: input.timezone_override,
+            status: Status::Active,
+            revision: 0,
+        }
     }
 
     /// Reconstruye una fila validada.
     #[allow(clippy::too_many_arguments)]
-    pub fn rehydrate(id: EntityId, organization_id: EntityId, name: DisplayName, code: BusinessCode, timezone_override: Option<Timezone>, status: Status, revision: u64) -> Self {
-        Self { id, organization_id, name, code, timezone_override, status, revision }
+    pub fn rehydrate(
+        id: EntityId,
+        organization_id: EntityId,
+        name: DisplayName,
+        code: BusinessCode,
+        timezone_override: Option<Timezone>,
+        status: Status,
+        revision: u64,
+    ) -> Self {
+        Self {
+            id,
+            organization_id,
+            name,
+            code,
+            timezone_override,
+            status,
+            revision,
+        }
     }
 
     /// Identidad estable.
-    pub fn id(&self) -> &EntityId { &self.id }
+    pub fn id(&self) -> &EntityId {
+        &self.id
+    }
     /// Owner inmutable.
-    pub fn organization_id(&self) -> &EntityId { &self.organization_id }
+    pub fn organization_id(&self) -> &EntityId {
+        &self.organization_id
+    }
     /// Código inmutable dentro del owner.
-    pub fn code(&self) -> &BusinessCode { &self.code }
+    pub fn code(&self) -> &BusinessCode {
+        &self.code
+    }
     /// Nombre visible.
-    pub fn name(&self) -> &DisplayName { &self.name }
+    pub fn name(&self) -> &DisplayName {
+        &self.name
+    }
     /// Override opcional.
-    pub fn timezone_override(&self) -> Option<&Timezone> { self.timezone_override.as_ref() }
+    pub fn timezone_override(&self) -> Option<&Timezone> {
+        self.timezone_override.as_ref()
+    }
     /// Resuelve el override o la zona de la organización recibida.
-    pub fn effective_timezone<'a>(&'a self, organization_timezone: &'a Timezone) -> &'a Timezone { self.timezone_override.as_ref().unwrap_or(organization_timezone) }
+    pub fn effective_timezone<'a>(&'a self, organization_timezone: &'a Timezone) -> &'a Timezone {
+        self.timezone_override
+            .as_ref()
+            .unwrap_or(organization_timezone)
+    }
     /// Estado.
-    pub fn status(&self) -> Status { self.status }
+    pub fn status(&self) -> Status {
+        self.status
+    }
     /// Revisión.
-    pub fn revision(&self) -> u64 { self.revision }
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
 
     /// Aplica un patch atómicamente y comprueba explícitamente el owner de contexto.
-    pub fn patch(&mut self, organization_id: &EntityId, patch: BranchPatch) -> Result<bool, DomainError> {
-        if &self.organization_id != organization_id { return Err(DomainError::OwnershipMismatch); }
-        if self.revision != patch.expected_revision { return Err(DomainError::StaleRevision); }
+    pub fn patch(
+        &mut self,
+        organization_id: &EntityId,
+        patch: BranchPatch,
+    ) -> Result<bool, DomainError> {
+        if &self.organization_id != organization_id {
+            return Err(DomainError::OwnershipMismatch);
+        }
+        if self.revision != patch.expected_revision {
+            return Err(DomainError::StaleRevision);
+        }
         let mut next = self.clone();
         let mut changed = false;
-        if let Some(value) = patch.name { changed |= next.name != value; next.name = value; }
-        match patch.timezone_override {
-            TimezoneOverridePatch::Keep => {},
-            TimezoneOverridePatch::Set(value) => { changed |= next.timezone_override.as_ref() != Some(&value); next.timezone_override = Some(value); },
-            TimezoneOverridePatch::Clear => { changed |= next.timezone_override.is_some(); next.timezone_override = None; },
+        if let Some(value) = patch.name {
+            changed |= next.name != value;
+            next.name = value;
         }
-        if let Some(value) = patch.status { changed |= next.status != value; next.status = value; }
-        if changed { next.revision = next.revision.checked_add(1).ok_or(DomainError::RevisionOverflow)?; }
+        match patch.timezone_override {
+            TimezoneOverridePatch::Keep => {}
+            TimezoneOverridePatch::Set(value) => {
+                changed |= next.timezone_override.as_ref() != Some(&value);
+                next.timezone_override = Some(value);
+            }
+            TimezoneOverridePatch::Clear => {
+                changed |= next.timezone_override.is_some();
+                next.timezone_override = None;
+            }
+        }
+        if let Some(value) = patch.status {
+            changed |= next.status != value;
+            next.status = value;
+        }
+        if changed {
+            next.revision = next
+                .revision
+                .checked_add(1)
+                .ok_or(DomainError::RevisionOverflow)?;
+        }
         *self = next;
         Ok(changed)
     }
@@ -598,7 +743,12 @@ pub trait IdentityGenerator {
 /// Decisión contextual; toda implementación debe denegar al no poder decidir.
 pub trait Authorization {
     /// Decide un permiso contra su contexto de organización y sucursal opcional.
-    fn is_allowed(&self, permission: Permission, organization_id: Option<&EntityId>, branch_id: Option<&EntityId>) -> bool;
+    fn is_allowed(
+        &self,
+        permission: Permission,
+        organization_id: Option<&EntityId>,
+        branch_id: Option<&EntityId>,
+    ) -> bool;
 }
 
 /// Permisos que estos casos de uso requieren.
@@ -621,27 +771,48 @@ pub enum Permission {
 /// Repositorio de organización expresado en operaciones del negocio.
 pub trait OrganizationRepository {
     /// Busca por identidad.
-    fn get_organization(&mut self, id: &EntityId) -> Result<Option<Organization>, ApplicationError>;
+    fn get_organization(&mut self, id: &EntityId)
+    -> Result<Option<Organization>, ApplicationError>;
     /// Indica si el código global ya está ocupado.
     fn organization_code_exists(&mut self, code: &BusinessCode) -> Result<bool, ApplicationError>;
     /// Inserta una organización nueva.
     fn insert_organization(&mut self, organization: &Organization) -> Result<(), ApplicationError>;
     /// Actualiza condicionalmente por revisión previa; `false` representa CAS perdido.
-    fn update_organization_cas(&mut self, previous_revision: u64, organization: &Organization) -> Result<bool, ApplicationError>;
+    fn update_organization_cas(
+        &mut self,
+        previous_revision: u64,
+        organization: &Organization,
+    ) -> Result<bool, ApplicationError>;
 }
 
 /// Repositorio de sucursal siempre scoped por organización.
 pub trait BranchRepository {
     /// Busca una sucursal dentro de su owner; jamás recibe lookup global.
-    fn get_branch(&mut self, organization_id: &EntityId, branch_id: &EntityId) -> Result<Option<Branch>, ApplicationError>;
+    fn get_branch(
+        &mut self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+    ) -> Result<Option<Branch>, ApplicationError>;
     /// Lista solo sucursales del owner solicitado.
-    fn list_branches(&mut self, organization_id: &EntityId) -> Result<Vec<Branch>, ApplicationError>;
+    fn list_branches(
+        &mut self,
+        organization_id: &EntityId,
+    ) -> Result<Vec<Branch>, ApplicationError>;
     /// Comprueba unicidad del código dentro del owner.
-    fn branch_code_exists(&mut self, organization_id: &EntityId, code: &BusinessCode) -> Result<bool, ApplicationError>;
+    fn branch_code_exists(
+        &mut self,
+        organization_id: &EntityId,
+        code: &BusinessCode,
+    ) -> Result<bool, ApplicationError>;
     /// Inserta una sucursal nueva.
     fn insert_branch(&mut self, branch: &Branch) -> Result<(), ApplicationError>;
     /// CAS scoped por owner y revisión previa.
-    fn update_branch_cas(&mut self, organization_id: &EntityId, previous_revision: u64, branch: &Branch) -> Result<bool, ApplicationError>;
+    fn update_branch_cas(
+        &mut self,
+        organization_id: &EntityId,
+        previous_revision: u64,
+        branch: &Branch,
+    ) -> Result<bool, ApplicationError>;
 }
 
 /// Auditoría append-only que se ejecuta en la transacción actual.
@@ -651,7 +822,10 @@ pub trait AuditAppender {
 }
 
 /// Contexto mutante transaccional de los casos de uso.
-pub trait OrganizationBranchSession: OrganizationRepository + BranchRepository + AuditAppender {}
+pub trait OrganizationBranchSession:
+    OrganizationRepository + BranchRepository + AuditAppender
+{
+}
 impl<T: OrganizationRepository + BranchRepository + AuditAppender> OrganizationBranchSession for T {}
 
 /// Unidad de trabajo sin acoplarla a SQLx ni a un framework.
@@ -659,7 +833,10 @@ pub trait UnitOfWork {
     /// Sesión que comparte la transacción de negocio y auditoría.
     type Session: OrganizationBranchSession;
     /// Ejecuta y confirma solo cuando la operación completa devuelve éxito.
-    fn transaction<T>(&mut self, operation: impl FnOnce(&mut Self::Session) -> Result<T, ApplicationError>) -> Result<T, ApplicationError>;
+    fn transaction<T>(
+        &mut self,
+        operation: impl FnOnce(&mut Self::Session) -> Result<T, ApplicationError>,
+    ) -> Result<T, ApplicationError>;
 }
 
 /// Errores de la capa de aplicación, sin códigos HTTP ni detalles de infraestructura.
@@ -686,25 +863,45 @@ pub enum ApplicationError {
 }
 
 impl From<DomainError> for ApplicationError {
-    fn from(value: DomainError) -> Self { Self::Domain(value) }
+    fn from(value: DomainError) -> Self {
+        Self::Domain(value)
+    }
 }
 
 fn organization_changed_fields(before: &Organization, after: &Organization) -> Vec<&'static str> {
     let mut fields = Vec::new();
-    if before.name() != after.name() { fields.push("name"); }
-    if before.timezone() != after.timezone() { fields.push("timezone"); }
-    if before.currency() != after.currency() { fields.push("currency"); }
-    if before.locale() != after.locale() { fields.push("locale"); }
-    if before.status() != after.status() { fields.push("status"); }
-    if before.negative_stock_policy() != after.negative_stock_policy() { fields.push("inventoryNegativeStockPolicy"); }
+    if before.name() != after.name() {
+        fields.push("name");
+    }
+    if before.timezone() != after.timezone() {
+        fields.push("timezone");
+    }
+    if before.currency() != after.currency() {
+        fields.push("currency");
+    }
+    if before.locale() != after.locale() {
+        fields.push("locale");
+    }
+    if before.status() != after.status() {
+        fields.push("status");
+    }
+    if before.negative_stock_policy() != after.negative_stock_policy() {
+        fields.push("inventoryNegativeStockPolicy");
+    }
     fields
 }
 
 fn branch_changed_fields(before: &Branch, after: &Branch) -> Vec<&'static str> {
     let mut fields = Vec::new();
-    if before.name() != after.name() { fields.push("name"); }
-    if before.timezone_override() != after.timezone_override() { fields.push("timezone"); }
-    if before.status() != after.status() { fields.push("status"); }
+    if before.name() != after.name() {
+        fields.push("name");
+    }
+    if before.timezone_override() != after.timezone_override() {
+        fields.push("timezone");
+    }
+    if before.status() != after.status() {
+        fields.push("status");
+    }
     fields
 }
 
@@ -722,14 +919,27 @@ where
     I: IdentityGenerator,
 {
     /// Ensambla los puertos; no instala una política allow-all.
-    pub fn new(unit_of_work: U, authorization: A, identities: I) -> Self { Self { unit_of_work, authorization, identities } }
+    pub fn new(unit_of_work: U, authorization: A, identities: I) -> Self {
+        Self {
+            unit_of_work,
+            authorization,
+            identities,
+        }
+    }
 
     /// Crea la organización exclusivamente para un contexto bootstrap autorizado.
     pub fn create(&mut self, input: NewOrganization) -> Result<Organization, ApplicationError> {
-        if !self.authorization.is_allowed(Permission::BootstrapOrganization, None, None) { return Err(ApplicationError::Forbidden); }
+        if !self
+            .authorization
+            .is_allowed(Permission::BootstrapOrganization, None, None)
+        {
+            return Err(ApplicationError::Forbidden);
+        }
         let id = self.identities.next_id()?;
         self.unit_of_work.transaction(|session| {
-            if session.organization_code_exists(&input.code)? { return Err(ApplicationError::OrganizationCodeAlreadyExists); }
+            if session.organization_code_exists(&input.code)? {
+                return Err(ApplicationError::OrganizationCodeAlreadyExists);
+            }
             let organization = Organization::create(id, input);
             session.insert_organization(&organization)?;
             Ok(organization)
@@ -738,27 +948,61 @@ where
 
     /// Recupera una organización tras autorizar su scope.
     pub fn get(&mut self, organization_id: &EntityId) -> Result<Organization, ApplicationError> {
-        if !self.authorization.is_allowed(Permission::OrganizationRead, Some(organization_id), None) { return Err(ApplicationError::Forbidden); }
-        self.unit_of_work.transaction(|session| session.get_organization(organization_id)?.ok_or(ApplicationError::OrganizationNotFound))
+        if !self
+            .authorization
+            .is_allowed(Permission::OrganizationRead, Some(organization_id), None)
+        {
+            return Err(ApplicationError::Forbidden);
+        }
+        self.unit_of_work.transaction(|session| {
+            session
+                .get_organization(organization_id)?
+                .ok_or(ApplicationError::OrganizationNotFound)
+        })
     }
 
     /// Aplica un patch CAS y audita únicamente una mutación real, como Java.
-    pub fn update(&mut self, organization_id: &EntityId, patch: OrganizationPatch) -> Result<Organization, ApplicationError> {
-        if !self.authorization.is_allowed(Permission::OrganizationUpdate, Some(organization_id), None) { return Err(ApplicationError::Forbidden); }
+    pub fn update(
+        &mut self,
+        organization_id: &EntityId,
+        patch: OrganizationPatch,
+    ) -> Result<Organization, ApplicationError> {
+        if !self.authorization.is_allowed(
+            Permission::OrganizationUpdate,
+            Some(organization_id),
+            None,
+        ) {
+            return Err(ApplicationError::Forbidden);
+        }
         self.unit_of_work.transaction(|session| {
-            let mut organization = session.get_organization(organization_id)?.ok_or(ApplicationError::OrganizationNotFound)?;
+            let mut organization = session
+                .get_organization(organization_id)?
+                .ok_or(ApplicationError::OrganizationNotFound)?;
             let before = organization.clone();
             let previous_revision = organization.revision();
             let changed = organization.patch(patch)?;
-            if !changed { return Ok(organization); }
-            if !session.update_organization_cas(previous_revision, &organization)? { return Err(ApplicationError::ConcurrentModification); }
-            session.append_audit(AuditEvent { organization_id: organization_id.clone(), branch_id: None, action: "organization.updated", entity_type: "organization", entity_id: organization_id.clone(), changed_fields: organization_changed_fields(&before, &organization) })?;
+            if !changed {
+                return Ok(organization);
+            }
+            if !session.update_organization_cas(previous_revision, &organization)? {
+                return Err(ApplicationError::ConcurrentModification);
+            }
+            session.append_audit(AuditEvent {
+                organization_id: organization_id.clone(),
+                branch_id: None,
+                action: "organization.updated",
+                entity_type: "organization",
+                entity_id: organization_id.clone(),
+                changed_fields: organization_changed_fields(&before, &organization),
+            })?;
             Ok(organization)
         })
     }
 
     /// Descompone el servicio una vez configurado por el composition root.
-    pub fn into_parts(self) -> (U, A, I) { (self.unit_of_work, self.authorization, self.identities) }
+    pub fn into_parts(self) -> (U, A, I) {
+        (self.unit_of_work, self.authorization, self.identities)
+    }
 }
 
 /// Casos de uso de Branch sobre los mismos puertos transaccionales.
@@ -775,55 +1019,130 @@ where
     I: IdentityGenerator,
 {
     /// Ensambla el caso de uso sin abrir ninguna autorización por defecto.
-    pub fn new(unit_of_work: U, authorization: A, identities: I) -> Self { Self { unit_of_work, authorization, identities } }
+    pub fn new(unit_of_work: U, authorization: A, identities: I) -> Self {
+        Self {
+            unit_of_work,
+            authorization,
+            identities,
+        }
+    }
 
     /// Crea y audita una sucursal dentro de una organización existente.
-    pub fn create(&mut self, organization_id: &EntityId, input: NewBranch) -> Result<Branch, ApplicationError> {
-        if !self.authorization.is_allowed(Permission::BranchCreate, Some(organization_id), None) { return Err(ApplicationError::Forbidden); }
+    pub fn create(
+        &mut self,
+        organization_id: &EntityId,
+        input: NewBranch,
+    ) -> Result<Branch, ApplicationError> {
+        if !self
+            .authorization
+            .is_allowed(Permission::BranchCreate, Some(organization_id), None)
+        {
+            return Err(ApplicationError::Forbidden);
+        }
         let id = self.identities.next_id()?;
         self.unit_of_work.transaction(|session| {
-            if session.get_organization(organization_id)?.is_none() { return Err(ApplicationError::OrganizationNotFound); }
-            if session.branch_code_exists(organization_id, &input.code)? { return Err(ApplicationError::BranchCodeAlreadyExists); }
+            if session.get_organization(organization_id)?.is_none() {
+                return Err(ApplicationError::OrganizationNotFound);
+            }
+            if session.branch_code_exists(organization_id, &input.code)? {
+                return Err(ApplicationError::BranchCodeAlreadyExists);
+            }
             let branch = Branch::create(id, organization_id.clone(), input);
             session.insert_branch(&branch)?;
-            session.append_audit(AuditEvent { organization_id: organization_id.clone(), branch_id: Some(branch.id().clone()), action: "branch.created", entity_type: "branch", entity_id: branch.id().clone(), changed_fields: Vec::new() })?;
+            session.append_audit(AuditEvent {
+                organization_id: organization_id.clone(),
+                branch_id: Some(branch.id().clone()),
+                action: "branch.created",
+                entity_type: "branch",
+                entity_id: branch.id().clone(),
+                changed_fields: Vec::new(),
+            })?;
             Ok(branch)
         })
     }
 
     /// Lista sucursales únicamente dentro del owner visible.
     pub fn list(&mut self, organization_id: &EntityId) -> Result<Vec<Branch>, ApplicationError> {
-        if !self.authorization.is_allowed(Permission::BranchRead, Some(organization_id), None) { return Err(ApplicationError::Forbidden); }
+        if !self
+            .authorization
+            .is_allowed(Permission::BranchRead, Some(organization_id), None)
+        {
+            return Err(ApplicationError::Forbidden);
+        }
         self.unit_of_work.transaction(|session| {
-            if session.get_organization(organization_id)?.is_none() { return Err(ApplicationError::OrganizationNotFound); }
+            if session.get_organization(organization_id)?.is_none() {
+                return Err(ApplicationError::OrganizationNotFound);
+            }
             session.list_branches(organization_id)
         })
     }
 
     /// Obtiene una sucursal scoped, ocultando IDs de otras organizaciones.
-    pub fn get(&mut self, organization_id: &EntityId, branch_id: &EntityId) -> Result<Branch, ApplicationError> {
-        if !self.authorization.is_allowed(Permission::BranchRead, Some(organization_id), Some(branch_id)) { return Err(ApplicationError::Forbidden); }
+    pub fn get(
+        &mut self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+    ) -> Result<Branch, ApplicationError> {
+        if !self.authorization.is_allowed(
+            Permission::BranchRead,
+            Some(organization_id),
+            Some(branch_id),
+        ) {
+            return Err(ApplicationError::Forbidden);
+        }
         self.unit_of_work.transaction(|session| {
-            if session.get_organization(organization_id)?.is_none() { return Err(ApplicationError::OrganizationNotFound); }
-            session.get_branch(organization_id, branch_id)?.ok_or(ApplicationError::BranchNotFound)
+            if session.get_organization(organization_id)?.is_none() {
+                return Err(ApplicationError::OrganizationNotFound);
+            }
+            session
+                .get_branch(organization_id, branch_id)?
+                .ok_or(ApplicationError::BranchNotFound)
         })
     }
 
     /// Descompone el servicio una vez configurado por el composition root.
-    pub fn into_parts(self) -> (U, A, I) { (self.unit_of_work, self.authorization, self.identities) }
+    pub fn into_parts(self) -> (U, A, I) {
+        (self.unit_of_work, self.authorization, self.identities)
+    }
 
     /// Aplica CAS scoped y registra solo cambios materiales.
-    pub fn update(&mut self, organization_id: &EntityId, branch_id: &EntityId, patch: BranchPatch) -> Result<Branch, ApplicationError> {
-        if !self.authorization.is_allowed(Permission::BranchUpdate, Some(organization_id), Some(branch_id)) { return Err(ApplicationError::Forbidden); }
+    pub fn update(
+        &mut self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+        patch: BranchPatch,
+    ) -> Result<Branch, ApplicationError> {
+        if !self.authorization.is_allowed(
+            Permission::BranchUpdate,
+            Some(organization_id),
+            Some(branch_id),
+        ) {
+            return Err(ApplicationError::Forbidden);
+        }
         self.unit_of_work.transaction(|session| {
-            if session.get_organization(organization_id)?.is_none() { return Err(ApplicationError::OrganizationNotFound); }
-            let mut branch = session.get_branch(organization_id, branch_id)?.ok_or(ApplicationError::BranchNotFound)?;
+            if session.get_organization(organization_id)?.is_none() {
+                return Err(ApplicationError::OrganizationNotFound);
+            }
+            let mut branch = session
+                .get_branch(organization_id, branch_id)?
+                .ok_or(ApplicationError::BranchNotFound)?;
             let before = branch.clone();
             let previous_revision = branch.revision();
             let changed = branch.patch(organization_id, patch)?;
-            if !changed { return Ok(branch); }
-            if !session.update_branch_cas(organization_id, previous_revision, &branch)? { return Err(ApplicationError::ConcurrentModification); }
-            session.append_audit(AuditEvent { organization_id: organization_id.clone(), branch_id: Some(branch_id.clone()), action: "branch.updated", entity_type: "branch", entity_id: branch_id.clone(), changed_fields: branch_changed_fields(&before, &branch) })?;
+            if !changed {
+                return Ok(branch);
+            }
+            if !session.update_branch_cas(organization_id, previous_revision, &branch)? {
+                return Err(ApplicationError::ConcurrentModification);
+            }
+            session.append_audit(AuditEvent {
+                organization_id: organization_id.clone(),
+                branch_id: Some(branch_id.clone()),
+                action: "branch.updated",
+                entity_type: "branch",
+                entity_id: branch_id.clone(),
+                changed_fields: branch_changed_fields(&before, &branch),
+            })?;
             Ok(branch)
         })
     }

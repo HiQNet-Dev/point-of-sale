@@ -7,8 +7,8 @@ use pos_core::organization_branch::{
     NegativeStockPolicy, Organization, Status, Timezone,
 };
 use sqlx::{
-    error::DatabaseError,
     ConnectOptions, SqlitePool,
+    error::DatabaseError,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
 };
 
@@ -225,12 +225,17 @@ impl SqliteOrganizationBranchStore {
         if result.rows_affected() == 1 {
             return Ok(CasOutcome::Updated);
         }
-        let exists = sqlx::query_scalar::<_, i64>("SELECT EXISTS(SELECT 1 FROM organization WHERE id = ?)")
-            .bind(organization.id().as_str())
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|_| OrganizationBranchStorageError::Database)?;
-        Ok(if exists == 0 { CasOutcome::Missing } else { CasOutcome::Conflict })
+        let exists =
+            sqlx::query_scalar::<_, i64>("SELECT EXISTS(SELECT 1 FROM organization WHERE id = ?)")
+                .bind(organization.id().as_str())
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|_| OrganizationBranchStorageError::Database)?;
+        Ok(if exists == 0 {
+            CasOutcome::Missing
+        } else {
+            CasOutcome::Conflict
+        })
     }
 
     /// Inserta una sucursal; la FK se verifica por SQLite real.
@@ -311,13 +316,19 @@ impl SqliteOrganizationBranchStore {
         if result.rows_affected() == 1 {
             return Ok(CasOutcome::Updated);
         }
-        let exists = sqlx::query_scalar::<_, i64>("SELECT EXISTS(SELECT 1 FROM branch WHERE organization_id = ? AND id = ?)")
-            .bind(organization_id.as_str())
-            .bind(branch.id().as_str())
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|_| OrganizationBranchStorageError::Database)?;
-        Ok(if exists == 0 { CasOutcome::Missing } else { CasOutcome::Conflict })
+        let exists = sqlx::query_scalar::<_, i64>(
+            "SELECT EXISTS(SELECT 1 FROM branch WHERE organization_id = ? AND id = ?)",
+        )
+        .bind(organization_id.as_str())
+        .bind(branch.id().as_str())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|_| OrganizationBranchStorageError::Database)?;
+        Ok(if exists == 0 {
+            CasOutcome::Missing
+        } else {
+            CasOutcome::Conflict
+        })
     }
 }
 
@@ -336,7 +347,8 @@ struct OrganizationRow {
 
 impl OrganizationRow {
     fn into_domain(self) -> Result<Organization, OrganizationBranchStorageError> {
-        let revision = u64::try_from(self.version).map_err(|_| OrganizationBranchStorageError::InvalidRow)?;
+        let revision =
+            u64::try_from(self.version).map_err(|_| OrganizationBranchStorageError::InvalidRow)?;
         Ok(Organization::rehydrate(
             EntityId::parse(&self.id)?,
             DisplayName::new(&self.name)?,
@@ -364,8 +376,12 @@ struct BranchRow {
 
 impl BranchRow {
     fn into_domain(self) -> Result<Branch, OrganizationBranchStorageError> {
-        let revision = u64::try_from(self.version).map_err(|_| OrganizationBranchStorageError::InvalidRow)?;
-        let timezone_override = self.timezone_override.map(|value| Timezone::new(&value)).transpose()?;
+        let revision =
+            u64::try_from(self.version).map_err(|_| OrganizationBranchStorageError::InvalidRow)?;
+        let timezone_override = self
+            .timezone_override
+            .map(|value| Timezone::new(&value))
+            .transpose()?;
         Ok(Branch::rehydrate(
             EntityId::parse(&self.id)?,
             EntityId::parse(&self.organization_id)?,
@@ -383,7 +399,10 @@ fn revision_to_i64(revision: u64) -> Result<i64, OrganizationBranchStorageError>
 }
 
 fn map_organization_write_error(error: sqlx::Error) -> OrganizationBranchStorageError {
-    if error.as_database_error().is_some_and(|database| database.is_unique_violation()) {
+    if error
+        .as_database_error()
+        .is_some_and(|database| database.is_unique_violation())
+    {
         OrganizationBranchStorageError::DuplicateOrganizationCode
     } else {
         OrganizationBranchStorageError::Database
@@ -391,9 +410,15 @@ fn map_organization_write_error(error: sqlx::Error) -> OrganizationBranchStorage
 }
 
 fn map_branch_write_error(error: sqlx::Error) -> OrganizationBranchStorageError {
-    if error.as_database_error().is_some_and(|database| database.is_unique_violation()) {
+    if error
+        .as_database_error()
+        .is_some_and(|database| database.is_unique_violation())
+    {
         OrganizationBranchStorageError::DuplicateBranchCode
-    } else if error.as_database_error().is_some_and(|database| database.is_foreign_key_violation()) {
+    } else if error
+        .as_database_error()
+        .is_some_and(|database| database.is_foreign_key_violation())
+    {
         OrganizationBranchStorageError::ForeignKey
     } else {
         OrganizationBranchStorageError::Database

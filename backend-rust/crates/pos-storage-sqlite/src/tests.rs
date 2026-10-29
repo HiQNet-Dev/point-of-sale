@@ -1,7 +1,7 @@
 use super::*;
 use pos_core::organization_branch::{
-    Branch, BranchPatch, BusinessCode, DisplayName, EntityId, IsoCurrency, LocaleTag,
-    NewBranch, NewOrganization, Organization, Timezone, TimezoneOverridePatch,
+    Branch, BranchPatch, BusinessCode, DisplayName, EntityId, IsoCurrency, LocaleTag, NewBranch,
+    NewOrganization, Organization, Timezone, TimezoneOverridePatch,
 };
 use std::time::Duration;
 
@@ -197,11 +197,40 @@ async fn organization_branch_store_persists_scopes_constraints_and_cas()
     let second = organization("00000000-0000-0000-0000-000000000020", "other");
     store.insert_organization(&first, TIME, TIME).await?;
     store.insert_organization(&second, TIME, TIME).await?;
-    assert_eq!(store.insert_organization(&organization("00000000-0000-0000-0000-000000000030", " MAIN "), TIME, TIME).await, Err(OrganizationBranchStorageError::DuplicateOrganizationCode));
-    let first_branch = branch("00000000-0000-0000-0000-000000000011", first.id().clone(), "center");
+    assert_eq!(
+        store
+            .insert_organization(
+                &organization("00000000-0000-0000-0000-000000000030", " MAIN "),
+                TIME,
+                TIME
+            )
+            .await,
+        Err(OrganizationBranchStorageError::DuplicateOrganizationCode)
+    );
+    let first_branch = branch(
+        "00000000-0000-0000-0000-000000000011",
+        first.id().clone(),
+        "center",
+    );
     store.insert_branch(&first_branch, TIME, TIME).await?;
-    assert_eq!(store.insert_branch(&branch("00000000-0000-0000-0000-000000000012", id("00000000-0000-0000-0000-000000000099"), "orphan"), TIME, TIME).await, Err(OrganizationBranchStorageError::ForeignKey));
-    assert_eq!(store.get_branch(second.id(), first_branch.id()).await?, None);
+    assert_eq!(
+        store
+            .insert_branch(
+                &branch(
+                    "00000000-0000-0000-0000-000000000012",
+                    id("00000000-0000-0000-0000-000000000099"),
+                    "orphan"
+                ),
+                TIME,
+                TIME
+            )
+            .await,
+        Err(OrganizationBranchStorageError::ForeignKey)
+    );
+    assert_eq!(
+        store.get_branch(second.id(), first_branch.id()).await?,
+        None
+    );
     assert_eq!(store.list_branches(first.id()).await?.len(), 1);
     assert!(store.list_branches(second.id()).await?.is_empty());
 
@@ -209,10 +238,33 @@ async fn organization_branch_store_persists_scopes_constraints_and_cas()
         .get_branch(first.id(), first_branch.id())
         .await?
         .ok_or_else(|| std::io::Error::other("missing fixture branch"))?;
-    assert!(changed.patch(first.id(), BranchPatch { expected_revision: 0, name: Some(DisplayName::new("Sucursal Norte")?), timezone_override: TimezoneOverridePatch::Keep, status: None })?);
-    assert_eq!(store.update_branch_cas(first.id(), 0, &changed, TIME).await?, CasOutcome::Updated);
-    assert_eq!(store.update_branch_cas(first.id(), 0, &changed, TIME).await?, CasOutcome::Conflict);
-    assert_eq!(store.update_branch_cas(second.id(), 1, &changed, TIME).await?, CasOutcome::Missing);
+    assert!(changed.patch(
+        first.id(),
+        BranchPatch {
+            expected_revision: 0,
+            name: Some(DisplayName::new("Sucursal Norte")?),
+            timezone_override: TimezoneOverridePatch::Keep,
+            status: None
+        }
+    )?);
+    assert_eq!(
+        store
+            .update_branch_cas(first.id(), 0, &changed, TIME)
+            .await?,
+        CasOutcome::Updated
+    );
+    assert_eq!(
+        store
+            .update_branch_cas(first.id(), 0, &changed, TIME)
+            .await?,
+        CasOutcome::Conflict
+    );
+    assert_eq!(
+        store
+            .update_branch_cas(second.id(), 1, &changed, TIME)
+            .await?,
+        CasOutcome::Missing
+    );
     assert_eq!(
         store
             .get_branch(first.id(), first_branch.id())
@@ -224,7 +276,9 @@ async fn organization_branch_store_persists_scopes_constraints_and_cas()
     pool.close().await;
 
     let reopened = open(&path, Duration::from_millis(75)).await?;
-    let reloaded = SqliteOrganizationBranchStore::new(reopened.clone()).get_organization(first.id()).await?;
+    let reloaded = SqliteOrganizationBranchStore::new(reopened.clone())
+        .get_organization(first.id())
+        .await?;
     assert_eq!(
         reloaded
             .ok_or_else(|| std::io::Error::other("missing durable organization"))?
@@ -240,7 +294,11 @@ async fn organization_branch_store_persists_scopes_constraints_and_cas()
 async fn real_sqlite_transaction_rolls_back_business_write_when_audit_fixture_fails()
 -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
-    let pool = open(&temp.path().join("rollback.sqlite"), Duration::from_millis(75)).await?;
+    let pool = open(
+        &temp.path().join("rollback.sqlite"),
+        Duration::from_millis(75),
+    )
+    .await?;
     migrate(&pool).await?;
     sqlx::query("CREATE TABLE audit_fixture (action TEXT NOT NULL CHECK(action <> 'forced-failure')) STRICT")
         .execute(&pool)
@@ -251,12 +309,19 @@ async fn real_sqlite_transaction_rolls_back_business_write_when_audit_fixture_fa
         .bind(TIME)
         .execute(&mut *transaction)
         .await?;
-    assert!(sqlx::query("INSERT INTO audit_fixture (action) VALUES ('forced-failure')")
-        .execute(&mut *transaction)
-        .await
-        .is_err());
+    assert!(
+        sqlx::query("INSERT INTO audit_fixture (action) VALUES ('forced-failure')")
+            .execute(&mut *transaction)
+            .await
+            .is_err()
+    );
     transaction.rollback().await?;
-    assert_eq!(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM organization WHERE code = 'rollback'").fetch_one(&pool).await?, 0);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM organization WHERE code = 'rollback'")
+            .fetch_one(&pool)
+            .await?,
+        0
+    );
     pool.close().await;
     Ok(())
 }
