@@ -2,129 +2,137 @@
 
 **Estado: PROPUESTA VERIFICADA. Sin migraciones productivas.**
 
-Rama: `feat/backend/rust-increment-1i-prep`, apilada sobre 1H
-(`b7c0f34b`). Las propuestas siguen fuera de `migrations/local` y no se cargan
-desde `pos-local`.
+Rama: `feat/backend/rust-increment-1i-prep`, apilada sobre 1H (`b7c0f34b`).
+Las propuestas siguen fuera de `migrations/local` y no se cargan desde
+`pos-local`.
 
-## 1. Correcciones aplicadas
+## 1. Esquema `installation_identity` (F1–10 §16.3)
 
-### 1.1 `bootstrap_record` por instalación (P0)
+`0002_installation_identity.proposed.sql` transcribe la ficha sin añadir campos:
 
-Sustituido el singleton `id INTEGER = 1` por el contrato de F1–10 §17.3:
+| Campo | Regla física |
+| --- | --- |
+| `id` | UUID canónico, PK |
+| `organization_id` | FK obligatoria a `organization` |
+| `generation` | `INTEGER NOT NULL DEFAULT 1 CHECK (generation >= 1)` |
+| `public_key_fingerprint` | `TEXT NOT NULL`, 1–128 bytes, sin NUL; **sin** `UNIQUE` |
+| `status` | `TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE'))` |
+| `initialized_at`, `updated_at` | UTC `...Z` obligatorios |
 
-| Campo | Tipo | Regla |
-| --- | --- | --- |
-| `installation_id` | TEXT UUID | PK y FK a `installation_identity(id)` |
-| `state` | TEXT | `PENDING` o `COMPLETED` |
-| `completed_at` | TEXT UTC | obligatorio en `COMPLETED` |
-| `organization_id` | TEXT UUID | FK a `organization` |
-| `administrator_user_id` | TEXT UUID | FK compuesta same-org con `pos_user` |
-| `administrator_role_id` | TEXT UUID | FK compuesta same-org con `role` |
-| `bootstrap_version` | INTEGER | `>= 1` |
-| `updated_at` | TEXT UTC | obligatorio |
+`UNIQUE (id, organization_id)` es superclave para la FK compuesta de `0007`.
+La clave privada Ed25519 no se persiste.
 
-`PENDING` no admite provisioning parcial y `COMPLETED` exige todos los campos.
-Una fila por instalación; un segundo intento no actualiza nada.
+Decisiones registradas como pendientes:
 
-**Dependencia bloqueada:** `installation_identity` (§16.3) no está transcrita en
-el checkout. `0006` no la crea ni inventa sus columnas; la suite usa un sustituto
-solo de test.
+- **D-INST-01** catálogo completo de `status`; hoy solo `ACTIVE`.
+- **D-INST-02** unicidad de `public_key_fingerprint` (global o por organización) y
+  formato exacto de la huella.
 
-### 1.2 Catálogo RBAC exacto (P0)
+## 2. Ownership del bootstrap
 
-- `PermissionCode` ahora acepta `-` por segmento, igual que el catálogo Java
-  (`cash-register.read`, `purchasing.order.write`).
-- `PERMISSION_CATALOG` fija los 59 códigos de V5–V25.
-- El seed SQL es idempotente (`ON CONFLICT DO NOTHING`) y una prueba compara
-  código por código con la constante Rust.
+`0007` combina:
 
-### 1.3 Estado de sesión (P0)
+- `installation_id → installation_identity(id)` para que `PENDING` (con
+  `organization_id` NULL) siga exigiendo una instalación real;
+- `(installation_id, organization_id) → installation_identity(id, organization_id)`
+  para que `COMPLETED` solo sea posible cuando instalación y organización
+  pertenecen entre sí;
+- FKs compuestas same-org para administrador y rol.
 
-- Se conserva `local_session.state` como columna física.
-- Revocación atómica: `state`, `revoked_at` y `session_version` en la misma
-  sentencia con CAS.
-- La expiración se evalúa siempre contra `expires_at`; una fila `ACTIVE` vencida
-  no autentica y no requiere materializar `EXPIRED` ni tarea en segundo plano.
-- `CHECK` excluye combinaciones incongruentes.
+Probado: una instalación de Organization A no completa con Organization B; parcial
+rechazado; segundo intento sin efecto; organización inexistente rechazada;
+reapertura conserva el estado.
 
-### 1.4 Fingerprint de material (P1)
+## 3. Gramática de permisos
 
-`MaterialFingerprint` ya no guarda una copia del hash: guarda un digest SHA-256 de
-32 bytes y `policy_id`/parámetros. No deriva `Debug`. Se mantiene `Zeroizing`,
-`VerificationGate`, la criptografía fuera de `BEGIN IMMEDIATE`, el CAS obligatorio
-y el rechazo de decisiones obsoletas.
+`PermissionCode` y el `CHECK` de `permission.code` comparten lenguaje: segmentos no
+vacíos, punto como separador, minúsculas ASCII, dígitos, `_` y `-`, sin comodines
+ni puntos iniciales/finales/consecutivos. El seed conserva los 59 códigos
+inventariados en `rust-parity-baseline.md` §4.3.
 
-### 1.5 Validaciones físicas (P1)
+Prueba negativa cruzada: las mismas cadenas inválidas son rechazadas por Rust y por
+SQLite.
 
-- UUID canónicos en todas las tablas.
-- `NOT NULL`, CHECK de catálogos y timestamps con formato UTC `...Z`.
-- FK compuestas same-org, unicidad de email por organización, PK de sesión.
-- `audit_event` con `session_id` nullable, SYSTEM sin sesión, metadatos ≤16 KiB,
-  `event_version >= 1` y triggers append-only.
-- Rollback por errores de integridad y persistencia tras reapertura.
+## 4. D-AUTH-11 — email Unicode
 
-## 2. Diferencias normativas
-
-| Tema | Contrato | Propuesta | Clasificación |
+| Opción | Contenido | Ventaja | Riesgo |
 | --- | --- | --- | --- |
-| `local_session.state` | §16.45 lo exige | columna física con CHECK | **Restaura** el contrato; 1G se había apartado |
-| `local_credential.state` | §16.5 `ACTIVE/PASSWORD_RESET_REQUIRED` | dos valores; desactivación en `pos_user.status` | Cambio real de vocabulario frente al laboratorio; alineado a §16.5 |
-| `bootstrap_record` | §17.3 por instalación | PK `installation_id`, `bootstrap_version`, `updated_at` | Restaura el contrato; elimina el singleton Java |
-| Email | Java/Rust pliegan Unicode | SQLite no puede plegar Unicode | **Brecha nueva (D-AUTH-11)** |
-| RBAC | 59 códigos V5–V25 | copia exacta | Restaura; no añade códigos |
+| **A (recomendada)** | Unicidad sobre valor normalizado en la aplicación (`java_trim` + `to_lowercase`); `CHECK` físico solo de forma y recorte | Compatibilidad con Java y datos existentes | Una escritura SQL directa con distinta capitalización puede crear duplicados semánticos |
+| B | Restringir a ASCII imprimible y minúsculas en Rust y SQLite | Garantía física fuerte | Rompe importación de correos Unicode de Java; exige política de rechazo |
 
-## 3. Matriz D-AUTH
+Se recomienda **A**, sin declararla aprobada. La garantía física es parcial:
+SQLite `lower()` no pliega Unicode. Un `CHECK (email = lower(email))` opcional
+detectaría mayúsculas ASCII, no `Ü`.
 
-| ID | Contrato canónico | Representación propuesta | Pruebas de aceptación | Riesgo | Estado |
-| --- | --- | --- | --- | --- | --- |
-| 01 | §16.4/16.5/16.45, `display_name` | tablas con nombres canónicos | round-trip, CHECK, reapertura | `display_name` no está en Java V3 | Pendiente |
-| 02 | §16.5 `ACTIVE/PASSWORD_RESET_REQUIRED` | dos valores; sin `DISABLED` | CHECK rechaza `DISABLED` | doble fuente si se añade `DISABLED` | Pendiente |
-| 03 | §16.45 `state` físico | columna + CHECK + escritura atómica | expiración derivada, revocación CAS | fila desactualizada si se omite la escritura | Pendiente |
-| 04 | sesión sin `organization_id` | ownership vía `pos_user` | FK y JOIN | ninguno | Pendiente |
-| 05 | versiones iniciales 1 | default 1 + CAS | carrera y conflicto | ninguno | Pendiente |
-| 06 | 59 permisos | seed idéntico | comparación con `PERMISSION_CATALOG` | deriva si Java añade códigos | Pendiente |
-| 07 | §17.2 `session_id` nullable | FK compuesta; SYSTEM sin sesión | inserciones válidas/inválidas | correlación perdida si se exige siempre | Pendiente |
-| 08 | append-only | triggers UPDATE/DELETE | triggers sobreviven reapertura | no es inmutabilidad criptográfica | Pendiente |
-| 09 | F4–19 | parámetros experimentales | benchmark hardware objetivo | alto | **Bloqueada** |
-| 10 | §17.3 por instalación | `installation_id` PK/FK | one-shot, parcial, cross-org, rollback | depende de §16.3 | Pendiente (bloqueada por §16.3) |
-| 11 | nuevo | email: ASCII-only o normalización solo en app | prueba de plegado Unicode | unicidad inconsistente | **Propuesta nueva** |
+## 5. Plan definitivo de migraciones (candidato)
 
-Ninguna decisión está aprobada.
+| Orden | Migración | Depende de |
+| --- | --- | --- |
+| 0001 | `0001_organization_branch.sql` (existente, intocable) | — |
+| 0002 | Installation Identity | 0001 |
+| 0003 | User / Credential / Session | 0001, 0002 |
+| 0004 | RBAC y catálogo | 0001, 0003 |
+| 0005 | Branch Memberships | 0001, 0003, 0004 |
+| 0006 | Audit Event | 0001, 0003 |
+| 0007 | Bootstrap Record | 0001–0004 |
 
-## 4. Pruebas ejecutadas (Windows)
+SQLx versiona por prefijo numérico; no se traslada nada a `migrations/local`
+hasta la aprobación.
 
-`pos-storage-sqlite/src/proposals_tests.rs` (8 pruebas):
+## 6. Pruebas ejecutadas (Windows, SQLite real)
+
+`pos-storage-sqlite/src/proposals_tests.rs` (10 pruebas):
 
 | Prueba | Qué valida |
 | --- | --- |
-| `proposal_set_applies_from_empty_database_and_rejects_reapplication` | orden 0001→0006, reaplicación rechazada, reapertura |
-| `catalog_matches_the_java_permission_list_exactly` | 59 códigos, idempotencia del seed |
-| `normalization_uniqueness_and_uuid_rules_hold` | email por organización, UUID y timestamp |
-| `session_state_is_coherent_and_expiry_is_derived` | CHECK de estado, CAS de revocación, expiración sin materializar |
-| `bootstrap_is_one_shot_per_installation_and_complete` | PENDING/PARCIAL/COMPLETADO, cross-org, rollback por auditoría |
-| `rbac_catalog_resolution_preserves_java_semantics` | override org, membership, rol/sucursal inactivos, sin elevación |
-| `audit_contract_enforces_actor_session_and_append_only` | USER/SYSTEM, sesión ajena, metadata, versión, triggers |
-| `integrity_errors_roll_back_and_survive_reopen` | CAS obsoleto, rollback y trigger tras reapertura |
+| `proposal_set_applies_from_empty_database_and_rejects_reapplication` | orden 0001→0007, reaplicación rechazada, reapertura |
+| `installation_identity_matches_the_canonical_section` | campos, defaults, generation, FK y UUID |
+| `catalog_matches_the_java_permission_list_exactly` | 59 códigos e idempotencia |
+| `permission_grammar_matches_rust_validation` | paridad SQL/Rust de la gramática |
+| `normalization_uniqueness_and_uuid_rules_hold` | email por organización, UUID, timestamp |
+| `session_state_is_coherent_and_expiry_is_derived` | CHECK, CAS de revocación, expiración |
+| `bootstrap_is_one_shot_per_installation_and_complete` | PENDING/PARCIAL/COMPLETADO, ownership, rollback |
+| `rbac_catalog_resolution_preserves_java_semantics` | override, membership, estados, sin elevación |
+| `audit_contract_enforces_actor_session_and_append_only` | USER/SYSTEM, metadata, triggers |
+| `integrity_errors_roll_back_and_survive_reopen` | CAS obsoleto, rollback, trigger tras reapertura |
 
-Workspace completo: `fmt`, `clippy -D warnings`, `test`, `build` en verde
-(131 pruebas). Sin CI ni PostgreSQL 17/Linux ejecutados en este entorno.
+Workspace: `fmt`, `clippy -D warnings`, `test`, `build` en verde. Sin CI ni
+PostgreSQL 17/Linux ejecutados en este entorno.
 
-## 5. Dependencias pendientes
+## 7. Paquete de aprobación
 
-1. **§16.3 `installation_identity`**: bloquea la materialización de `0006`.
-2. **D-AUTH-09**: parámetros Argon2id comerciales.
-3. **D-AUTH-11**: política de email (ASCII o normalización en aplicación).
-4. Catálogo RBAC: si Java añade códigos en V26+, el seed debe actualizarse en el
-   mismo cambio contractual.
+| ID | Propuesta | Clasificación | Pruebas | Estado |
+| --- | --- | --- | --- | --- |
+| D-AUTH-01 | tablas canónicas con `display_name` | restaura | round-trip/CHECK | Pendiente |
+| D-AUTH-02 | `ACTIVE/PASSWORD_RESET_REQUIRED`; desactivación en `pos_user.status` | cambia vocabulario del laboratorio | CHECK rechaza `DISABLED` | Pendiente |
+| D-AUTH-03 | `local_session.state` físico | restaura §16.45 | estado/expiración | Pendiente |
+| D-AUTH-04 | sesión sin `organization_id` | restaura | FK/JOIN | Pendiente |
+| D-AUTH-05 | versiones iniciales 1 | restaura | CAS | Pendiente |
+| D-AUTH-06 | 59 permisos exactos | restaura | catálogo/gramática | Pendiente |
+| D-AUTH-07 | `session_id` nullable; SYSTEM sin sesión | restaura | actor/sesión | Pendiente |
+| D-AUTH-08 | append-only por trigger | restaura | UPDATE/DELETE | Pendiente |
+| D-AUTH-09 | Argon2id comercial | — | benchmark objetivo | **Bloqueada** |
+| D-AUTH-10 | bootstrap por instalación | restaura §17.3 | one-shot/ownership | Pendiente |
+| D-AUTH-11 | política de email | decide brecha nueva | Unicode/ASCII | Pendiente |
+| D-INST-01 | catálogo de `status` | propuesta nueva | CHECK `ACTIVE` | Pendiente |
+| D-INST-02 | unicidad de huella y same-org | propuesta nueva | FK/UNIQUE | Pendiente |
+| ADR-0022 | reconciliación física | documento | — | Pendiente |
 
-## 6. Inicio propuesto de 1I
+Ninguna decisión está aprobada por este incremento.
 
-1. Aceptar D-AUTH-01..08, 10 y decidir 11; mantener 09 bloqueada.
-2. Transcribir §16.3 y añadir la migración de `installation_identity` antes de
-   `0006`.
-3. Mover `0002`–`0006` a `migrations/local/`, sin tocar `0001`, con la suite de
-   propuestas promovida a prueba de migración real.
-4. Sustituir `identity_lab`/`credential_lab` por adaptadores sobre las tablas
-   canónicas, conservando sus contratos y pruebas.
-5. Implementar writer de auditoría persistente y bootstrap one-shot con guard
-   pre-body, sin endpoints todavía.
+## 8. Bloqueos restantes
+
+1. Aceptación formal de D-AUTH-01..08, D-AUTH-10, D-AUTH-11 y D-INST-01/02.
+2. D-AUTH-09 permanece bloqueada.
+3. No se crean migraciones productivas ni adaptadores canónicos hasta esa
+   aceptación.
+
+## 9. Inicio propuesto de 1I
+
+1. Mover `0002`–`0007` a `migrations/local/` sin tocar `0001`, promoviendo la
+   suite de propuestas a prueba de migración real.
+2. Sustituir `identity_lab`/`credential_lab` por adaptadores sobre las tablas
+   canónicas, conservando contratos, `VerificationGate`, `Zeroizing`, CAS y
+   auditoría transaccional.
+3. Writer de auditoría persistente y bootstrap one-shot con guard pre-body.
+4. Pruebas de integración de extremo a extremo sin red.

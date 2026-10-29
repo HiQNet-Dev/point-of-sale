@@ -3,6 +3,31 @@
 **Estado: PROPUESTO. No aprobado. No altera el Design Freeze.**
 **Fecha: 2026-10-29. Incremento: 1H.2.**
 
+### 4. `installation_identity` (D-INST-01/02)
+
+- **Contrato vigente:** F1–10 §16.3, transcrita en la propuesta 0002.
+- **Propuesta:** `id` UUID PK, `organization_id` FK, `generation` default 1,
+  `public_key_fingerprint`, `status` inicial `ACTIVE`, `initialized_at` y
+  `updated_at`. Sin clave privada.
+- **Divergencia:** el catálogo completo de `status` y el ámbito de unicidad de la
+  huella no están definidos; se registran como D-INST-01 y D-INST-02.
+- **Pruebas de aceptación:** defaults, `generation >= 1`, FK de organización,
+  UUID canónico y ownership compuesto con bootstrap.
+- **Recomendación:** aprobar los campos; bloquear `status`/unicidad hasta que el
+  catálogo y el formato de huella se acepten.
+
+### 5. Email Unicode (D-AUTH-11)
+
+- **Contrato vigente:** Java normaliza con `String.trim()`/`toLowerCase(Locale.ROOT)`;
+  SQLite `lower()` solo pliega ASCII.
+- **Propuesta recomendada (A):** normalización en la aplicación y unicidad sobre
+  el valor canónico; el `CHECK` físico solo valida forma y recorte.
+- **Divergencia:** la base no puede garantizar por sí sola el plegado Unicode.
+- **Riesgo:** una escritura SQL directa con distinta capitalización puede crear
+  duplicados semánticos.
+- **Recomendación:** aprobar A con esa limitación declarada; B (ASCII-only) queda
+  como alternativa si el producto exige garantía física fuerte.
+
 ## Clasificación de las divergencias
 
 Este ADR no equipara dos situaciones distintas:
@@ -74,6 +99,6 @@ crear las migraciones `0002`–`0006`.
 
 ## Aceptación requerida
 
-Acto explícito del titular sobre D-AUTH-01..08, D-AUTH-10 y la política de email
-(D-AUTH-11). D-AUTH-09 permanece bloqueada. Sin esa aceptación este ADR no
+Acto explícito del titular sobre D-AUTH-01..08, D-AUTH-10, D-AUTH-11 y
+D-INST-01/02. D-AUTH-09 permanece bloqueada. Sin esa aceptación este ADR no
 habilita ninguna migración productiva.
