@@ -91,6 +91,10 @@ es JWT ni refresh token Java y no se importan handles ni sesiones históricas.
 
 ## Matriz RBAC candidata
 
+El catálogo canónico está fijado en `pos_core::identity::PERMISSION_CATALOG`
+(59 códigos de V5–V25) y `PermissionCode` acepta el mismo lenguaje que SQLite:
+minúsculas, dígitos, `_` y `-` por segmento (`cash-register.read`).
+
 | Tabla | Dependencias | Integridad requerida | Fuente | Estado |
 | --- | --- | --- | --- | --- |
 | `permission` | — | catálogo sembrado por migración; sin CRUD cliente | Java V5 | Propuesta |

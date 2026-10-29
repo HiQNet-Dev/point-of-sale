@@ -3,6 +3,21 @@
 **Estado: PROPUESTO. No aprobado. No altera el Design Freeze.**
 **Fecha: 2026-10-29. Incremento: 1H.2.**
 
+## Clasificación de las divergencias
+
+Este ADR no equipara dos situaciones distintas:
+
+1. **Restauración del contrato congelado.** F1–10 §16.45 exige una columna física
+   `local_session.state`. La propuesta 1G de derivarlo solo de timestamps se
+   apartaba del contrato; este ADR lo restaura. No cambia el Design Freeze.
+2. **Cambio real que requiere decisión.** El laboratorio usó
+   `RESET_REQUIRED`/`DISABLED` para `local_credential.state`, mientras §16.5 fija
+   `ACTIVE`/`PASSWORD_RESET_REQUIRED`. Alinear el catálogo es una decisión
+   normativa, no una simple refactorización.
+3. **Brecha nueva.** SQLite `lower()` solo pliega ASCII; Java/Rust pliegan
+   Unicode. El contrato debe decidir si el email Local es ASCII o si la
+   normalización queda exclusivamente en la aplicación (D-AUTH-11).
+
 ## Contexto
 
 Los incrementos 1E–1H construyeron dominio y adaptadores de laboratorio para
@@ -59,5 +74,6 @@ crear las migraciones `0002`–`0006`.
 
 ## Aceptación requerida
 
-Acto explícito del titular sobre D-AUTH-01..08 y D-AUTH-10. D-AUTH-09 permanece
-bloqueada. Sin esa aceptación este ADR no habilita ninguna migración productiva.
+Acto explícito del titular sobre D-AUTH-01..08, D-AUTH-10 y la política de email
+(D-AUTH-11). D-AUTH-09 permanece bloqueada. Sin esa aceptación este ADR no
+habilita ninguna migración productiva.
