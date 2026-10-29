@@ -63,9 +63,9 @@ la misma transacción antes de habilitar mutaciones auditables fuera del laborat
 
 | Área | Estado | Límite |
 | --- | --- | --- |
-| `DOMINIO_RUST_VERIFICADO` | Reconstruido con tests fuente | La ejecución puede estar bloqueada por App Control del entorno. |
-| `APLICACION_RUST_VERIFICADA` | Casos de uso y rollback en unidad de trabajo in-memory cubiertos por tests fuente | No hay composición productiva de auth, clock ni audit. |
-| `SQLITE_LAB_VERIFICADO` | Adaptador y pruebas SQLx reales añadidos | Esquema parcial; no equivale a DDL13 ni a audit productivo. |
+| `DOMINIO_RUST_VERIFICADO` | 14 pruebas `pos-core` correctas | La paridad TZDB completa sigue pendiente. |
+| `APLICACION_RUST_VERIFICADA` | Casos de uso, rechazo de autorización, unicidad, scope y rollback de auditoría in-memory correctos | No hay composición productiva de auth, clock ni audit. |
+| `SQLITE_LAB_VERIFICADO` | 6 pruebas `pos-storage-sqlite` correctas con SQLite STRICT real | Esquema parcial; no equivale a DDL13 ni a audit productivo. |
 | `PARIDAD_INTEGRAL_PENDIENTE` | Pendiente | HTTP, JWT/RBAC DB-authoritative, OpenAPI, React, auditoría productiva y E2E. |
 
 ### Validadores cuyo límite se mantiene explícito
@@ -91,7 +91,19 @@ La matriz normativa conserva exactamente el estado histórico documentado en
 Organization/Branch no aprueba DDL13, PAR ni AS adicionales. ADR-0021 y CC-0021
 permanecen `PROPOSED`; no se añaden migraciones físicas controvertidas.
 
-Los comandos de Rust deben repetirse en un host que permita ejecutar `cargo-fmt`,
-build scripts y binarios de prueba. En este entorno Windows, App Control devolvió
-`os error 4551` al lanzar `cargo-fmt`, build scripts y ejecutables de test; esos
-bloqueos no se cuentan como resultados verdes ni como fallos del código.
+Validación ejecutada en este entorno Windows:
+
+- `cargo fmt --all -- --check`: correcto.
+- `cargo clippy --locked -p pos-core --all-targets --all-features -- -D warnings`:
+  correcto.
+- `cargo clippy --locked -p pos-storage-sqlite --all-targets --all-features -- -D warnings`:
+  correcto.
+- `cargo test --locked -p pos-core --all-features`: 14 correctas.
+- `cargo test --locked -p pos-storage-sqlite --all-features`: 6 correctas.
+
+Los checks de workspace completos se intentaron. `cargo clippy/test/build --workspace`
+no terminan en Windows porque `tools/migration-lab/src/postgres.rs` importa
+`std::os::unix::fs::{DirBuilderExt, PermissionsExt}` y usa `mode`/`from_mode` sin
+`cfg`; no es un cambio introducido por este incremento. La incompatibilidad debe
+resolverla el mantenimiento del Migration Lab antes de exigir esos tres comandos
+en este host.
