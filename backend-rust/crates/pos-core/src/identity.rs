@@ -955,20 +955,44 @@ impl PermissionCode {
     }
 }
 
-/// Scope concreto de una operación: organización y sucursal opcional.
+/// Modo de evaluación de un scope de sucursal.
+///
+/// Java distingue `hasBranchPermission` de
+/// `hasBranchPermissionIgnoringBranchStatus`: la variante de recuperación existe
+/// solo para recursos ya abiertos en una sucursal desactivada (por ejemplo,
+/// cerrar un turno de caja) y nunca habilita operaciones normales.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScopeMode {
+    /// Operación normal: la pierna de sucursal exige sucursal ACTIVA.
+    Normal,
+    /// Recuperación autorizada: la pierna de sucursal no exige sucursal ACTIVA.
+    Recovery,
+}
+
+/// Scope concreto de una operación: organización, sucursal opcional y modo.
 ///
 /// El scope describe la petición; no concede nada por sí mismo.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PrincipalScope {
     organization_id: EntityId,
     branch_id: Option<EntityId>,
+    mode: ScopeMode,
 }
 impl PrincipalScope {
-    /// Construye un scope de operación; la autoridad real se resuelve aparte.
+    /// Construye un scope normal; la organización se resuelve aparte.
     pub fn new(organization_id: EntityId, branch_id: Option<EntityId>) -> Self {
         Self {
             organization_id,
             branch_id,
+            mode: ScopeMode::Normal,
+        }
+    }
+    /// Construye un scope de recuperación explícito para una sucursal concreta.
+    pub fn recovery(organization_id: EntityId, branch_id: EntityId) -> Self {
+        Self {
+            organization_id,
+            branch_id: Some(branch_id),
+            mode: ScopeMode::Recovery,
         }
     }
     /// Organización del scope.
@@ -978,6 +1002,10 @@ impl PrincipalScope {
     /// Sucursal del scope; `None` significa alcance de organización.
     pub fn branch_id(&self) -> Option<&EntityId> {
         self.branch_id.as_ref()
+    }
+    /// Modo de evaluación del scope.
+    pub fn mode(&self) -> ScopeMode {
+        self.mode
     }
 }
 
@@ -1065,13 +1093,18 @@ pub trait LocalIdentityRepository {
 
 /// Resolución de permisos vigente en DB; no admite grants desde DTO/JWT.
 ///
-/// Contrato:
+/// Contrato alineado con Java:
 ///
-/// - `branch_id = None`: devuelve solo las grants de alcance organización.
-/// - `branch_id = Some(b)`: devuelve la unión de las grants de organización y de
-///   la membership activa del usuario en esa sucursal, y debe fallar cerrado si
-///   la sucursal no pertenece a la organización, está inactiva o el usuario no
-///   tiene membership activa.
+/// - `branch_id = None`: solo grants de alcance organización (rol ACTIVO,
+///   asignado al usuario, organización ACTIVA).
+/// - `branch_id = Some(b)`: **override de organización** — las grants
+///   organizacionales se incluyen siempre — más la pierna de sucursal, que solo
+///   aporta cuando la sucursal existe en la organización, está ACTIVA, la
+///   membership está ACTIVA y el rol de la membership está ACTIVO.
+/// - Un permiso concedido por membership nunca se promociona a alcance de
+///   organización: el scope de organización se resuelve con `branch_id = None`.
+/// - Una sucursal inexistente o ajena no produce un error: no aporta permisos y
+///   la clave foránea de tenant impide confundirla. No se revela su existencia.
 pub trait PermissionAuthority {
     /// Devuelve las grants vigentes del usuario en el scope solicitado.
     fn resolve_permissions(
@@ -1079,6 +1112,18 @@ pub trait PermissionAuthority {
         user_id: &EntityId,
         organization_id: &EntityId,
         branch_id: Option<&EntityId>,
+    ) -> impl Future<Output = Result<BTreeSet<PermissionCode>, IdentityError>> + Send;
+    /// Variante de recuperación: igual que [`Self::resolve_permissions`] con
+    /// `branch_id = Some(b)`, pero la pierna de sucursal no exige que la
+    /// sucursal esté ACTIVA.
+    ///
+    /// Debe destinarse solo a flujos explícitamente autorizados sobre recursos
+    /// ya abiertos; no es un bypass global ni desactiva las demás condiciones.
+    fn resolve_permissions_for_recovery(
+        &mut self,
+        user_id: &EntityId,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
     ) -> impl Future<Output = Result<BTreeSet<PermissionCode>, IdentityError>> + Send;
 }
 
@@ -1095,17 +1140,43 @@ impl<S: LocalIdentityRepository + PermissionAuthority> LocalPrincipalService<S> 
     pub fn new(source: S) -> Self {
         Self { source }
     }
-    /// Construye un principal para un scope exacto y falla cerrado en cualquier duda.
+    /// Construye un principal para un scope normal y falla cerrado en cualquier duda.
     ///
     /// La organización del principal procede siempre de la sesión y del usuario,
-    /// nunca de la petición. La sucursal solicitada se resuelve en la autoridad
-    /// de permisos, que debe rechazar sucursales ajenas o inactivas.
+    /// nunca de la petición.
     pub async fn authenticate(
         &mut self,
         hash: &SessionHash,
         now: UtcSeconds,
         branch_id: Option<&EntityId>,
     ) -> Result<VerifiedPrincipal, AuditAttributionError> {
+        self.authenticate_in(hash, now, branch_id, ScopeMode::Normal)
+            .await
+    }
+    /// Construye un principal de recuperación para una sucursal concreta.
+    ///
+    /// La pierna de sucursal no exige sucursal ACTIVA; el resto de condiciones
+    /// (usuario, organización, membership, rol) se mantiene. El principal
+    /// resultante solo autoriza scopes en modo recuperación.
+    pub async fn authenticate_recovery(
+        &mut self,
+        hash: &SessionHash,
+        now: UtcSeconds,
+        branch_id: &EntityId,
+    ) -> Result<VerifiedPrincipal, AuditAttributionError> {
+        self.authenticate_in(hash, now, Some(branch_id), ScopeMode::Recovery)
+            .await
+    }
+    async fn authenticate_in(
+        &mut self,
+        hash: &SessionHash,
+        now: UtcSeconds,
+        branch_id: Option<&EntityId>,
+        mode: ScopeMode,
+    ) -> Result<VerifiedPrincipal, AuditAttributionError> {
+        if mode == ScopeMode::Recovery && branch_id.is_none() {
+            return Err(AuditAttributionError::ScopeDenied);
+        }
         let session = self
             .source
             .find_session_by_hash(hash)
@@ -1130,15 +1201,32 @@ impl<S: LocalIdentityRepository + PermissionAuthority> LocalPrincipalService<S> 
         if !user.is_active() {
             return Err(AuditAttributionError::Unauthenticated);
         }
-        let permissions = self
-            .source
-            .resolve_permissions(user.id(), user.organization_id(), branch_id)
-            .await
-            .map_err(|_| AuditAttributionError::ScopeDenied)?;
+        let permissions = match (mode, branch_id) {
+            (ScopeMode::Recovery, Some(branch)) => {
+                self.source
+                    .resolve_permissions_for_recovery(user.id(), user.organization_id(), branch)
+                    .await
+            }
+            _ => {
+                self.source
+                    .resolve_permissions(user.id(), user.organization_id(), branch_id)
+                    .await
+            }
+        }
+        .map_err(|_| AuditAttributionError::ScopeDenied)?;
+        let scope = match mode {
+            ScopeMode::Recovery => {
+                let branch = branch_id.ok_or(AuditAttributionError::ScopeDenied)?;
+                PrincipalScope::recovery(user.organization_id().clone(), branch.clone())
+            }
+            ScopeMode::Normal => {
+                PrincipalScope::new(user.organization_id().clone(), branch_id.cloned())
+            }
+        };
         Ok(VerifiedPrincipal {
             user_id: user.id().clone(),
             session_id: session.id().clone(),
-            scope: PrincipalScope::new(user.organization_id().clone(), branch_id.cloned()),
+            scope,
             permissions,
         })
     }

@@ -441,6 +441,15 @@ impl PermissionAuthority for Source {
         let result = self.grants.clone().unwrap_or_else(|| Ok(BTreeSet::new()));
         async move { result }
     }
+    fn resolve_permissions_for_recovery(
+        &mut self,
+        _: &EntityId,
+        _: &EntityId,
+        _: &EntityId,
+    ) -> impl Future<Output = Result<BTreeSet<PermissionCode>, IdentityError>> + Send {
+        let result = self.grants.clone().unwrap_or_else(|| Ok(BTreeSet::new()));
+        async move { result }
+    }
 }
 
 fn active_session(owner: &PosUser) -> LocalSession {
@@ -518,6 +527,48 @@ async fn principal_retains_branch_scope_and_denies_other_scopes() {
     );
     assert_eq!(
         org_principal.authorize(&permission("organization.update"), &scope_a),
+        Err(AuthorizationError::ScopeMismatch)
+    );
+}
+
+#[tokio::test]
+async fn recovery_scope_is_explicit_and_never_reusable_for_normal_operations() {
+    let owner = user();
+    let branch_a = id("00000000-0000-0000-0000-000000000201");
+    let recovery = LocalPrincipalService::new(Source::granting(
+        active_session(&owner),
+        owner.clone(),
+        &["cash.close"],
+    ))
+    .authenticate_recovery(&hash(), moment(11), &branch_a)
+    .await
+    .unwrap_or_else(|error| panic!("principal: {error}"));
+    let recovery_scope =
+        PrincipalScope::recovery(owner.organization_id().clone(), branch_a.clone());
+    let normal_scope = PrincipalScope::new(owner.organization_id().clone(), Some(branch_a.clone()));
+    assert_eq!(
+        recovery.scope().mode(),
+        crate::identity::ScopeMode::Recovery
+    );
+    assert_eq!(
+        recovery.authorize(&permission("cash.close"), &recovery_scope),
+        Ok(())
+    );
+    assert_eq!(
+        recovery.authorize(&permission("cash.close"), &normal_scope),
+        Err(AuthorizationError::ScopeMismatch)
+    );
+
+    let normal = LocalPrincipalService::new(Source::granting(
+        active_session(&owner),
+        owner.clone(),
+        &["cash.close"],
+    ))
+    .authenticate(&hash(), moment(11), Some(&branch_a))
+    .await
+    .unwrap_or_else(|error| panic!("principal: {error}"));
+    assert_eq!(
+        normal.authorize(&permission("cash.close"), &recovery_scope),
         Err(AuthorizationError::ScopeMismatch)
     );
 }
