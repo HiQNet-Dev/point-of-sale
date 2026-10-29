@@ -17,6 +17,8 @@ pub mod identity;
 pub mod inventory;
 /// Dominio Organization/Branch y puertos de aplicación reconstruidos tras INC-RECOVERY-01.
 pub mod organization_branch;
+/// Compras: órdenes, partidas y reglas de recepción, sin persistencia.
+pub mod purchasing;
 
 /// Código de moneda de tres letras ASCII, normalizado a mayúsculas.
 ///
@@ -204,5 +206,7 @@ mod identity_tests;
 mod inventory_tests;
 #[cfg(test)]
 mod organization_branch_tests;
+#[cfg(test)]
+mod purchasing_tests;
 #[cfg(test)]
 mod tests;
