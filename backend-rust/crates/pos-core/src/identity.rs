@@ -323,8 +323,10 @@ impl SecretHash {
         Ok(Self(value.to_owned()))
     }
     /// Entrega el material solo al adaptador criptográfico dentro de una frontera de confianza.
-    #[allow(dead_code)]
-    pub(crate) fn exposed_to_verifier(&self) -> &str {
+    ///
+    /// El hash codificado nunca debe registrarse, serializarse ni devolverse por
+    /// transporte; `Debug` sigue redactado.
+    pub fn expose_to_verifier(&self) -> &str {
         &self.0
     }
 }
@@ -547,6 +549,24 @@ impl LocalCredential {
     /// Algoritmo declarado; la verificación real vive en el adaptador aprobado.
     pub fn algorithm(&self) -> CredentialAlgorithm {
         self.algorithm
+    }
+    /// Hash codificado, solo para persistencia y verificación de confianza.
+    ///
+    /// Nunca debe registrarse ni serializarse; `Debug` sigue redactado.
+    pub fn secret_hash(&self) -> &SecretHash {
+        &self.secret_hash
+    }
+    /// Parámetros no secretos de verificación.
+    pub fn parameters(&self) -> &CredentialParameters {
+        &self.parameters
+    }
+    /// Instante UTC de creación.
+    pub fn created_at(&self) -> UtcSeconds {
+        self.created_at
+    }
+    /// Instante UTC de última modificación.
+    pub fn updated_at(&self) -> UtcSeconds {
+        self.updated_at
     }
     /// Estado de ciclo de vida.
     pub fn state(&self) -> CredentialState {

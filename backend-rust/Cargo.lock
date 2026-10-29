@@ -864,6 +864,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "pos-credentials"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "bcrypt",
+ "pos-core",
+ "rand_core 0.6.4",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror",
+]
+
+[[package]]
 name = "pos-local"
 version = "0.1.0"
 dependencies = [
@@ -880,6 +893,7 @@ name = "pos-storage-sqlite"
 version = "0.1.0"
 dependencies = [
  "pos-core",
+ "pos-credentials",
  "serde_json",
  "sqlx",
  "tempfile",
