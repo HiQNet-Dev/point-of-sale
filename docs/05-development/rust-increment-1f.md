@@ -8,29 +8,81 @@ producto.
 ## Código materializado
 
 `pos-core::identity` incorpora `PosUser`, `LocalCredential`, `LocalSession`,
-`NormalizedEmail`, `SessionHandleHash`, `PermissionCode` y
-`LocalPrincipalService`.
+`NormalizedEmail`, `SecretHash`, `SessionHash`, `PermissionCode`,
+`PrincipalScope` y `LocalPrincipalService`.
 
 - User mantiene UUID y Organization inmutables, email normalizado como Java,
   estado ACTIVE/INACTIVE y patch CAS atómico.
-- Credential está separada de User; almacena solo una referencia opaca redactada,
-  tipo BCrypt legado o Argon2id candidato, policy, estado y revisión. No recibe ni
-  expone una contraseña cruda.
-- Session conserva UUID, user/organization owner, hash SHA-256 de handle opaco,
-  creación, expiración, revocación y CAS. Su estado efectivo es ACTIVE, REVOKED
-  o EXPIRED y toda validación de owner/sesión falla cerrada.
+- Credential está separada de User y su material nunca se expone.
+- Session conserva UUID, user owner, hash SHA-256 del handle opaco, creación,
+  expiración, revocación y versión. Su estado efectivo es ACTIVE, REVOKED o
+  EXPIRED y toda validación de owner/sesión falla cerrada.
 - El principal se construye únicamente tras consultar el repositorio de sesión,
   user vigente y `PermissionAuthority`. Sus campos son privados y solo él puede
-  derivar `AuditActor` USER. `AuditActor` ya no tiene variantes ni constructores
-  públicos; SYSTEM es una capacidad interna con procedencia cerrada.
+  derivar `AuditActor` USER.
 
 La verificación criptográfica no se duplicó: el Migration Lab conserva vectores
 sintéticos F4–19 para BCrypt/Argon2id. Sus parámetros no son una policy comercial
 aprobada y no se aplican a datos reales.
 
+## Correcciones de contrato aplicadas
+
+### Credencial
+
+F1–10 §16.5 separa tres conceptos que la versión anterior mezclaba:
+
+| Antes | Ahora | Significado |
+| --- | --- | --- |
+| `CredentialKind::{LegacyBcrypt, Argon2id}` | `CredentialKind::{Password, Pin}` | finalidad (`credential_kind`) |
+| — | `CredentialAlgorithm::{LegacyBcrypt, Argon2id}` | algoritmo (`algorithm`) |
+| `CredentialReference` | `SecretHash` | `secret_hash`, redactado |
+| — | `CredentialParameters` | `params_json` validado, ≤2048 bytes |
+| `revision` | `credential_version` (inicia 1) | versión del material + CAS |
+| — | `failed_login_attempts`, `locked_until` | bloqueo temporal Java |
+| `CredentialState::Ready` | `CredentialState::Active` | estado declarado |
+
+`record_failed_login` replica `User.recordFailedLogin`: una ventana de bloqueo
+vencida reinicia el contador; al alcanzar el máximo se fija `locked_until`.
+`record_successful_login` limpia contador y bloqueo. `rotate_material` sustituye
+algoritmo, hash, parámetros y política, y sirve de base a BCrypt → Argon2id sin
+implementar criptografía.
+
+`Disabled` y `ResetRequired` se documentan como estados de dominio: Java modela
+la desactivación en `users.status`, no en una credencial independiente, y el
+catálogo físico de `local_credential.state` sigue pendiente de aprobación.
+
+### Sesión
+
+| Antes | Ahora | Motivo |
+| --- | --- | --- |
+| `handle_hash` / `SessionHandleHash` | `session_hash` / `SessionHash` | nombre canónico §16.45 |
+| `revision` inicial `0` | `session_version` inicial `1` | §16.45 fija versión inicial 1 |
+| — | `ensure_owned_by(&PosUser)` | ownership explícito antes del principal |
+
+`organization_id` se conserva como ownership de agregado derivado de `pos_user`;
+**no** se propone como columna física porque §16.45 no la incluye. El adaptador
+debe obtenerla del usuario y verificar coincidencia.
+
+### Autorización contextual
+
+La versión anterior aceptaba `branch_id` para resolver permisos pero descartaba
+el alcance, de modo que un permiso de la sucursal A podía reutilizarse en B.
+
+Ahora `VerifiedPrincipal` conserva el `PrincipalScope` exacto y expone
+`authorize(permission, scope)`. Scope distinto → `ScopeMismatch`; permiso ausente
+→ `PermissionDenied`. Se retiraron `allows` y `permits_scope` para que no exista
+una decisión de permiso sin contexto. El contrato de `PermissionAuthority`
+especifica la unión organización + membership activa para scope de sucursal y el
+rechazo de sucursales ajenas o inactivas.
+
+`authenticate` es una decisión puntual: para mutaciones críticas los permisos
+deben re-resolverse dentro de la misma UoW, sin caché como autoridad de
+escritura. La implementación ejecutable de esa frontera corresponde al
+incremento 1G.
+
 ## Reconciliación de `audit_event`
 
-`AuditEventRecord` usa ahora los nombres canónicos candidatos de F1–10 §17.2:
+`AuditEventRecord` usa los nombres canónicos candidatos de F1–10 §17.2:
 
 | Antes 1E | 1F / candidato canónico | Significado |
 | --- | --- | --- |
@@ -41,26 +93,6 @@ aprobada y no se aplican a datos reales.
 `AuditEventVersion::INITIAL` vale 1 y prohíbe cero. No representa CAS ni permite
 reinterpretar eventos ya persistidos; una evolución futura debe introducir una
 versión compatible. La ficha física se actualizó sin crear DDL.
-
-## Frontera de atribución
-
-`AuditActorResolver`, publicado en 1E, se retiró en 1F. Devolvía un `AuditActor`
-a un adaptador externo, lo que permitía fabricar atribución sin verificar sesión,
-usuario ni permisos. El sustituto es `identity::LocalPrincipalService`:
-
-```text
-handle opaco -> adaptador criptográfico -> hash
-  -> LocalSession vigente + PosUser de la misma Organization
-  -> PermissionAuthority (DB vigente)
-  -> VerifiedPrincipal (campos privados)
-  -> audit_actor() / permits_scope()
-```
-
-`VerifiedPrincipal` no se puede construir fuera de `pos-core`: no expone
-constructor ni campos mutables. `permits_scope` rechaza cualquier `AuditScope`
-de otra Organization antes de que el caso de uso escriba o audite. `SYSTEM` sigue
-siendo una capacidad `pub(crate)` con procedencia cerrada y sin consumidor
-productivo.
 
 ## Evidencia SQLite fixture
 
@@ -89,6 +121,8 @@ no se promocionan; PAR-08 continúa como único PASS histórico.
 
 - No se importan sesiones Java ni se copian `token_jti`.
 - No existe allow-all productivo ni permisos desde DTO/JWT.
+- `Role`/`Membership` no están modelados como agregados: solo existe el puerto
+  `PermissionAuthority`; el catálogo y las tablas siguen pendientes.
 - BCrypt legado solo es verificable/migrable tras login válido y con benchmark,
   parámetros e importación aprobados; no hay rehash productivo en este incremento.
 - La normalización de metadata continúa sin detección de homoglifos Unicode,

@@ -5,7 +5,7 @@
 use super::*;
 use pos_core::{
     audit::AuditMetadata,
-    identity::{NormalizedEmail, SessionHandleHash},
+    identity::{NormalizedEmail, SessionHash},
     organization_branch::{
         ApplicationError, AuditEvent, Authorization, Branch, BranchPatch, BusinessCode,
         DisplayName, EntityId, IdentityGenerator, IsoCurrency, LocaleTag, NewBranch,
@@ -615,7 +615,7 @@ async fn local_identity_fixture_enforces_owner_uniqueness_session_cas_and_revoca
         .await
         .is_err());
     let _handle =
-        SessionHandleHash::new("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789")?;
+        SessionHash::new("abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789")?;
     sqlx::query("INSERT INTO local_session_fixture (id, organization_id, user_id, handle_hash, created_at, expires_at, version) VALUES (?, ?, ?, ?, 10, 100, 0)")
         .bind("00000000-0000-0000-0000-000000000085")
         .bind(organization_a.id().as_str())
