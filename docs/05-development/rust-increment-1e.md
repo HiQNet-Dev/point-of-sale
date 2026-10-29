@@ -92,6 +92,12 @@ física Local de action/entity/reason. Los constructores Rust conservan la
 validación de aplicación Java para action/entity; las decisiones adicionales se
 mantienen en la ficha física, no se presentan como paridad ya demostrada.
 
+La normalización de claves sensibles conserva el enfoque Java: minúsculas y
+eliminación de puntuación para comparar tokens ASCII. No implementa detección de
+homoglifos Unicode; los productores de metadata deben usar claves técnicas ASCII
+y cualquier ampliación de normalización requiere una decisión de contrato y
+vectores diferenciales Java/Rust.
+
 ## Esquema y gates
 
 No cambió Flyway V1–V25 ni `backend-rust/migrations/local/0001_organization_branch.sql`.
