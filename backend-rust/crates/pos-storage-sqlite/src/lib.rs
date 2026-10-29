@@ -3,11 +3,13 @@
 use std::{path::Path, time::Duration};
 
 use pos_core::organization_branch::{
-    Branch, BusinessCode, DisplayName, DomainError, EntityId, IsoCurrency, LocaleTag,
-    NegativeStockPolicy, Organization, Status, Timezone,
+    ApplicationError, AuditEvent, Authorization, Branch, BranchPatch, BusinessCode, DisplayName,
+    DomainError, EntityId, IdentityGenerator, IsoCurrency, LocaleTag, NegativeStockPolicy,
+    NewBranch, Organization, Permission, Status, Timezone,
 };
 use sqlx::{
-    ConnectOptions, SqlitePool,
+    ConnectOptions, Sqlite, SqliteConnection, SqlitePool,
+    pool::PoolConnection,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
 };
 
@@ -448,6 +450,350 @@ fn map_branch_write_error(error: sqlx::Error) -> OrganizationBranchStorageError 
     } else {
         OrganizationBranchStorageError::Database
     }
+}
+
+/// Unidad de trabajo SQLx experimental: una sola conexión SQLite por mutación.
+#[derive(Clone)]
+pub struct SqliteUnitOfWork {
+    pool: SqlitePool,
+}
+
+impl SqliteUnitOfWork {
+    /// Crea una UoW sobre el pool Local ya configurado.
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+
+    /// Adquiere una conexión y abre una transacción de escritura real.
+    pub async fn begin(&self) -> Result<SqliteTransaction, OrganizationBranchStorageError> {
+        let mut connection = self
+            .pool
+            .acquire()
+            .await
+            .map_err(|_| OrganizationBranchStorageError::Database)?;
+        sqlx::query("BEGIN IMMEDIATE")
+            .execute(&mut *connection)
+            .await
+            .map_err(|_| OrganizationBranchStorageError::Database)?;
+        Ok(SqliteTransaction {
+            connection,
+            finalized: false,
+        })
+    }
+}
+
+/// Transacción Local con ownership exclusivo de la conexión SQLx.
+///
+/// No clona conexiones ni usa `block_on`. El llamador debe confirmar o hacer
+/// rollback explícito; sus métodos nunca usan el pool mientras esté activa.
+pub struct SqliteTransaction {
+    connection: PoolConnection<Sqlite>,
+    finalized: bool,
+}
+
+impl SqliteTransaction {
+    /// Busca una organización mediante la conexión transaccional.
+    pub async fn get_organization(
+        &mut self,
+        organization_id: &EntityId,
+    ) -> Result<Option<Organization>, OrganizationBranchStorageError> {
+        let row = sqlx::query_as::<_, OrganizationRow>("SELECT id, code, name, currency, timezone, locale, stock_negative_policy, status, version FROM organization WHERE id = ?")
+            .bind(organization_id.as_str())
+            .fetch_optional(&mut *self.connection)
+            .await
+            .map_err(|_| OrganizationBranchStorageError::Database)?;
+        row.map(OrganizationRow::into_domain).transpose()
+    }
+
+    /// Busca una sucursal exclusivamente dentro de su organización.
+    pub async fn get_branch(
+        &mut self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+    ) -> Result<Option<Branch>, OrganizationBranchStorageError> {
+        let row = sqlx::query_as::<_, BranchRow>("SELECT id, organization_id, code, name, status, timezone_override, version FROM branch WHERE organization_id = ? AND id = ?")
+            .bind(organization_id.as_str())
+            .bind(branch_id.as_str())
+            .fetch_optional(&mut *self.connection)
+            .await
+            .map_err(|_| OrganizationBranchStorageError::Database)?;
+        row.map(BranchRow::into_domain).transpose()
+    }
+
+    /// Inserta una sucursal dentro de la transacción abierta.
+    pub async fn insert_branch(
+        &mut self,
+        branch: &Branch,
+        occurred_at: &str,
+    ) -> Result<(), OrganizationBranchStorageError> {
+        sqlx::query("INSERT INTO branch (id, organization_id, code, name, status, timezone_override, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(branch.id().as_str())
+            .bind(branch.organization_id().as_str())
+            .bind(branch.code().as_str())
+            .bind(branch.name().as_str())
+            .bind(branch.status().as_str())
+            .bind(branch.timezone_override().map(Timezone::as_str))
+            .bind(revision_to_i64(branch.revision())?)
+            .bind(occurred_at)
+            .bind(occurred_at)
+            .execute(&mut *self.connection)
+            .await
+            .map_err(map_branch_write_error)?;
+        Ok(())
+    }
+
+    /// Actualiza con CAS y ownership compuestos dentro de la misma conexión.
+    pub async fn update_branch_cas(
+        &mut self,
+        organization_id: &EntityId,
+        previous_revision: u64,
+        branch: &Branch,
+        occurred_at: &str,
+    ) -> Result<CasOutcome, OrganizationBranchStorageError> {
+        let result = sqlx::query("UPDATE branch SET name = ?, status = ?, timezone_override = ?, version = ?, updated_at = ? WHERE organization_id = ? AND id = ? AND version = ?")
+            .bind(branch.name().as_str())
+            .bind(branch.status().as_str())
+            .bind(branch.timezone_override().map(Timezone::as_str))
+            .bind(revision_to_i64(branch.revision())?)
+            .bind(occurred_at)
+            .bind(organization_id.as_str())
+            .bind(branch.id().as_str())
+            .bind(revision_to_i64(previous_revision)?)
+            .execute(&mut *self.connection)
+            .await
+            .map_err(|_| OrganizationBranchStorageError::Database)?;
+        if result.rows_affected() == 1 {
+            return Ok(CasOutcome::Updated);
+        }
+        let exists = sqlx::query_scalar::<_, i64>(
+            "SELECT EXISTS(SELECT 1 FROM branch WHERE organization_id = ? AND id = ?)",
+        )
+        .bind(organization_id.as_str())
+        .bind(branch.id().as_str())
+        .fetch_one(&mut *self.connection)
+        .await
+        .map_err(|_| OrganizationBranchStorageError::Database)?;
+        Ok(if exists == 0 {
+            CasOutcome::Missing
+        } else {
+            CasOutcome::Conflict
+        })
+    }
+
+    /// Confirma todos los efectos ya ejecutados sobre esta conexión.
+    pub async fn commit(mut self) -> Result<(), OrganizationBranchStorageError> {
+        sqlx::query("COMMIT")
+            .execute(&mut *self.connection)
+            .await
+            .map_err(|_| OrganizationBranchStorageError::Database)?;
+        self.finalized = true;
+        Ok(())
+    }
+
+    /// Revierte la transacción abierta; se usa para todo error anterior a commit.
+    pub async fn rollback(mut self) -> Result<(), OrganizationBranchStorageError> {
+        sqlx::query("ROLLBACK")
+            .execute(&mut *self.connection)
+            .await
+            .map_err(|_| OrganizationBranchStorageError::Database)?;
+        self.finalized = true;
+        Ok(())
+    }
+
+    /// Expone la conexión solo a un writer de auditoría inyectado por el composition root.
+    pub fn connection(&mut self) -> &mut SqliteConnection {
+        &mut self.connection
+    }
+}
+
+/// Writer de auditoría que participa en la conexión transaccional actual.
+///
+/// No existe implementación productiva mientras el DDL Local de auditoría no
+/// sea aprobado. Los writers de laboratorio deben documentar su tabla fixture.
+pub trait TransactionalAuditWriter {
+    /// Inserta el evento o devuelve error para forzar rollback.
+    fn append(
+        &self,
+        transaction: &mut SqliteTransaction,
+        event: &AuditEvent,
+        occurred_at: &str,
+    ) -> impl std::future::Future<Output = Result<(), ApplicationError>> + Send;
+}
+
+/// Composición asíncrona experimental de los casos Branch contra SQLite real.
+///
+/// La autorización se evalúa antes de abrir la transacción; no hay política
+/// implícita. La mutación, CAS y writer de auditoría comparten una conexión.
+pub struct SqliteBranchApplication<A> {
+    unit_of_work: SqliteUnitOfWork,
+    audit: A,
+}
+
+impl<A: TransactionalAuditWriter> SqliteBranchApplication<A> {
+    /// Ensambla la composición experimental sin adaptador de autorización por defecto.
+    pub fn new(unit_of_work: SqliteUnitOfWork, audit: A) -> Self {
+        Self {
+            unit_of_work,
+            audit,
+        }
+    }
+
+    /// Crea una Branch y registra el evento en la misma transacción SQLite.
+    pub async fn create<I: IdentityGenerator, Z: Authorization>(
+        &self,
+        authorization: &Z,
+        identities: &mut I,
+        organization_id: &EntityId,
+        input: NewBranch,
+        occurred_at: &str,
+    ) -> Result<Branch, ApplicationError> {
+        if !authorization.is_allowed(Permission::BranchCreate, Some(organization_id), None) {
+            return Err(ApplicationError::Forbidden);
+        }
+        let id = identities.next_id()?;
+        let mut transaction = self.unit_of_work.begin().await.map_err(storage_error)?;
+        let operation = async {
+            if transaction
+                .get_organization(organization_id)
+                .await
+                .map_err(storage_error)?
+                .is_none()
+            {
+                return Err(ApplicationError::OrganizationNotFound);
+            }
+            let branch = Branch::create(id, organization_id.clone(), input);
+            transaction
+                .insert_branch(&branch, occurred_at)
+                .await
+                .map_err(storage_error)?;
+            self.audit
+                .append(
+                    &mut transaction,
+                    &AuditEvent {
+                        organization_id: organization_id.clone(),
+                        branch_id: Some(branch.id().clone()),
+                        action: "branch.created",
+                        entity_type: "branch",
+                        entity_id: branch.id().clone(),
+                        changed_fields: Vec::new(),
+                    },
+                    occurred_at,
+                )
+                .await?;
+            Ok(branch)
+        }
+        .await;
+        match operation {
+            Ok(branch) => {
+                transaction.commit().await.map_err(storage_error)?;
+                Ok(branch)
+            }
+            Err(error) => {
+                let _ = transaction.rollback().await;
+                Err(error)
+            }
+        }
+    }
+
+    /// Aplica CAS scoped, omite auditoría para no-op y confirma una sola vez.
+    pub async fn update<Z: Authorization>(
+        &self,
+        authorization: &Z,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+        patch: BranchPatch,
+        occurred_at: &str,
+    ) -> Result<Branch, ApplicationError> {
+        if !authorization.is_allowed(
+            Permission::BranchUpdate,
+            Some(organization_id),
+            Some(branch_id),
+        ) {
+            return Err(ApplicationError::Forbidden);
+        }
+        let mut transaction = self.unit_of_work.begin().await.map_err(storage_error)?;
+        let operation = async {
+            if transaction
+                .get_organization(organization_id)
+                .await
+                .map_err(storage_error)?
+                .is_none()
+            {
+                return Err(ApplicationError::OrganizationNotFound);
+            }
+            let mut branch = transaction
+                .get_branch(organization_id, branch_id)
+                .await
+                .map_err(storage_error)?
+                .ok_or(ApplicationError::BranchNotFound)?;
+            let before = branch.clone();
+            let previous_revision = branch.revision();
+            if !branch.patch(organization_id, patch)? {
+                return Ok(branch);
+            }
+            if transaction
+                .update_branch_cas(organization_id, previous_revision, &branch, occurred_at)
+                .await
+                .map_err(storage_error)?
+                != CasOutcome::Updated
+            {
+                return Err(ApplicationError::ConcurrentModification);
+            }
+            let changed_fields = branch_changed_fields(&before, &branch);
+            self.audit
+                .append(
+                    &mut transaction,
+                    &AuditEvent {
+                        organization_id: organization_id.clone(),
+                        branch_id: Some(branch_id.clone()),
+                        action: "branch.updated",
+                        entity_type: "branch",
+                        entity_id: branch_id.clone(),
+                        changed_fields,
+                    },
+                    occurred_at,
+                )
+                .await?;
+            Ok(branch)
+        }
+        .await;
+        match operation {
+            Ok(branch) => {
+                transaction.commit().await.map_err(storage_error)?;
+                Ok(branch)
+            }
+            Err(error) => {
+                let _ = transaction.rollback().await;
+                Err(error)
+            }
+        }
+    }
+}
+
+fn storage_error(error: OrganizationBranchStorageError) -> ApplicationError {
+    match error {
+        OrganizationBranchStorageError::DuplicateBranchCode => {
+            ApplicationError::BranchCodeAlreadyExists
+        }
+        OrganizationBranchStorageError::DuplicateOrganizationCode => {
+            ApplicationError::OrganizationCodeAlreadyExists
+        }
+        _ => ApplicationError::Storage,
+    }
+}
+
+fn branch_changed_fields(before: &Branch, after: &Branch) -> Vec<&'static str> {
+    let mut fields = Vec::new();
+    if before.name() != after.name() {
+        fields.push("name");
+    }
+    if before.timezone_override() != after.timezone_override() {
+        fields.push("timezone");
+    }
+    if before.status() != after.status() {
+        fields.push("status");
+    }
+    fields
 }
 
 #[cfg(test)]

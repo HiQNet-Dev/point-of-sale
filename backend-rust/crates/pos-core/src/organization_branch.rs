@@ -862,6 +862,26 @@ pub enum ApplicationError {
     Audit,
 }
 
+impl fmt::Display for ApplicationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Forbidden => formatter.write_str("operación no autorizada"),
+            Self::OrganizationNotFound => formatter.write_str("organización inexistente"),
+            Self::BranchNotFound => formatter.write_str("sucursal inexistente"),
+            Self::OrganizationCodeAlreadyExists => {
+                formatter.write_str("código de organización duplicado")
+            }
+            Self::BranchCodeAlreadyExists => formatter.write_str("código de sucursal duplicado"),
+            Self::ConcurrentModification => formatter.write_str("modificación concurrente"),
+            Self::Domain(error) => error.fmt(formatter),
+            Self::Storage => formatter.write_str("operación de almacenamiento fallida"),
+            Self::Audit => formatter.write_str("auditoría obligatoria fallida"),
+        }
+    }
+}
+
+impl std::error::Error for ApplicationError {}
+
 impl From<DomainError> for ApplicationError {
     fn from(value: DomainError) -> Self {
         Self::Domain(value)

@@ -4,10 +4,11 @@
 
 use super::*;
 use pos_core::organization_branch::{
-    Branch, BranchPatch, BusinessCode, DisplayName, EntityId, IsoCurrency, LocaleTag, NewBranch,
-    NewOrganization, Organization, Timezone, TimezoneOverridePatch,
+    ApplicationError, AuditEvent, Authorization, Branch, BranchPatch, BusinessCode, DisplayName,
+    EntityId, IdentityGenerator, IsoCurrency, LocaleTag, NewBranch, NewOrganization, Organization,
+    Permission, Timezone, TimezoneOverridePatch,
 };
-use std::time::Duration;
+use std::{collections::VecDeque, time::Duration};
 
 fn id(value: &str) -> EntityId {
     EntityId::parse(value).unwrap_or_else(|error| panic!("fixture UUID: {error}"))
@@ -325,6 +326,174 @@ async fn real_sqlite_transaction_rolls_back_business_write_when_audit_fixture_fa
             .fetch_one(&pool)
             .await?,
         0
+    );
+    pool.close().await;
+    Ok(())
+}
+
+struct FixtureAuthorization(bool);
+impl Authorization for FixtureAuthorization {
+    fn is_allowed(&self, _: Permission, _: Option<&EntityId>, _: Option<&EntityId>) -> bool {
+        self.0
+    }
+}
+
+struct FixtureIds(VecDeque<EntityId>);
+impl IdentityGenerator for FixtureIds {
+    fn next_id(&mut self) -> Result<EntityId, ApplicationError> {
+        self.0.pop_front().ok_or(ApplicationError::Storage)
+    }
+}
+
+struct FixtureAudit {
+    fail: bool,
+}
+
+#[allow(clippy::manual_async_fn)]
+impl TransactionalAuditWriter for FixtureAudit {
+    async fn append(
+        &self,
+        transaction: &mut SqliteTransaction,
+        event: &AuditEvent,
+        occurred_at: &str,
+    ) -> Result<(), ApplicationError> {
+        if self.fail {
+            return Err(ApplicationError::Audit);
+        }
+        sqlx::query("INSERT INTO audit_fixture (organization_id, branch_id, action, entity_type, entity_id, occurred_at) VALUES (?, ?, ?, ?, ?, ?)")
+            .bind(event.organization_id.as_str())
+            .bind(event.branch_id.as_ref().map(EntityId::as_str))
+            .bind(event.action)
+            .bind(event.entity_type)
+            .bind(event.entity_id.as_str())
+            .bind(occurred_at)
+            .execute(transaction.connection())
+            .await
+            .map_err(|_| ApplicationError::Audit)?;
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn async_uow_commits_cas_and_rolls_back_audit_failure()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open(&temp.path().join("uow.sqlite"), Duration::from_millis(75)).await?;
+    migrate(&pool).await?;
+    sqlx::query("CREATE TABLE audit_fixture (organization_id TEXT NOT NULL, branch_id TEXT, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, occurred_at TEXT NOT NULL) STRICT")
+        .execute(&pool)
+        .await?;
+    let organization = organization("00000000-0000-0000-0000-000000000010", "main");
+    SqliteOrganizationBranchStore::new(pool.clone())
+        .insert_organization(&organization, TIME, TIME)
+        .await?;
+    let mut ids = FixtureIds(VecDeque::from([id("00000000-0000-0000-0000-000000000011")]));
+    let application = SqliteBranchApplication::new(
+        SqliteUnitOfWork::new(pool.clone()),
+        FixtureAudit { fail: false },
+    );
+    let branch = application
+        .create(
+            &FixtureAuthorization(true),
+            &mut ids,
+            organization.id(),
+            NewBranch {
+                name: DisplayName::new("Sucursal")?,
+                code: BusinessCode::new("center")?,
+                timezone_override: None,
+            },
+            TIME,
+        )
+        .await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM audit_fixture WHERE action = 'branch.created'"
+        )
+        .fetch_one(&pool)
+        .await?,
+        1
+    );
+    let updated = application
+        .update(
+            &FixtureAuthorization(true),
+            organization.id(),
+            branch.id(),
+            BranchPatch {
+                expected_revision: 0,
+                name: Some(DisplayName::new("Centro Norte")?),
+                timezone_override: TimezoneOverridePatch::Keep,
+                status: None,
+            },
+            TIME,
+        )
+        .await?;
+    assert_eq!(updated.revision(), 1);
+    let no_op = application
+        .update(
+            &FixtureAuthorization(true),
+            organization.id(),
+            branch.id(),
+            BranchPatch {
+                expected_revision: 1,
+                name: None,
+                timezone_override: TimezoneOverridePatch::Keep,
+                status: None,
+            },
+            TIME,
+        )
+        .await?;
+    assert_eq!(no_op.revision(), 1);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM audit_fixture WHERE action = 'branch.updated'"
+        )
+        .fetch_one(&pool)
+        .await?,
+        1
+    );
+    let failing = SqliteBranchApplication::new(
+        SqliteUnitOfWork::new(pool.clone()),
+        FixtureAudit { fail: true },
+    );
+    assert_eq!(
+        failing
+            .update(
+                &FixtureAuthorization(true),
+                organization.id(),
+                branch.id(),
+                BranchPatch {
+                    expected_revision: 1,
+                    name: Some(DisplayName::new("No confirma")?),
+                    timezone_override: TimezoneOverridePatch::Keep,
+                    status: None
+                },
+                TIME
+            )
+            .await,
+        Err(ApplicationError::Audit)
+    );
+    let persisted = SqliteOrganizationBranchStore::new(pool.clone())
+        .get_branch(organization.id(), branch.id())
+        .await?
+        .ok_or_else(|| std::io::Error::other("missing branch"))?;
+    assert_eq!(persisted.name().as_str(), "Centro Norte");
+    assert_eq!(persisted.revision(), 1);
+    assert_eq!(
+        failing
+            .update(
+                &FixtureAuthorization(false),
+                organization.id(),
+                branch.id(),
+                BranchPatch {
+                    expected_revision: 1,
+                    name: Some(DisplayName::new("Denied")?),
+                    timezone_override: TimezoneOverridePatch::Keep,
+                    status: None
+                },
+                TIME
+            )
+            .await,
+        Err(ApplicationError::Forbidden)
     );
     pool.close().await;
     Ok(())
