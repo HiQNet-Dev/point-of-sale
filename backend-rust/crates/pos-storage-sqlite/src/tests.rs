@@ -1,3 +1,7 @@
+// Los fixtures de estos tests son constantes válidas; los panics solo señalan un
+// error de programación del test y no forman parte del código de producto.
+#![allow(clippy::panic)]
+
 use super::*;
 use pos_core::organization_branch::{
     Branch, BranchPatch, BusinessCode, DisplayName, EntityId, IsoCurrency, LocaleTag, NewBranch,

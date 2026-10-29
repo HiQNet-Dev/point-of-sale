@@ -8,7 +8,6 @@ use pos_core::organization_branch::{
 };
 use sqlx::{
     ConnectOptions, SqlitePool,
-    error::DatabaseError,
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
 };
 
@@ -39,7 +38,8 @@ pub enum StorageError {
 pub async fn open(path: &Path, busy_timeout: Duration) -> Result<SqlitePool, StorageError> {
     let name = path.to_str().ok_or(StorageError::InvalidConfiguration)?;
     if name.trim().is_empty()
-        || name.contains([':', '?', '#', '\0'])
+        || has_disallowed_path_colon(name)
+        || name.contains(['?', '#', '\0'])
         || path.is_dir()
         || busy_timeout < Duration::from_millis(1)
         || busy_timeout > Duration::from_secs(60)
@@ -85,6 +85,21 @@ pub async fn open(path: &Path, busy_timeout: Duration) -> Result<SqlitePool, Sto
         .map_err(|_| StorageError::Database)
 }
 
+fn has_disallowed_path_colon(value: &str) -> bool {
+    if cfg!(windows) {
+        value.bytes().enumerate().any(|(index, byte)| {
+            byte == b':'
+                && !(index == 1
+                    && value
+                        .as_bytes()
+                        .first()
+                        .is_some_and(u8::is_ascii_alphabetic))
+        })
+    } else {
+        value.contains(':')
+    }
+}
+
 /// Aplica exclusivamente el root Local embebido; el esquema sigue siendo parcial.
 ///
 /// SQLx conserva su propio historial y rechaza checksums alterados. Nunca se modifica Flyway.
@@ -119,7 +134,7 @@ pub enum CasOutcome {
 }
 
 /// Error tipado del adaptador experimental Organization/Branch.
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum OrganizationBranchStorageError {
     /// Un código de organización ya está ocupado.
     #[error("código de organización duplicado")]

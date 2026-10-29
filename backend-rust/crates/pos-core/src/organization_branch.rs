@@ -253,7 +253,7 @@ fn valid_offset(value: &str) -> bool {
         return false;
     }
     let (hour, minute) = match rest {
-        [a, b] => (Some([*a, *b]), Some([b'0', b'0'])),
+        [a, b] => (Some([*a, *b]), Some(*b"00")),
         [a, b, b':', c, d] => (Some([*a, *b]), Some([*c, *d])),
         [a, b, c, d] => (Some([*a, *b]), Some([*c, *d])),
         _ => (None, None),

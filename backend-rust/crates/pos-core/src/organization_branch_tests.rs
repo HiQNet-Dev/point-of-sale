@@ -1,3 +1,7 @@
+// Los fixtures de estos tests son constantes válidas; los panics solo señalan un
+// error de programación del test y no forman parte del código de producto.
+#![allow(clippy::panic)]
+
 use std::collections::VecDeque;
 
 use crate::organization_branch::{
@@ -40,7 +44,7 @@ fn java_normalization_and_utf16_limits_are_preserved_without_panics() {
         Ok("main-office".to_owned())
     );
     assert_eq!(
-        BusinessCode::new(" oficina "),
+        BusinessCode::new(" oficína "),
         Err(DomainError::InvalidCode)
     );
     assert_eq!(
