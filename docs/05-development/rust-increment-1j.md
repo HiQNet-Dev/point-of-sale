@@ -1,4 +1,4 @@
-# Incremento 1J — Dominio de catálogo, cajas y turnos; arranque inicial verificado
+# Incremento 1J — Dominio de catálogo, cajas, turnos e inventario
 
 **Estado: DOMINIO IMPLEMENTADO Y PROBADO. Sin DDL productivo de catálogo.**
 
@@ -24,9 +24,9 @@ El paquete **D-AUTH-01..08, D-AUTH-10, D-AUTH-11, D-INST-01, D-INST-02** y
 ADR-0022 sigue sin aceptación formal del titular. Ese bloqueo impide promover
 `0002`–`0007` a `migrations/local`, no impide avanzar en trabajo independiente.
 
-Este incremento ejecuta los **frentes independientes A y B** del programa maestro:
-reglas puras de catálogo, productos, modificadores, cajas y turnos, sin
-persistencia ni DDL.
+Este incremento ejecuta los **frentes independientes A, B y C** del programa
+maestro: reglas puras de catálogo, productos, modificadores, cajas, turnos e
+inventario, sin persistencia ni DDL.
 
 ```mermaid
 graph TD
@@ -180,7 +180,41 @@ Pruebas nuevas: `pos-core::cash_tests` (10 casos), incluidas la asimetría
  apertura/cierre, la no idempotencia, el CAS obsoleto, el desbordamiento de
 revisión y el rechazo de filas incoherentes al rehidratar.
 
-## 7. Pruebas ejecutadas (Windows, SQLite real)
+## 7. Frente C: inventario
+
+`pos-core::inventory` (nuevo módulo, sin dependencias de infraestructura).
+
+| Tipo | Responsabilidad | Regla principal |
+| --- | --- | --- |
+| `InventoryBaseUnit` | Unidad base | `UNIT`, `GRAM`, `MILLILITER` |
+| `Quantity` | Cantidad exacta | Escala 6, rango `±9999999999999.999999`, solo texto decimal |
+| `MovementReason` | Motivo normalizado | Recorte Java, no vacío, ≤255 UTF-16 |
+| `InventoryItem` | Artículo organizacional | `unit_locked` monótono; cambio de unidad rechazado si está bloqueada |
+| `InventoryItemPatch` | Modificación | Nombre, descripción, unidad, fracciones y estado con CAS |
+| `StockBalance` | Saldo por sucursal | Cero si la fila no existe; delta bajo CAS con rango verificado |
+| `InventoryMovement` | Hecho del ledger | Cuatro tipos con firma, motivo y referencia de origen validados |
+| `ensure_opening_allowed` | Regla de apertura | Una sola apertura y antes de cualquier otro movimiento |
+| `ensure_sufficient` | Política de stock | Todo-o-nada bajo `STRICT`; permisiva bajo `ALLOW_NEGATIVE` |
+
+Reglas preservadas:
+
+- La cantidad se interpreta siempre como texto decimal; `+1`, `1e3`, `.5` y
+  `5.` se rechazan, igual que `InventoryQuantity.parse`.
+- La regla de unidad se aplica al saldo **resultante**: un artículo `UNIT` sin
+  `fractional_unit_allowed` rechaza `2.5` aunque el delta sea entero negativo.
+- `OPENING` no puede ser negativo, `ADJUSTMENT` no puede ser cero y exige motivo,
+  `SALE_CONSUMPTION` exige delta negativo y venta, y `PURCHASE_RECEIPT` exige
+  delta positivo y línea de recepción.
+- El ledger es inmutable: `restore` rechaza cualquier combinación de tipo, delta,
+  motivo o referencia que no corresponda.
+- La política de stock negativo solo afecta al consumo de ventas; nunca cambia
+  aperturas ni ajustes manuales.
+
+Pruebas nuevas: `pos-core::inventory_tests` (11 casos), incluidas cantidades
+límite, frontera `i64`, bloqueo de unidad, CAS del saldo, firmas de los cuatro
+tipos de movimiento y suficiencia todo-o-nada.
+
+## 8. Pruebas ejecutadas (Windows, SQLite real)
 
 ```bash
 cd backend-rust
@@ -192,12 +226,12 @@ cargo build --locked --workspace --all-features
 
 | Crate / binario | Pruebas | Resultado |
 | --- | --- | --- |
-| `pos-core` | 60 (18 de catálogo, 10 de cajas y turnos) | OK |
+| `pos-core` | 71 (18 de catálogo, 10 de cajas y turnos, 11 de inventario) | OK |
 | `pos-credentials` | 8 | OK |
 | `pos-storage-sqlite` | 57 (2 nuevas de primer arranque) | OK |
 | `pos-local` (lib, bin, integración) | 11 | OK |
 | `migration-lab` | 27 | OK |
-| **Total** | **163** | **0 fallos** |
+| **Total** | **174** | **0 fallos** |
 
 Cobertura nueva del dominio:
 
@@ -216,7 +250,7 @@ Cobertura nueva del dominio:
 No se ejecutó `--require-complete`, el Migration Lab PostgreSQL 17 ni ningún gate
 normativo; los resultados anteriores son exclusivamente SQLite/Windows.
 
-## 8. Estado normativo y de gates
+## 9. Estado normativo y de gates
 
 | Elemento | Estado |
 | --- | --- |
@@ -229,7 +263,7 @@ normativo; los resultados anteriores son exclusivamente SQLite/Windows.
 | CI de esta rama | No ejecutado en este entorno |
 | Migración de catálogo y cajas a SQLite | No iniciada: depende de aprobación física |
 
-## 9. Riesgos abiertos
+## 10. Riesgos abiertos
 
 1. El dominio de catálogo no tiene aún contrato físico Local. Un adaptador no
    puede implementarse hasta decidir la representación de importes (D3) y el
@@ -249,16 +283,19 @@ normativo; los resultados anteriores son exclusivamente SQLite/Windows.
 6. El cierre exige evaluar "ventas abiertas" en la misma transacción que la
    transición de estado; esa composición requiere el esquema de ventas, todavía no
    migrado.
+7. El inventario depende de dos garantías físicas que el dominio no puede
+   sustituir: el índice único parcial de apertura por sucursal y artículo, y el
+   trigger append-only del ledger. Además, `unit_locked` debe persistirse con una
+   sentencia dedicada que la actualización CAS del artículo no sobrescriba.
 
-## 10. Próximo incremento recomendado
+## 11. Próximo incremento recomendado
 
 1. **Cerrar 1I** con la aceptación formal del paquete D-AUTH/D-INST o, en su
-   defecto, mantener el bloqueo y avanzar el frente independiente **C** (ledger de
-   inventario y recetas) y el **D** (máquina de estados de compras), ambos también
-   de dominio puro.
+   defecto, mantener el bloqueo y avanzar el frente independiente **D** (máquina de
+   estados de compras y recepciones), también de dominio puro.
 2. Cuando exista aprobación física, promover `0002`–`0007`, añadir las tablas de
-   catálogo, cajas y turnos, y sustituir los adaptadores `*_lab` por adaptadores
-   canónicos.
+   catálogo, cajas y turnos, e inventario, y sustituir los adaptadores `*_lab` por
+   adaptadores canónicos.
 3. No declarar Auth/RBAC/auditoría productivos hasta contar con DDL aprobado,
    verificación criptográfica de producto, principal autenticado, autorización
    persistente y pruebas de integración completas.

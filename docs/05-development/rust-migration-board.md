@@ -32,9 +32,9 @@ productiva: las tablas implicadas siguen sin aprobación física.
 | Modificadores | `DOMAIN` | `pos-core::catalog`, semánticos derivados y plan de reemplazo | DDL, adaptador, casos de uso, API |
 | Cajas | `DOMAIN` | `pos-core::cash`, scope de sucursal y patch CAS | DDL, adaptador, casos de uso, API |
 | Turnos | `DOMAIN` | `pos-core::cash`, apertura/cierre, recuperación y no idempotencia | DDL, índice único parcial, port de ventas abiertas, API |
+| Inventario (artículos, saldos, ledger) | `DOMAIN` | `pos-core::inventory`, cantidades exactas, unidad bloqueable, CAS y ledger tipado | DDL, trigger append-only, adaptador, API |
 | Ventas | `NOT_STARTED` | — | Todo |
 | Checkout y pagos | `NOT_STARTED` | — | Todo |
-| Inventario | `NOT_STARTED` | — | Todo |
 | Compras y recepciones | `NOT_STARTED` | — | Todo |
 | API HTTP / OpenAPI | `NOT_STARTED` | — | Todo |
 | Integración React | `NOT_STARTED` | — | Todo |
