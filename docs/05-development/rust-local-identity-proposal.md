@@ -111,22 +111,40 @@ singleton one-shot, PENDING o COMPLETED completo y FKs compuestas same-org. Java
 V8 (`installation_bootstrap`) es el antecedente funcional; Rust no implementa
 provisioning, secreto pre-body ni writer productivo.
 
-## Autorización contextual
+## Autorización contextual y paridad RBAC
 
-`VerifiedPrincipal` conserva el `PrincipalScope` exacto (organización y
-sucursal) con el que se resolvieron sus permisos. La decisión se toma siempre con
+`VerifiedPrincipal` conserva el `PrincipalScope` exacto (organización, sucursal y
+modo) con el que se resolvieron sus permisos. La decisión se toma siempre con
 `authorize(permission, scope)`:
 
 1. Scope distinto del principal → `ScopeMismatch`, sin consultar permisos.
 2. Permiso ausente en ese scope → `PermissionDenied`.
 3. Cualquier duda de sesión, usuario o autoridad → error cerrado antes de mutar.
 
-Contrato de `PermissionAuthority`:
+Contrato de `PermissionAuthority`, alineado con
+`AuthorizationService.hasPermission/hasBranchPermission` de Java:
 
-- `branch_id = None`: solo grants de alcance organización.
-- `branch_id = Some(b)`: unión de grants de organización y de la membership
-  activa en `b`; la sucursal debe pertenecer a la organización y estar activa.
-- Una grant de sucursal nunca se promociona a alcance organización.
+| Caso Java | Rust |
+| --- | --- |
+| `hasPermission(org, p)` | `resolve_permissions(user, org, None)` |
+| `hasBranchPermission(org, branch, p)` | `resolve_permissions(user, org, Some(branch))` |
+| `hasBranchPermissionIgnoringBranchStatus` | `resolve_permissions_for_recovery(...)` + `authenticate_recovery` |
+
+Reglas verificadas:
+
+- **Override de organización**: las grants organizacionales se incluyen siempre
+  en un scope de sucursal; no se exige membership de esa sucursal.
+- **Pierna de sucursal**: requiere sucursal ACTIVA (normal) o existente en la
+  organización (recuperación), membership ACTIVA, usuario ACTIVO, rol ACTIVO y
+  organización ACTIVA.
+- **Sin elevación**: una grant de membership nunca aparece en el scope de
+  organización, que se resuelve con `branch_id = None`.
+- **Sin fuga de tenant**: una sucursal ajena o inexistente no produce error ni
+  revela existencia; simplemente no aporta permisos.
+- **Recuperación explícita**: el principal de recuperación solo autoriza scopes
+  en modo recuperación; no habilita operaciones normales ni al contrario.
+- **Revocación de sesión**: la operación parte de un `VerifiedPrincipal`; la
+  organización y el usuario proceden del principal, no de la petición.
 
 Consistencia: `authenticate` es una decisión puntual. Para mutaciones críticas la
 identidad, sesión, membership, estado de sucursal y permisos deben resolverse

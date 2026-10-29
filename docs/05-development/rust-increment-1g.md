@@ -25,18 +25,47 @@ Motivos:
 
 `pos-core` sigue sin dependencias de runtime: solo los tests usan `tokio`.
 
+## Corrección de paridad RBAC (1G.1)
+
+La primera versión del adaptador exigía membership activa para cualquier scope de
+sucursal. Eso divergía de `AuthorizationService` de Java, donde el permiso de
+organización es un **override** para operaciones de sucursal. Se corrigió:
+
+| Regla Java | Implementación Rust |
+| --- | --- |
+| `hasPermission` exige usuario, organización y rol ACTIVOS | `resolve_permissions(org, None)` con esos `JOIN` |
+| Override: permiso global concede la operación de sucursal sin membership | la unión incluye siempre las grants organizacionales |
+| `hasBranchPermission` exige branch ACTIVA, membership ACTIVA, rol ACTIVO | `BRANCH_PERMISSIONS_SQL` |
+| `hasBranchPermissionIgnoringBranchStatus` no exige branch ACTIVA | `BRANCH_PERMISSIONS_RECOVERY_SQL` + `PrincipalScope::recovery` |
+| Sucursal ajena o inexistente → 404 en el servicio, no en autorización | no aporta permisos y no revela existencia |
+| Rol de sucursal nunca se eleva a organización | el scope de organización usa solo `branch_id = None` |
+
+La recuperación es explícita: `ScopeMode::Recovery` forma parte del
+`PrincipalScope`, de modo que un principal de recuperación no autoriza
+operaciones normales y uno normal no autoriza recuperación.
+
+## Revocación de sesión scoped
+
+`revoke_session_cas` recibe un `VerifiedPrincipal`; el `user_id` y la
+`organization_id` salen del principal, no de la petición. La sentencia incluye
+ambos en el `WHERE` y la clasificación posterior solo consulta sesiones del mismo
+owner. Consecuencias verificadas:
+
+- sesión propia y versión vigente → `Updated`;
+- repetición o versión obsoleta → `Conflict`;
+- sesión de otro usuario de la misma organización → `Missing`;
+- sesión de otra organización o UUID inexistente → `Missing`, sin distinguirlos.
+
 ## Adaptador
 
 `pos-storage-sqlite::identity_lab` expone `SqliteIdentityLab`, ligado a una
 `&mut SqliteConnection`, con:
 
-- `session_by_hash`: deriva `organization_id` mediante `JOIN pos_user`; no existe
-  columna de organización en la sesión.
+- `session_by_hash`: deriva `organization_id` mediante `JOIN pos_user`.
 - `user_by_id`: búsqueda scoped por organización y usuario.
-- `effective_permissions`: alcance de organización o unión organización +
-  membership activa; exige sucursal activa de la misma organización.
-- `revoke_session_cas`: `UPDATE ... WHERE id = ? AND session_version = ? AND
-  revoked_at IS NULL`, clasificando después `Updated`, `Missing` o `Conflict`.
+- `effective_permissions`: override de organización + pierna de sucursal normal.
+- `effective_permissions_for_recovery`: idéntico sin exigir sucursal activa.
+- `revoke_session_cas`: CAS scoped por principal.
 
 Tablas de laboratorio (fixtures, `STRICT`):
 
@@ -44,7 +73,7 @@ Tablas de laboratorio (fixtures, `STRICT`):
 | --- | --- |
 | `identity_user_lab` | `UNIQUE(id, organization_id)`, `UNIQUE(organization_id, email)` |
 | `identity_session_lab` | `UNIQUE(session_hash)`, `expires_at > created_at`, `session_version >= 1`, FK a usuario |
-| `identity_role_lab` | `UNIQUE(id, organization_id)` |
+| `identity_role_lab` | `UNIQUE(id, organization_id)`, `status IN ('ACTIVE','INACTIVE')` |
 | `identity_role_permission_lab` | PK `(role_id, permission_code)` |
 | `identity_user_role_lab` | FKs compuestas same-org usuario/rol |
 | `identity_membership_lab` | `UNIQUE(organization_id, branch_id, user_id)`, `UNIQUE(id, organization_id)`, FKs compuestas branch/usuario |
@@ -54,11 +83,17 @@ Tablas de laboratorio (fixtures, `STRICT`):
 
 | Prueba | Qué demuestra |
 | --- | --- |
-| `lab_adapter_builds_scoped_principals_and_denies_other_scopes` | scope A1 autoriza `branch.update`; A2, org y otra organización fallan |
-| `lab_adapter_fails_closed_for_inactive_state_and_bad_sessions` | membership inactiva, sucursal inactiva, sesión revocada/expirada y usuario inactivo |
-| `lab_session_revocation_is_cas_and_single_writer_per_version` | dos pools, un solo `Updated`, versión final `2`, sesión inexistente = `Missing` |
-| `lab_authorization_re_resolves_inside_the_unit_of_work_and_rolls_back` | `BEGIN IMMEDIATE`: membership desactivada dentro de la UoW deniega; rollback restaura; revocación revertida |
-| `lab_schema_enforces_cross_organization_ownership` | FK compuesta rechaza membership cross-org; organización derivada de la sesión |
+| `java_parity_organization_override_grants_branch_without_membership` | override global, incluso sin membership y con sucursal inexistente |
+| `java_parity_branch_grant_does_not_promote_to_organization_scope` | sin elevación de sucursal a organización |
+| `java_parity_unknown_or_foreign_branch_grants_nothing_without_error` | sucursal ajena o sin membership no concede ni filtra |
+| `java_parity_inactive_role_organization_and_membership_revoke_grants` | estados ACTIVOS exigidos |
+| `java_parity_recovery_authorizes_inactive_branch_but_normal_does_not` | recuperación explícita y no reutilizable |
+| `java_parity_inactive_or_foreign_states_fail_closed` | usuario inactivo, sesión revocada o expirada |
+| `java_parity_concurrent_permission_changes_are_seen_on_reauthentication` | cambios de rol observados al re-autenticar |
+| `java_parity_storage_failure_during_authorization_fails_closed` | error SQL → `ScopeDenied` |
+| `session_revocation_is_scoped_to_the_authenticated_principal` | revocación propia, ajena y de otro tenant |
+| `session_revocation_and_authorization_share_the_unit_of_work` | `BEGIN IMMEDIATE`, denegación y rollback |
+| `lab_schema_enforces_cross_organization_ownership` | FKs compuestas y organización derivada |
 
 Las pruebas 1B–1F (Organization, Branch, UoW, cancelación, rollback, auditoría
 fixture, identidad pura) siguen ejecutándose sin cambios.
