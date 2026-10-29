@@ -5,6 +5,8 @@
 
 use std::fmt;
 
+/// Foundation pura de auditoría Local, independiente de DDL y adaptadores.
+pub mod audit;
 /// Dominio Organization/Branch y puertos de aplicación reconstruidos tras INC-RECOVERY-01.
 pub mod organization_branch;
 
@@ -182,6 +184,8 @@ impl fmt::Display for MoneyError {
 
 impl std::error::Error for MoneyError {}
 
+#[cfg(test)]
+mod audit_tests;
 #[cfg(test)]
 mod organization_branch_tests;
 #[cfg(test)]
