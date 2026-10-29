@@ -5,6 +5,9 @@
 
 use std::fmt;
 
+/// Dominio Organization/Branch y puertos de aplicación reconstruidos tras INC-RECOVERY-01.
+pub mod organization_branch;
+
 /// Código de moneda de tres letras ASCII, normalizado a mayúsculas.
 ///
 /// Solo valida la sintaxis; no certifica pertenencia al catálogo ISO 4217
@@ -179,5 +182,7 @@ impl fmt::Display for MoneyError {
 
 impl std::error::Error for MoneyError {}
 
+#[cfg(test)]
+mod organization_branch_tests;
 #[cfg(test)]
 mod tests;
