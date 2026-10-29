@@ -1019,4 +1019,6 @@ mod credential_lab_tests;
 #[cfg(test)]
 mod identity_lab_tests;
 #[cfg(test)]
+mod proposals_tests;
+#[cfg(test)]
 mod tests;
