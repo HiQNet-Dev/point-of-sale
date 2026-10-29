@@ -35,7 +35,7 @@ productiva: las tablas implicadas siguen sin aprobación física.
 | Inventario (artículos, saldos, ledger) | `DOMAIN` | `pos-core::inventory`, cantidades exactas, unidad bloqueable, CAS y ledger tipado | DDL, trigger append-only, adaptador, API |
 | Ventas | `NOT_STARTED` | — | Todo |
 | Checkout y pagos | `NOT_STARTED` | — | Todo |
-| Compras y recepciones | `NOT_STARTED` | — | Todo |
+| Compras y recepciones | `DOMAIN` | `pos-core::purchasing`, ciclo de vida, snapshots, recepciones acumuladas y exceso | DDL, agregado `Supplier`, adaptador, API |
 | API HTTP / OpenAPI | `NOT_STARTED` | — | Todo |
 | Integración React | `NOT_STARTED` | — | Todo |
 

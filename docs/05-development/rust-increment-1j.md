@@ -1,4 +1,4 @@
-# Incremento 1J — Dominio de catálogo, cajas, turnos e inventario
+# Incremento 1J — Dominio de catálogo, cajas, turnos, inventario y compras
 
 **Estado: DOMINIO IMPLEMENTADO Y PROBADO. Sin DDL productivo de catálogo.**
 
@@ -24,9 +24,9 @@ El paquete **D-AUTH-01..08, D-AUTH-10, D-AUTH-11, D-INST-01, D-INST-02** y
 ADR-0022 sigue sin aceptación formal del titular. Ese bloqueo impide promover
 `0002`–`0007` a `migrations/local`, no impide avanzar en trabajo independiente.
 
-Este incremento ejecuta los **frentes independientes A, B y C** del programa
-maestro: reglas puras de catálogo, productos, modificadores, cajas, turnos e
-inventario, sin persistencia ni DDL.
+Este incremento ejecuta los **frentes independientes A, B, C y D** del programa
+maestro: reglas puras de catálogo, cajas, turnos, inventario y compras, sin
+persistencia ni DDL.
 
 ```mermaid
 graph TD
@@ -214,7 +214,38 @@ Pruebas nuevas: `pos-core::inventory_tests` (11 casos), incluidas cantidades
 límite, frontera `i64`, bloqueo de unidad, CAS del saldo, firmas de los cuatro
 tipos de movimiento y suficiencia todo-o-nada.
 
-## 8. Pruebas ejecutadas (Windows, SQLite real)
+## 8. Frente D: compras
+
+`pos-core::purchasing` (nuevo módulo, sin dependencias de infraestructura).
+
+| Tipo | Responsabilidad | Regla principal |
+| --- | --- | --- |
+| `PurchaseOrderStatus` | Estados | `DRAFT`, `ORDERED`, `PARTIALLY_RECEIVED`, `RECEIVED`, `CANCELLED` |
+| `PurchaseOrder` | Raíz del agregado | Ciclo de vida, snapshots de proveedor y moneda, revisión compartida |
+| `PurchaseOrderLine` | Partida | Cantidad positiva, número de línea, snapshots del artículo |
+| `ReceiptLineRequest` | Recepción | Cantidad positiva y línea única por recepción |
+| `ensure_within_ordered` | Regla de exceso | Nunca recibir más de lo pedido |
+| `next_order_status` | Estado resultante | `PARTIALLY_RECEIVED` o `RECEIVED` según todas las líneas |
+
+Reglas preservadas:
+
+- `issue` solo desde `DRAFT`; `cancel` desde `DRAFT` u `ORDERED` y conserva la
+  emisión; `apply_receipt` solo desde `ORDERED` o `PARTIALLY_RECEIVED`.
+- El cliente nunca fija el estado ni la moneda: la moneda es un snapshot de la
+  organización y `requireCurrency` de Java se replica con `pos_core::Currency`.
+- La cabecera y sus partidas comparten revisión: `register_line_mutation` avanza
+  la versión del agregado, igual que `registerLineMutation`.
+- `change_supplier` solo aplica en `DRAFT` y evita auditar un no-op con el mismo
+  proveedor y los mismos snapshots. El javadoc Java declara esa intención aunque
+  su setter siempre toca `updatedAt`; la diferencia se registra aquí.
+- Las recepciones acumuladas por línea determinan el estado final; el exceso se
+  rechaza con el detalle de línea, pedido, recibido e intentado.
+
+Pruebas nuevas: `pos-core::purchasing_tests` (10 casos), incluidas transiciones
+inválidas, cancelación tras emisión, detección de exceso y acumulación de
+recepciones.
+
+## 9. Pruebas ejecutadas (Windows, SQLite real)
 
 ```bash
 cd backend-rust
@@ -226,12 +257,12 @@ cargo build --locked --workspace --all-features
 
 | Crate / binario | Pruebas | Resultado |
 | --- | --- | --- |
-| `pos-core` | 71 (18 de catálogo, 10 de cajas y turnos, 11 de inventario) | OK |
+| `pos-core` | 81 (18 catálogo, 10 cajas/turnos, 11 inventario, 10 compras) | OK |
 | `pos-credentials` | 8 | OK |
 | `pos-storage-sqlite` | 57 (2 nuevas de primer arranque) | OK |
 | `pos-local` (lib, bin, integración) | 11 | OK |
 | `migration-lab` | 27 | OK |
-| **Total** | **174** | **0 fallos** |
+| **Total** | **184** | **0 fallos** |
 
 Cobertura nueva del dominio:
 
@@ -250,7 +281,7 @@ Cobertura nueva del dominio:
 No se ejecutó `--require-complete`, el Migration Lab PostgreSQL 17 ni ningún gate
 normativo; los resultados anteriores son exclusivamente SQLite/Windows.
 
-## 9. Estado normativo y de gates
+## 10. Estado normativo y de gates
 
 | Elemento | Estado |
 | --- | --- |
@@ -263,7 +294,7 @@ normativo; los resultados anteriores son exclusivamente SQLite/Windows.
 | CI de esta rama | No ejecutado en este entorno |
 | Migración de catálogo y cajas a SQLite | No iniciada: depende de aprobación física |
 
-## 10. Riesgos abiertos
+## 11. Riesgos abiertos
 
 1. El dominio de catálogo no tiene aún contrato físico Local. Un adaptador no
    puede implementarse hasta decidir la representación de importes (D3) y el
@@ -288,14 +319,14 @@ normativo; los resultados anteriores son exclusivamente SQLite/Windows.
    trigger append-only del ledger. Además, `unit_locked` debe persistirse con una
    sentencia dedicada que la actualización CAS del artículo no sobrescriba.
 
-## 11. Próximo incremento recomendado
+## 12. Próximo incremento recomendado
 
 1. **Cerrar 1I** con la aceptación formal del paquete D-AUTH/D-INST o, en su
-   defecto, mantener el bloqueo y avanzar el frente independiente **D** (máquina de
-   estados de compras y recepciones), también de dominio puro.
+   defecto, mantener el bloqueo y avanzar el agregado `Supplier` y las ventas
+   (partidas, snapshots y totales), también de dominio puro.
 2. Cuando exista aprobación física, promover `0002`–`0007`, añadir las tablas de
-   catálogo, cajas y turnos, e inventario, y sustituir los adaptadores `*_lab` por
-   adaptadores canónicos.
+   catálogo, cajas, turnos, inventario y compras, y sustituir los adaptadores
+   `*_lab` por adaptadores canónicos.
 3. No declarar Auth/RBAC/auditoría productivos hasta contar con DDL aprobado,
    verificación criptográfica de producto, principal autenticado, autorización
    persistente y pruebas de integración completas.
