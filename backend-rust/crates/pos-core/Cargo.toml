@@ -8,3 +8,9 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+chrono-tz.workspace = true
+iso_currency.workspace = true
+unic-langid.workspace = true
+uuid.workspace = true

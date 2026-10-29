@@ -3,6 +3,16 @@
 //! Las unidades menores no incorporan una escala implícita ni políticas de
 //! redondeo. La importación decimal exige que el llamador proporcione la escala.
 
+mod branch;
+mod organization;
+
+pub use branch::{Branch, BranchPatch, BranchStatus, TimezonePatch};
+pub use organization::{
+    BranchId, BusinessCode, ChangedFields, DisplayName, DomainError, IanaTimezone,
+    InventoryNegativeStockPolicy, LocaleTag, Organization, OrganizationCurrency, OrganizationId,
+    OrganizationPatch, OrganizationStatus, Revision,
+};
+
 use std::fmt;
 
 /// Código de moneda de tres letras ASCII, normalizado a mayúsculas.

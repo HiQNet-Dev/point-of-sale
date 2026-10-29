@@ -1,4 +1,10 @@
-use super::{Currency, MoneyError, MoneyMinor, Quantity, QuantityError};
+use super::{
+    Branch, BranchId, BranchPatch, BranchStatus, BusinessCode, Currency, DisplayName, DomainError,
+    IanaTimezone, InventoryNegativeStockPolicy, LocaleTag, MoneyError, MoneyMinor, Organization,
+    OrganizationCurrency, OrganizationId, OrganizationPatch, OrganizationStatus, Quantity,
+    QuantityError, Revision, TimezonePatch,
+};
+use uuid::Uuid;
 
 #[test]
 fn currency_normalizes_ascii_letters_without_claiming_iso_membership() -> Result<(), MoneyError> {
@@ -206,6 +212,140 @@ fn quantity_operations_are_checked_and_do_not_treat_zero_as_absent() -> Result<(
     assert_eq!(
         Quantity::from_micros(Quantity::MAX_MICROS)?.checked_add(fraction),
         Err(QuantityError::OutOfRange)
+    );
+    Ok(())
+}
+
+fn organization() -> Result<Organization, DomainError> {
+    Ok(Organization::create(
+        OrganizationId::new(Uuid::nil()),
+        DisplayName::parse("  Cafetería Central  ")?,
+        BusinessCode::parse("cafeteria-central")?,
+        IanaTimezone::parse("America/Mexico_City")?,
+        OrganizationCurrency::parse("mxn")?,
+        LocaleTag::parse("es-MX")?,
+    ))
+}
+
+#[test]
+fn organization_creation_preserves_defaults_identity_and_validated_metadata()
+-> Result<(), DomainError> {
+    let organization = organization()?;
+    assert_eq!(organization.id().as_uuid(), Uuid::nil());
+    assert_eq!(organization.name().as_str(), "Cafetería Central");
+    assert_eq!(organization.code().as_str(), "cafeteria-central");
+    assert_eq!(organization.currency().as_str(), "MXN");
+    assert_eq!(organization.status(), OrganizationStatus::Active);
+    assert_eq!(
+        organization.inventory_negative_stock_policy(),
+        InventoryNegativeStockPolicy::Strict
+    );
+    assert_eq!(organization.revision(), Revision::INITIAL);
+    assert!(organization.is_active());
+    Ok(())
+}
+
+#[test]
+fn organization_rejects_invalid_codes_timezones_currencies_and_locales() {
+    for code in [
+        "",
+        "Cafe",
+        "cafe--central",
+        "cafe central",
+        "c".repeat(65).as_str(),
+    ] {
+        assert_eq!(BusinessCode::parse(code), Err(DomainError::InvalidCode));
+    }
+    for timezone in ["", "Not/AZone", "x".repeat(65).as_str()] {
+        assert_eq!(
+            IanaTimezone::parse(timezone),
+            Err(DomainError::InvalidTimezone)
+        );
+    }
+    for currency in ["", "US", "USDD", "XYZ", "12$"] {
+        assert_eq!(
+            OrganizationCurrency::parse(currency),
+            Err(DomainError::InvalidCurrency)
+        );
+    }
+    for locale in ["", "not_a_locale", "x".repeat(21).as_str()] {
+        assert_eq!(LocaleTag::parse(locale), Err(DomainError::InvalidLocale));
+    }
+}
+
+#[test]
+fn organization_patch_updates_only_material_fields_and_enforces_revision() -> Result<(), DomainError>
+{
+    let mut organization = organization()?;
+    let unchanged = organization.apply_patch(Revision::INITIAL, OrganizationPatch::default())?;
+    assert!(unchanged.is_empty());
+    assert_eq!(organization.revision(), Revision::INITIAL);
+    let changed = organization.apply_patch(
+        Revision::INITIAL,
+        OrganizationPatch {
+            name: Some(DisplayName::parse("Café Renovado")?),
+            status: Some(OrganizationStatus::Inactive),
+            inventory_negative_stock_policy: Some(InventoryNegativeStockPolicy::AllowNegative),
+            ..OrganizationPatch::default()
+        },
+    )?;
+    assert_eq!(
+        changed.as_slice(),
+        ["name", "status", "inventoryNegativeStockPolicy"]
+    );
+    assert_eq!(organization.revision().value(), 1);
+    assert!(!organization.is_active());
+    assert_eq!(
+        organization.apply_patch(Revision::INITIAL, OrganizationPatch::default()),
+        Err(DomainError::VersionMismatch)
+    );
+    Ok(())
+}
+
+#[test]
+fn branch_inherits_timezone_and_cannot_change_owner_or_code() -> Result<(), DomainError> {
+    let organization = organization()?;
+    let inherited = organization.timezone().clone();
+    let mut branch = Branch::create(
+        BranchId::new(Uuid::from_u128(1)),
+        organization.id(),
+        DisplayName::parse("  Sucursal Centro ")?,
+        BusinessCode::parse("centro")?,
+        None,
+    );
+    assert_eq!(branch.organization_id(), organization.id());
+    assert_eq!(branch.code().as_str(), "centro");
+    assert_eq!(
+        branch.effective_timezone(&inherited).as_str(),
+        "America/Mexico_City"
+    );
+    assert_eq!(branch.status(), BranchStatus::Active);
+    let no_change = branch.apply_patch(Revision::INITIAL, BranchPatch::default())?;
+    assert!(no_change.is_empty());
+    let override_timezone = IanaTimezone::parse("America/Argentina/Buenos_Aires")?;
+    let changed = branch.apply_patch(
+        Revision::INITIAL,
+        BranchPatch {
+            timezone: TimezonePatch::Set(override_timezone.clone()),
+            status: Some(BranchStatus::Inactive),
+            ..BranchPatch::default()
+        },
+    )?;
+    assert_eq!(changed.as_slice(), ["timezone", "status"]);
+    assert_eq!(branch.effective_timezone(&inherited), &override_timezone);
+    assert_eq!(branch.revision().value(), 1);
+    let cleared = branch.apply_patch(
+        Revision::new(1),
+        BranchPatch {
+            timezone: TimezonePatch::ClearToInherited,
+            ..BranchPatch::default()
+        },
+    )?;
+    assert_eq!(cleared.as_slice(), ["timezone"]);
+    assert_eq!(branch.effective_timezone(&inherited), &inherited);
+    assert_eq!(
+        branch.apply_patch(Revision::INITIAL, BranchPatch::default()),
+        Err(DomainError::VersionMismatch)
     );
     Ok(())
 }
