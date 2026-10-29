@@ -7,6 +7,8 @@ use std::fmt;
 
 /// Foundation pura de auditoría Local, independiente de DDL y adaptadores.
 pub mod audit;
+/// Cajas y turnos de caja, con recuperación explícita y sin persistencia.
+pub mod cash;
 /// Catálogo organizacional: categorías, productos y modificadores, sin persistencia.
 pub mod catalog;
 /// Identidad, credenciales y sesiones Locales, sin secretos en sus APIs públicas.
@@ -190,6 +192,8 @@ impl std::error::Error for MoneyError {}
 
 #[cfg(test)]
 mod audit_tests;
+#[cfg(test)]
+mod cash_tests;
 #[cfg(test)]
 mod catalog_tests;
 #[cfg(test)]
