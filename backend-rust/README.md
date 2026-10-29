@@ -33,7 +33,7 @@ flowchart TD
     Storage --> DB[(SQLite local: subconjunto STRICT)]
     Lab[migration-lab: fixtures y evidencias] --> Storage
     Lab --> Roots[Roots SQLx Local / Central / Control]
-    Core[pos-core: MoneyMinor y Currency sin infraestructura]
+    Core[pos-core: MoneyMinor, Quantity y Currency sin infraestructura]
     Java[backend Java: autoridad AS-IS conservada] --> PG[(PostgreSQL 17 / Flyway)]
     React[frontend React existente] --> Java
 ```
@@ -138,7 +138,15 @@ no cero. Un checkpoint **no es un backup**.
 **primitivo**, no el importador Java, convierte strings decimales solo si la
 fracción es representable exactamente; no redondea `19.995` a centavos. La escala
 es un argumento, no una política fiscal aprobada. `Currency` valida sintaxis,
-no el catálogo ISO. Quantity, DecimalExact general y rounding quedan pendientes.
+no el catálogo ISO.
+
+`Quantity` es una primitiva de dominio sin infraestructura para el contrato ya
+vigente `NUMERIC(19,6)`: conserva micro-unidades en `i128`, valida rango y
+conversión decimal sin redondear, y serializa seis decimales canónicos. Cero es
+un valor explícito, nunca una ausencia. No fija la política candidata MWAC-DEC1,
+reglas de cantidad positiva, unidad discreta, valoración ni causalidad; esas
+reglas siguen en sus agregados/contratos pendientes. `DecimalExact` general y
+rounding versionado siguen pendientes.
 
 ## Dependencias importantes
 

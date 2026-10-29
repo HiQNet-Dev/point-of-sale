@@ -1,4 +1,4 @@
-use super::{Currency, MoneyError, MoneyMinor};
+use super::{Currency, MoneyError, MoneyMinor, Quantity, QuantityError};
 
 #[test]
 fn currency_normalizes_ascii_letters_without_claiming_iso_membership() -> Result<(), MoneyError> {
@@ -144,6 +144,68 @@ fn decimal_import_handles_leading_zeroes_without_intermediate_overflow() -> Resu
         )?
         .amount(),
         123
+    );
+    Ok(())
+}
+
+#[test]
+fn quantity_preserves_exact_six_decimal_values_and_canonicalizes_output()
+-> Result<(), QuantityError> {
+    for (input, micros, canonical) in [
+        ("0", 0, "0.000000"),
+        ("+001.2500000", 1_250_000, "1.250000"),
+        ("-0.000001", -1, "-0.000001"),
+        (
+            "9999999999999.999999",
+            9_999_999_999_999_999_999,
+            "9999999999999.999999",
+        ),
+    ] {
+        let quantity = Quantity::from_decimal_str(input)?;
+        assert_eq!(quantity.micros(), micros);
+        assert_eq!(quantity.to_canonical_string(), canonical);
+    }
+    Ok(())
+}
+
+#[test]
+fn quantity_rejects_lossy_values_invalid_syntax_and_out_of_range_values() {
+    for input in ["1.0000001", "-0.0000001"] {
+        assert_eq!(
+            Quantity::from_decimal_str(input),
+            Err(QuantityError::NonRepresentableFraction)
+        );
+    }
+    for input in ["", "+", "1.", ".1", "1e2", "1,0", " 1", "١", "--1"] {
+        assert_eq!(
+            Quantity::from_decimal_str(input),
+            Err(QuantityError::InvalidDecimal),
+            "entrada {input:?}"
+        );
+    }
+    for input in ["10000000000000", "-10000000000000"] {
+        assert_eq!(
+            Quantity::from_decimal_str(input),
+            Err(QuantityError::OutOfRange)
+        );
+    }
+}
+
+#[test]
+fn quantity_operations_are_checked_and_do_not_treat_zero_as_absent() -> Result<(), QuantityError> {
+    let one = Quantity::from_decimal_str("1")?;
+    let fraction = Quantity::from_decimal_str("0.000001")?;
+    let zero = Quantity::from_decimal_str("0")?;
+    assert_eq!(one.checked_sub(fraction)?.to_canonical_string(), "0.999999");
+    assert_eq!(
+        zero.checked_add(fraction)?.to_canonical_string(),
+        "0.000001"
+    );
+    assert!(zero.is_zero());
+    assert!(Quantity::from_decimal_str("-0.000001")?.is_negative());
+    assert_eq!(
+        Quantity::from_micros(Quantity::MAX_MICROS)?.checked_add(fraction),
+        Err(QuantityError::OutOfRange)
     );
     Ok(())
 }
