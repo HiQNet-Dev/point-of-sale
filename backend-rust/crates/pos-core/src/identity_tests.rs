@@ -11,8 +11,8 @@ use crate::{
         AuthorizationError, CredentialAlgorithm, CredentialKind, CredentialParameters,
         CredentialState, IdentityError, LocalCredential, LocalIdentityRepository,
         LocalPrincipalService, LocalSession, LocalSessionState, LockoutPolicy, NewCredential,
-        NormalizedEmail, PermissionAuthority, PermissionCode, PosUser, PosUserPatch, PosUserStatus,
-        PrincipalScope, SecretHash, SessionHash, UtcSeconds,
+        NormalizedEmail, PERMISSION_CATALOG, PermissionAuthority, PermissionCode, PosUser,
+        PosUserPatch, PosUserStatus, PrincipalScope, SecretHash, SessionHash, UtcSeconds,
     },
     organization_branch::{DisplayName, EntityId},
 };
@@ -56,6 +56,36 @@ fn credential() -> LocalCredential {
 }
 fn permission(value: &str) -> PermissionCode {
     PermissionCode::new(value).unwrap_or_else(|error| panic!("permission: {error}"))
+}
+
+#[test]
+fn permission_catalog_matches_the_java_catalog_and_parses_identically() {
+    assert_eq!(PERMISSION_CATALOG.len(), 59);
+    let mut seen = BTreeSet::new();
+    for code in PERMISSION_CATALOG {
+        let parsed =
+            PermissionCode::new(code).unwrap_or_else(|error| panic!("código {code}: {error}"));
+        assert_eq!(parsed.as_str(), code);
+        assert!(seen.insert(code), "código duplicado: {code}");
+    }
+    assert!(PermissionCode::new("cash-register.read").is_ok());
+    assert!(PermissionCode::new("purchasing.order.write").is_ok());
+    assert_eq!(
+        PermissionCode::new("Cash.register"),
+        Err(IdentityError::InvalidPermission)
+    );
+    assert_eq!(
+        PermissionCode::new("organization..read"),
+        Err(IdentityError::InvalidPermission)
+    );
+    assert_eq!(
+        PermissionCode::new("organization.read."),
+        Err(IdentityError::InvalidPermission)
+    );
+    assert_eq!(
+        PermissionCode::new("organization read"),
+        Err(IdentityError::InvalidPermission)
+    );
 }
 
 #[test]

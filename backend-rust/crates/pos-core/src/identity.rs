@@ -955,13 +955,19 @@ impl LocalSession {
 pub struct PermissionCode(String);
 impl PermissionCode {
     /// Acepta códigos técnicos ASCII separados por puntos, sin wildcard.
+    ///
+    /// El catálogo Java (V5–V25) usa letras minúsculas, dígitos, `_` y `-` en
+    /// cada segmento (`cash-register.read`, `purchasing.order.write`).
     pub fn new(value: &str) -> Result<Self, IdentityError> {
         if value.is_empty()
             || value.len() > 64
             || value.split('.').any(|part| {
                 part.is_empty()
                     || !part.bytes().all(|byte| {
-                        byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'
+                        byte.is_ascii_lowercase()
+                            || byte.is_ascii_digit()
+                            || byte == b'_'
+                            || byte == b'-'
                     })
             })
         {
@@ -974,6 +980,72 @@ impl PermissionCode {
         &self.0
     }
 }
+
+/// Catálogo canónico de permisos del backend Java (V5–V25), 59 códigos.
+///
+/// No concede nada por sí mismo: es la lista que la migración Local debe sembrar
+/// y que el dominio usa para validar el mismo lenguaje que SQLite.
+pub const PERMISSION_CATALOG: [&str; 59] = [
+    "organization.read",
+    "organization.update",
+    "branch.create",
+    "branch.read",
+    "branch.update",
+    "branch.membership.create",
+    "branch.membership.read",
+    "branch.membership.roles.manage",
+    "branch.membership.update",
+    "user.create",
+    "user.read",
+    "user.update",
+    "role.assign",
+    "role.create",
+    "role.permissions.manage",
+    "role.read",
+    "role.update",
+    "permission.read",
+    "audit.read",
+    "category.create",
+    "category.read",
+    "category.update",
+    "product.create",
+    "product.modifiers.manage",
+    "product.read",
+    "product.update",
+    "modifier.group.create",
+    "modifier.group.read",
+    "modifier.group.update",
+    "modifier.option.create",
+    "modifier.option.read",
+    "modifier.option.update",
+    "cash-register.create",
+    "cash-register.read",
+    "cash-register.update",
+    "cash-shift.close",
+    "cash-shift.open",
+    "cash-shift.read",
+    "sale.cancel",
+    "sale.checkout",
+    "sale.create",
+    "sale.read",
+    "sale.update",
+    "payment.read",
+    "pos.catalog.read",
+    "inventory.item.read",
+    "inventory.item.write",
+    "inventory.recipe.read",
+    "inventory.recipe.write",
+    "inventory.stock.adjust",
+    "inventory.stock.read",
+    "purchasing.order.cancel",
+    "purchasing.order.issue",
+    "purchasing.order.read",
+    "purchasing.order.write",
+    "purchasing.receipt.read",
+    "purchasing.receipt.write",
+    "purchasing.supplier.read",
+    "purchasing.supplier.write",
+];
 
 /// Modo de evaluación de un scope de sucursal.
 ///
