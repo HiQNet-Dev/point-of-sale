@@ -49,6 +49,8 @@ pub enum AuditError {
     InvalidReason,
     /// La fecha no es un instante UTC RFC 3339 acotado.
     InvalidOccurredAt,
+    /// La versión del contrato del evento debe ser positiva.
+    InvalidEventVersion,
 }
 
 impl fmt::Display for AuditError {
@@ -63,6 +65,7 @@ impl fmt::Display for AuditError {
             Self::InvalidEntityType => "el tipo de entidad de auditoría no es válido",
             Self::InvalidReason => "la razón de auditoría no es válida",
             Self::InvalidOccurredAt => "la fecha de auditoría no es UTC RFC 3339 válida",
+            Self::InvalidEventVersion => "la versión del evento de auditoría debe ser positiva",
         })
     }
 }
@@ -86,46 +89,62 @@ impl AuditEventId {
 }
 
 /// Actor explícito del hecho auditado.
+///
+/// Sus campos son privados: solo la frontera de identidad dentro de `pos-core`
+/// puede construir USER/SYSTEM. Los transportes no deben deserializar este tipo.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum AuditActor {
-    /// Principal humano autenticado y atribuible a un usuario Local.
-    User {
-        /// Identidad del usuario atribuida por el futuro adaptador de Auth.
-        user_id: EntityId,
-    },
-    /// Camino interno autorizado, sin usuario técnico artificial.
-    System {
-        /// Procedencia controlada que justificó el actor SYSTEM.
-        provenance: SystemProvenance,
-    },
+pub struct AuditActor {
+    actor_type: AuditActorType,
+    user_id: Option<EntityId>,
+    provenance: Option<SystemProvenance>,
 }
 
 impl AuditActor {
-    /// Construye un actor USER previamente verificado por la frontera de Auth.
-    pub fn user(user_id: EntityId) -> Self {
-        Self::User { user_id }
+    /// Construye un actor USER después de validar principal, sesión y scope.
+    pub(crate) fn user(user_id: EntityId) -> Self {
+        Self {
+            actor_type: AuditActorType::User,
+            user_id: Some(user_id),
+            provenance: None,
+        }
     }
 
     /// Construye un actor SYSTEM exclusivamente para un camino interno explícito.
-    pub fn system(provenance: SystemProvenance) -> Self {
-        Self::System { provenance }
+    #[allow(dead_code)]
+    pub(crate) fn system(provenance: SystemProvenance) -> Self {
+        Self {
+            actor_type: AuditActorType::System,
+            user_id: None,
+            provenance: Some(provenance),
+        }
     }
 
     /// Indica si el actor requiere una FK futura contra el usuario Local.
     pub fn user_id(&self) -> Option<&EntityId> {
-        match self {
-            Self::User { user_id } => Some(user_id),
-            Self::System { .. } => None,
-        }
+        self.user_id.as_ref()
     }
 
     /// Etiqueta cerrada para la futura constraint física.
     pub fn actor_type(&self) -> &'static str {
-        match self {
-            Self::User { .. } => "USER",
-            Self::System { .. } => "SYSTEM",
+        match self.actor_type {
+            AuditActorType::User => "USER",
+            AuditActorType::System => "SYSTEM",
         }
     }
+
+    /// Devuelve la procedencia solo para un camino SYSTEM atribuido internamente.
+    pub fn system_provenance(&self) -> Option<SystemProvenance> {
+        self.provenance
+    }
+}
+
+/// Tipo cerrado del actor que tendrá una constraint física equivalente.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AuditActorType {
+    /// Actor autenticado y atribuible.
+    User,
+    /// Camino interno explícito, sin usuario técnico artificial.
+    System,
 }
 
 /// Procedencia autorizada de un evento SYSTEM.
@@ -313,21 +332,44 @@ impl fmt::Display for AuditAttributionError {
 
 impl std::error::Error for AuditAttributionError {}
 
-/// Puerto futuro de atribución central, enlazado a Auth/RBAC DB-authoritative.
-///
-/// El adaptador deberá recibir la identidad desde una sesión verificada, comprobar
-/// membership, permiso y estado actual en el mismo límite de consistencia de la
-/// operación, y fallar cerrado. `local_session_id` no forma parte aún de este
-/// contrato: su FK, lifecycle y obligatoriedad continúan pendientes de aprobación.
-pub trait AuditActorResolver {
-    /// Resuelve un actor para el scope de la operación sin aceptar datos del cliente.
-    fn resolve_actor(&self, scope: &AuditScope) -> Result<AuditActor, AuditAttributionError>;
-}
+// La atribución de actores no se expone como puerto de este módulo.
+//
+// `identity::LocalPrincipalService` valida sesión, usuario vigente y permisos
+// DB-authoritative, y entrega un `VerifiedPrincipal`; solo ese principal, con
+// campos privados, puede derivar un `AuditActor`. Un trait público que devolviera
+// `AuditActor` permitiría a un adaptador externo fabricar atribución sin
+// verificación, por lo que se retiró en 1F. `session_id` es un candidato físico:
+// su FK, lifecycle y obligatoriedad dependen de la aprobación del esquema Local.
 
 /// Reloj inyectable para sellar un hecho después de que Auth haya atribuido el actor.
 pub trait AuditClock {
     /// Devuelve un instante UTC válido o falla antes de abrir/confirmar la UoW.
     fn now(&self) -> Result<AuditOccurredAt, AuditError>;
+}
+
+/// Versión del contrato serializado del evento de auditoría.
+///
+/// La versión inicial canónica es `1`; un cambio de forma futuro debe añadir una
+/// versión compatible, no reinterpretar silenciosamente hechos existentes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AuditEventVersion(u32);
+
+impl AuditEventVersion {
+    /// Versión inicial aprobable del contrato.
+    pub const INITIAL: Self = Self(1);
+
+    /// Construye una versión positiva de contrato.
+    pub fn new(value: u32) -> Result<Self, AuditError> {
+        if value == 0 {
+            return Err(AuditError::InvalidEventVersion);
+        }
+        Ok(Self(value))
+    }
+
+    /// Entero que el futuro DDL almacenará como `INTEGER NOT NULL`.
+    pub fn get(self) -> u32 {
+        self.0
+    }
 }
 
 /// Hecho de auditoría completo, inmutable y aún independiente del esquema Local.
@@ -349,10 +391,14 @@ pub struct AuditEventRecord {
     pub entity_id: Option<EntityId>,
     /// Razón opcional.
     pub reason: Option<AuditReason>,
-    /// Contexto seguro; vacía equivale a ausencia persistida.
-    pub metadata: AuditMetadata,
+    /// Sesión Local opcional; reemplaza conceptualmente el `token_jti` Java.
+    pub session_id: Option<EntityId>,
+    /// Contexto JSON canónico seguro; vacía equivale a ausencia persistida.
+    pub metadata_json: AuditMetadata,
     /// Instante UTC entregado por un reloj inyectado.
     pub occurred_at: AuditOccurredAt,
+    /// Versión del contrato de este hecho; inicia en `1`.
+    pub event_version: AuditEventVersion,
 }
 
 fn validate_metadata_value(value: &Value, depth: usize) -> Result<(), AuditError> {

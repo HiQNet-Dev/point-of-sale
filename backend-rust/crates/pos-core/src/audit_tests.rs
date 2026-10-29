@@ -6,8 +6,8 @@ use serde_json::{Map, Value, json};
 use crate::{
     audit::{
         AuditAction, AuditActor, AuditEntityType, AuditError, AuditEventId, AuditEventRecord,
-        AuditMetadata, AuditOccurredAt, AuditReason, MAX_METADATA_SERIALIZED_BYTES,
-        SystemProvenance,
+        AuditEventVersion, AuditMetadata, AuditOccurredAt, AuditReason,
+        MAX_METADATA_SERIALIZED_BYTES, SystemProvenance,
     },
     organization_branch::EntityId,
 };
@@ -102,10 +102,12 @@ fn event_requires_explicit_actor_identifiers_and_utc_timestamp() {
             AuditReason::new("corrección validada")
                 .unwrap_or_else(|error| panic!("reason: {error}")),
         ),
-        metadata: AuditMetadata::new(json!({ "changedFields": ["name"] }))
+        session_id: Some(id("00000000-0000-0000-0000-000000000004")),
+        metadata_json: AuditMetadata::new(json!({ "changedFields": ["name"] }))
             .unwrap_or_else(|error| panic!("metadata: {error}")),
         occurred_at: AuditOccurredAt::new("2026-10-29T14:35:12.123Z")
             .unwrap_or_else(|error| panic!("timestamp: {error}")),
+        event_version: AuditEventVersion::INITIAL,
     };
 
     assert_eq!(event.actor.actor_type(), "USER");
@@ -113,6 +115,11 @@ fn event_requires_explicit_actor_identifiers_and_utc_timestamp() {
     assert_eq!(
         AuditActor::system(SystemProvenance::SecureBootstrap).user_id(),
         None
+    );
+    assert_eq!(event.event_version.get(), 1);
+    assert_eq!(
+        AuditEventVersion::new(0),
+        Err(AuditError::InvalidEventVersion)
     );
     assert!(AuditAction::new("Organization.updated").is_ok());
     assert_eq!(AuditAction::new(" \t\n"), Err(AuditError::InvalidAction));
