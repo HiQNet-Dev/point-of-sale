@@ -885,6 +885,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "pos-lab"
+version = "0.1.0"
+dependencies = [
+ "pos-application",
+ "pos-core",
+ "pos-storage-sqlite",
+ "serde_json",
+ "sqlx",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "pos-local"
 version = "0.1.0"
 dependencies = [

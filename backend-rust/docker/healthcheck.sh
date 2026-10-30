@@ -1,14 +1,12 @@
 #!/bin/sh
-# Smoke check del contenedor Local: el archivo SQLite existe y tiene contenido,
-# lo que implica que `open` y `migrate` completaron. No sustituye a un servicio
-# de salud: `pos-local` no expone red y no debe exponerla en Free Local.
+# Healthcheck funcional del contenedor Local.
+#
+# No se limita a comprobar la existencia del archivo: `pos-local --health` abre
+# SQLite, valida `PRAGMA integrity_check` y exige al menos una migración aplicada
+# en `_sqlx_migrations`. Nunca crea la base: un volumen vacío es un fallo.
+#
+# No sustituye a un servicio de salud de red: `pos-local` no expone HTTP y la
+# distribución Free Local no debe exponerlo.
 set -eu
 
-db="${POS_LOCAL_DB_PATH:-/data/pos.sqlite}"
-
-if [ ! -s "$db" ]; then
-    echo "sqlite no inicializado en $db" >&2
-    exit 1
-fi
-
-exit 0
+exec /usr/local/bin/pos-local --health

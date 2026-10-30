@@ -16,7 +16,7 @@ COPY apps ./apps
 COPY tools ./tools
 COPY migrations ./migrations
 
-RUN cargo build --locked --release -p pos-local
+RUN cargo build --locked --release -p pos-local -p pos-lab
 
 FROM debian:bookworm-slim AS runtime
 
@@ -27,8 +27,9 @@ RUN groupadd --system --gid 10001 pos \
     && chmod 0700 /data
 
 COPY --from=builder /src/target/release/pos-local /usr/local/bin/pos-local
+COPY --from=builder /src/target/release/pos-lab /usr/local/bin/pos-lab
 COPY docker/healthcheck.sh /usr/local/bin/pos-local-health
-RUN chmod 0555 /usr/local/bin/pos-local-health /usr/local/bin/pos-local
+RUN chmod 0555 /usr/local/bin/pos-local-health /usr/local/bin/pos-local /usr/local/bin/pos-lab
 
 USER 10001:10001
 

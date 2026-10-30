@@ -27,6 +27,10 @@ pub enum StorageError {
     /// El checkpoint no pudo completarse; el cierre no debe ocultar este resultado.
     #[error("checkpoint SQLite ocupado o incompleto")]
     Checkpoint,
+    /// El archivo existe pero no supera la comprobación de integridad o no tiene
+    /// migraciones aplicadas; lo usa el healthcheck del contenedor.
+    #[error("estado SQLite no saludable")]
+    Unhealthy,
 }
 
 /// Abre un archivo local con un único slot de escritura por proceso.
@@ -116,6 +120,26 @@ pub async fn migrate(pool: &SqlitePool) -> Result<(), StorageError> {
         .run(pool)
         .await
         .map_err(|_| StorageError::Migration)
+}
+
+/// Comprueba integridad y migraciones aplicadas para el healthcheck del proceso.
+///
+/// Es una lectura: no crea el archivo, no migra y no escribe. Un volumen vacío
+/// o un archivo corrupto devuelven [`StorageError::Unhealthy`].
+pub async fn verify_health(pool: &SqlitePool) -> Result<(), StorageError> {
+    let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
+        .fetch_one(pool)
+        .await
+        .map_err(|_| StorageError::Database)?;
+    let applied: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM _sqlx_migrations WHERE success = 1")
+            .fetch_one(pool)
+            .await
+            .map_err(|_| StorageError::Database)?;
+    if integrity != "ok" || applied <= 0 {
+        return Err(StorageError::Unhealthy);
+    }
+    Ok(())
 }
 
 /// Solicita checkpoint después de drenar operaciones; no constituye un backup.

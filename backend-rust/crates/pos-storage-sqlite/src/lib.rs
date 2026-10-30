@@ -31,7 +31,7 @@ mod prelude;
 pub mod sales;
 mod transaction;
 
-pub use connection::{StorageError, checkpoint, migrate, open};
+pub use connection::{StorageError, checkpoint, migrate, open, verify_health};
 pub use organization_branch::{
     OrganizationBranchStorageError, SqliteBranchApplication, SqliteOrganizationApplication,
     SqliteOrganizationBranchStore,

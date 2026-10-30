@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/pos-core", "crates/pos-application", "crates/pos-credentials", "crates/pos-storage-sqlite", "apps/pos-local", "tools/migration-lab"]
+members = ["crates/pos-core", "crates/pos-application", "crates/pos-credentials", "crates/pos-storage-sqlite", "apps/pos-local", "tools/migration-lab", "tools/pos-lab"]
 resolver = "3"
 
 [workspace.package]

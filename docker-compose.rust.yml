@@ -2,14 +2,23 @@
 #
 # Separado de `docker-compose.yml` (stack Java/PostgreSQL). No expone puertos:
 # `pos-local` no publica HTTP y la distribución Free Local no debe exponer
-# servicios. Sirve para compilar, arrancar, reiniciar y comprobar persistencia
-# de la migración aprobada `0001`.
+# servicios.
 #
-# Uso:
+# # Servicios
+#
+# - `pos-local`: proceso real, migración aprobada `0001`, healthcheck funcional
+#   (`PRAGMA integrity_check` + migraciones aplicadas).
+# - `pos-lab`: arnés sintético bajo el perfil `smoke`. Aplica `0001` y las
+#   propuestas candidatas `0002`–`0015` sobre un volumen propio y ejecuta el
+#   flujo completo. **No es productivo** y no usa el volumen de `pos-local`.
+#
+# # Uso
+#
 #   docker compose -f docker-compose.rust.yml build
 #   docker compose -f docker-compose.rust.yml up -d
 #   docker compose -f docker-compose.rust.yml ps
 #   docker compose -f docker-compose.rust.yml logs
+#   docker compose -f docker-compose.rust.yml --profile smoke run --rm pos-lab
 #   docker compose -f docker-compose.rust.yml down
 
 name: hiqnet-pos-rust
@@ -40,5 +49,24 @@ services:
       retries: 3
       start_period: 5s
 
+  # Arnés sintético: mismo binario y mismos adaptadores, esquema candidato
+  # explícito. Bajo perfil para que `up` no lo ejecute por accidente.
+  pos-lab:
+    build:
+      context: ./backend-rust
+      dockerfile: Dockerfile
+    image: hiqnet-pos-local:dev
+    profiles: ["smoke"]
+    entrypoint: ["/usr/local/bin/pos-lab"]
+    command: ["--database", "/data/lab.sqlite"]
+    volumes:
+      - pos-lab-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
 volumes:
   pos-local-data:
+  pos-lab-data:
