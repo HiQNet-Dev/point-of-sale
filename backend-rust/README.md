@@ -138,8 +138,19 @@ no cero. Un checkpoint **no es un backup**.
   contrato fail-closed. `pos-core::identity` añade User/Credential/Session,
   principal con scope contextual (`authorize(permiso, scope)`) y puertos
   DB-authoritative asíncronos; `pos-credentials` concentra verificación BCrypt,
-  Argon2id y handles opacos. SQLite prueba ambas foundations mediante fixtures
-  aisladas y adaptadores de laboratorio (`identity_lab`, `credential_lab`). No hay
+  Argon2id y handles opacos. `pos-core::catalog` aporta las reglas puras de
+  categorías, productos y modificadores (códigos, SKU, importes exactos, estados
+  derivados y plan de reasignación), `pos-core::cash` las de cajas y turnos
+  (scope de sucursal, apertura/cierre, recuperación y no idempotencia),
+  `pos-core::inventory` las de artículos, cantidades exactas, unidad base
+  bloqueable, saldos con CAS y ledger tipado, `pos-core::purchasing` el ciclo
+  de vida de órdenes de compra y sus recepciones, `pos-core::supplier` los datos
+  maestros de proveedor con su snapshot, `pos-core::recipe` recetas, efectos de
+  modificador y resolución de consumo, y `pos-core::sales` el ciclo de vida de la
+  venta, los pagos y la cotización de modificadores, sin persistencia. SQLite
+  prueba las
+  foundations de seguridad mediante fixtures aisladas y adaptadores de
+  laboratorio (`identity_lab`, `credential_lab`). No hay
   writer ni auditoría productiva, autenticación/RBAC DB-authoritative concreta,
   sesiones productivas, importador, checkout, outbox ni cifrado de backups. Las
   tablas actuales no habilitan operar en producción. Las fichas Local siguen
@@ -201,6 +212,9 @@ No ejecutar down migrations sobre bases reales.
 - [CAS obligatorio y sección crítica mínima 1H.1](../docs/05-development/rust-increment-1h1.md).
 - [Cierre criptográfico y propuestas físicas 1H.2](../docs/05-development/rust-increment-1h2.md).
 - [Preparación del esquema físico 1I](../docs/05-development/rust-increment-1i-prep.md).
+- [Dominio de catálogo y primer arranque 1J](../docs/05-development/rust-increment-1j.md).
+- [Tablero maestro de migración](../docs/05-development/rust-migration-board.md).
+- [Expediente de aprobación 1I](../docs/05-development/rust-1i-approval-decision-record.md).
 - [Especificación real del lab y artefactos](tools/migration-lab/README.md).
 - [ADR-0020](../docs/01-architecture/adr/0020-rust-foundation-sqlx-migration-boundary.md).
 - [CI y gate normativo obligatorio](../docs/05-development/ci.md).

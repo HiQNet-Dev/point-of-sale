@@ -1,0 +1,365 @@
+# Incremento 1J — Dominio de catálogo, cajas, turnos, inventario, compras y ventas
+
+**Estado: DOMINIO IMPLEMENTADO Y PROBADO. Sin DDL productivo de catálogo.**
+
+Rama: `feat/backend/rust-catalog-domain-1j`, apilada sobre
+`feat/backend/rust-increment-1i-prep` (`f41ad54e`). No se modificó `dev`, `main`,
+`migrations/local/0001_organization_branch.sql` ni el Design Freeze.
+
+## 1. Preflight
+
+| Elemento | Estado observado |
+| --- | --- |
+| Worktree | Limpio; sin cambios ajenos |
+| Rama base | `feat/backend/rust-increment-1i-prep` alineada con `origin` |
+| HEAD base | `f41ad54e` (coincide con la referencia del encargo) |
+| PR vigentes | #64, #65, #66 y #67 en Draft, apilados |
+| `dev` / `main` | `329c0984` / `c290f518`, intactos |
+| Toolchain | Rust estable del workspace; `Cargo.lock` respetado (`--locked`) |
+| Linux/WSL2 + PostgreSQL 17 | No disponibles en este entorno; no se ejecutó el Migration Lab |
+
+## 2. Alcance ejecutado y por qué
+
+El paquete **D-AUTH-01..08, D-AUTH-10, D-AUTH-11, D-INST-01, D-INST-02** y
+ADR-0022 sigue sin aceptación formal del titular. Ese bloqueo impide promover
+`0002`–`0007` a `migrations/local`, no impide avanzar en trabajo independiente.
+
+Este incremento ejecuta los **frentes independientes A, B, C, D y E** del programa
+maestro: reglas puras de catálogo, cajas, turnos, inventario, compras y ventas,
+sin persistencia ni DDL.
+
+```mermaid
+graph TD
+    A[Catálogo: dominio puro] --> B[Casos de uso]
+    A --> C[Migración SQLite de catálogo]
+    B --> D[API HTTP]
+    C --> E[DDL aprobado]
+    E --> D
+    D --> F[React]
+```
+
+El dominio ya está listo; las tres cajas restantes dependen de decisiones
+físicas y de contrato HTTP todavía abiertas.
+
+## 3. Componentes Rust añadidos
+
+`pos-core::catalog` (nuevo módulo, sin dependencias de SQLx, Axum ni Tauri).
+
+| Tipo | Responsabilidad | Regla principal |
+| --- | --- | --- |
+| `CatalogCode` | Código de categoría, grupo y opción | `java_trim` + minúsculas ASCII + `^[a-z0-9]+(-[a-z0-9]+)*$`, ≤64 UTF-16, inmutable |
+| `Sku` | Identificador de negocio del producto | `java_trim` + mayúsculas + `^[A-Z0-9._-]{1,64}$`, inmutable |
+| `Barcode` | Código de barras opcional | Conserva ceros iniciales; blanco → `None`; ≤64 UTF-16 |
+| `Description` | Descripción opcional | Blanco → `None`; ≤1000 UTF-16 |
+| `Decimal4` | Decimal exacto escala 4 | Sin coma flotante; ≤4 decimales; ≤15 dígitos enteros significativos |
+| `UnitPrice` | Precio base | `Decimal4` no negativo |
+| `PriceDelta` | Delta de modificador | `Decimal4` firmado (descuento, cero o recargo) |
+| `PatchField<T>` | Semántica de patch | Distingue ausente, limpieza explícita y valor nuevo |
+| `Category` | Categoría organizacional | Estado `ACTIVE`/`INACTIVE`, revisión optimista, sin borrado físico |
+| `Product` | Producto con precio base | Categoría activa y de la misma organización; SKU inmutable |
+| `ModifierGroup` | Grupo reutilizable | `max ≥ 1`, `min ≤ max`; semánticos derivados |
+| `ModifierOption` | Opción del grupo | Organización derivada del grupo; delta firmado |
+| `ModifierReplacement` | Plan de reasignación | Lista idéntica = no-op; identificadores repetidos = error |
+
+Se añadieron además `category_changed_fields`, `product_changed_fields`,
+`modifier_group_changed_fields` y `modifier_option_changed_fields`, que producen
+los nombres de campo (`name`, `status`, `unitPrice`, `categoryId`, `selections`,
+`priceDelta`, `displayOrder`) usados por la metadata de auditoría Java.
+
+## 4. Paridad con el agregado Java
+
+| Regla | Java (`catalog/domain/*`) | Rust (`pos-core::catalog`) |
+| --- | --- | --- |
+| Normalización de `code` | `trim().toLowerCase(Locale.ROOT)` en el servicio | `java_trim` + minúsculas ASCII |
+| Gramática de `code` | `^[a-z0-9]+(-[a-z0-9]+)*$`, ≤64 | Idéntica |
+| Normalización de `sku` | `trim().toUpperCase(Locale.ROOT)` | `java_trim` + mayúsculas Unicode |
+| Gramática de `sku` | `^[A-Z0-9._-]{1,64}$` | Idéntica |
+| `barcode` | `trim`, blanco → `null`, ≤64 | Idéntico, sin parsing GS1 |
+| `description` | `trim`, blanco → `null`, ≤1000 | Idéntico |
+| `unitPrice` | `signum() >= 0`, escala ≤4, entero ≤15 | `UnitPrice` (no negativo) + `Decimal4` |
+| `priceDelta` | Firmado, escala ≤4, entero ≤15 | `PriceDelta` (firmado) + `Decimal4` |
+| `minSelections` | `>= 0` | `u32` |
+| `maxSelections` | `>= 1` | `u32` + validación `>= 1` |
+| `min <= max` | Validado en el agregado | `validate_selections` |
+| `required`/`single`/`multi` | Derivados, nunca almacenados | `is_required`, `is_single_choice`, `is_multiple_choice` |
+| Revisión | `@Version` inicial `0` | `revision` inicial `0`, avance solo con cambio material |
+| No-op | Sin mutación ni auditoría | El patch devuelve `false` y no incrementa la revisión |
+| CATEGORÍA inactiva | `409 CATEGORY_INACTIVE` | `CatalogError::CategoryInactive` |
+| Categoría de otra organización | `404` (sin filtrar existencia) | `CatalogError::OwnershipMismatch` |
+| Reemplazo de modificadores | Duplicados `400`; lista idéntica no-op | `DuplicateModifierGroup` / `ModifierReplacement::Unchanged` |
+
+### 4.1 Divergencias explícitas
+
+| # | Diferencia | Motivo | Impacto |
+| --- | --- | --- | --- |
+| D1 | La notación científica (`1E3`) se rechaza | `Decimal4` solo admite forma decimal canónica | Java aceptaría `1E3`; los datos exportados desde PostgreSQL llegan como `1000.0000`, forma aceptada |
+| D2 | `displayOrder` es `u32` | El valor negativo deja de ser representable | El transporte debe convertir con `catalog::display_order(i64)`, que devuelve error tipado |
+| D3 | El rango lógico se guarda en `i128` | `NUMERIC(19,4)` excede el `INTEGER` de SQLite | `Decimal4::as_minor_i64` informa cuándo el valor no cabe; la representación física del catálogo Local sigue pendiente |
+| D4 | Un `code` persistido con mayúsculas se rechaza al rehidratar | El contrato exige el valor canónico | Un adaptador no puede introducir un valor que el dominio no habría aceptado |
+
+Ninguna de estas diferencias se aplicó silenciosamente: todas tienen prueba y
+están registradas aquí. D3 requiere decisión física; D1, D2 y D4 son
+endurecimientos de aceptación documentados.
+
+## 5. Dependencia de arranque: organización → instalación → bootstrap
+
+El encargo pedía descartar una dependencia circular en el primer arranque. La
+revisión de `0002_installation_identity.proposed.sql` y
+`0007_bootstrap_record.proposed.sql` confirma que **no existe ciclo**:
+
+| Paso | Tabla | Requisito | Satisfacción |
+| --- | --- | --- | --- |
+| 1 | `organization` | Sin FK de instalación | Se crea dentro de la transacción de primer arranque |
+| 2 | `installation_identity` | `organization_id NOT NULL → organization(id)` | La organización del paso 1 ya existe |
+| 3 | `bootstrap_record` (`PENDING`) | `installation_id → installation_identity(id)`; `organization_id NULL` | La FK compuesta `(installation_id, organization_id)` no se evalúa con `NULL` |
+| 4 | `pos_user`, `role` | FK compuesta same-org | Se crean en la misma transacción |
+| 5 | `bootstrap_record` (`COMPLETED`) | Organización, administrador y rol no nulos y coherentes | La FK compuesta exige que instalación y organización se pertenezcan |
+| 6 | `audit_event` | Actor `SYSTEM` sin `actor_user_id` ni `session_id` | El bootstrap se audita en el mismo commit |
+
+```mermaid
+sequenceDiagram
+    participant T as BEGIN IMMEDIATE
+    participant O as organization
+    participant I as installation_identity
+    participant B as bootstrap_record
+    participant U as pos_user / role
+    participant A as audit_event
+    T->>O: crear organización inicial
+    T->>I: crear instalación de esa organización
+    T->>B: PENDING (organization_id NULL)
+    T->>U: administrador y rol
+    T->>B: COMPLETED (ownership coherente)
+    T->>A: bootstrap.completed (SYSTEM)
+    T-->>T: COMMIT único
+```
+
+La afirmación "la instalación puede ser PENDING antes de que exista la
+organización" del comentario de `0007` es correcta solo para el **registro** de
+bootstrap, no para la instalación: toda instalación tiene propietario desde su
+inserción. La organización se crea primero, dentro de la misma transacción.
+
+Evidencia (`pos-storage-sqlite/src/proposals_tests.rs`):
+
+| Prueba | Qué demuestra |
+| --- | --- |
+| `first_run_requires_organization_before_installation_and_commits_once` | Insertar la instalación antes de la organización falla; el primer arranque completo (organización, instalación, `PENDING`, administrador, rol, `COMPLETED`, auditoría `SYSTEM`) se confirma en un solo commit y sobrevive a la reapertura |
+| `first_run_rolls_back_everything_when_audit_fails` | Un actor `SYSTEM` con usuario atribuido viola el contrato; el rollback deja las tres tablas en cero |
+
+Ambas pruebas parten de una base genuinamente vacía con `0001` y las propuestas
+aplicadas. No son migraciones del producto ni se cargan desde `pos-local`.
+
+## 6. Frente B: cajas y turnos
+
+`pos-core::cash` (nuevo módulo, sin dependencias de infraestructura).
+
+| Tipo | Responsabilidad | Regla principal |
+| --- | --- | --- |
+| `CashRegister` | Caja de sucursal | Pertenece a la **sucursal**; `code` único por sucursal e inmutable; `ACTIVE`/`INACTIVE` |
+| `NewCashRegister` | Creación | Scope explícito; revisión inicial `0` |
+| `CashRegisterPatch` | Modificación | Solo `name` y `status`; CAS por revisión |
+| `CashShift` | Turno histórico | Estado `OPEN`/`CLOSED`; `OPEN` sin datos de cierre, `CLOSED` con todos |
+| `NewCashShift` | Apertura | Scope derivado de la caja; exige caja activa |
+| `CloseCashShift` | Cierre | Importe declarado, actor autenticado, instante UTC y versión esperada |
+| `ensure_open_allowed` | Política de apertura | Sucursal activa → caja activa → sin turno abierto (orden Java) |
+| `ensure_close_allowed` | Política de cierre | Turno abierto y sin ventas abiertas; **sin** comprobar estado activo |
+
+Reglas preservadas:
+
+- El scope (`organization_id`, `branch_id`) se deriva de la caja y nunca se
+  acepta desde el cliente.
+- El cierre **no** es idempotente: un segundo cierre devuelve
+  `ShiftAlreadyClosed` y no altera el histórico.
+- El cierre funciona aunque la sucursal o la caja se hayan desactivado después
+  de abrir: es el flujo de recuperación que Java autoriza explícitamente.
+- Los importes reutilizan `catalog::UnitPrice` (no negativo, escala 4, máximo
+  `999999999999999.9999`), que coincide con la validación de `CashShift`.
+- El guard de "ventas abiertas" es un puerto de aplicación que debe evaluarse en
+  la misma transacción; el dominio solo expone la regla y el error tipado.
+
+Pruebas nuevas: `pos-core::cash_tests` (10 casos), incluidas la asimetría
+ apertura/cierre, la no idempotencia, el CAS obsoleto, el desbordamiento de
+revisión y el rechazo de filas incoherentes al rehidratar.
+
+## 7. Frente C: inventario
+
+`pos-core::inventory` (nuevo módulo, sin dependencias de infraestructura).
+
+| Tipo | Responsabilidad | Regla principal |
+| --- | --- | --- |
+| `InventoryBaseUnit` | Unidad base | `UNIT`, `GRAM`, `MILLILITER` |
+| `Quantity` | Cantidad exacta | Escala 6, rango `±9999999999999.999999`, solo texto decimal |
+| `MovementReason` | Motivo normalizado | Recorte Java, no vacío, ≤255 UTF-16 |
+| `InventoryItem` | Artículo organizacional | `unit_locked` monótono; cambio de unidad rechazado si está bloqueada |
+| `InventoryItemPatch` | Modificación | Nombre, descripción, unidad, fracciones y estado con CAS |
+| `StockBalance` | Saldo por sucursal | Cero si la fila no existe; delta bajo CAS con rango verificado |
+| `InventoryMovement` | Hecho del ledger | Cuatro tipos con firma, motivo y referencia de origen validados |
+| `ensure_opening_allowed` | Regla de apertura | Una sola apertura y antes de cualquier otro movimiento |
+| `ensure_sufficient` | Política de stock | Todo-o-nada bajo `STRICT`; permisiva bajo `ALLOW_NEGATIVE` |
+
+Reglas preservadas:
+
+- La cantidad se interpreta siempre como texto decimal; `+1`, `1e3`, `.5` y
+  `5.` se rechazan, igual que `InventoryQuantity.parse`.
+- La regla de unidad se aplica al saldo **resultante**: un artículo `UNIT` sin
+  `fractional_unit_allowed` rechaza `2.5` aunque el delta sea entero negativo.
+- `OPENING` no puede ser negativo, `ADJUSTMENT` no puede ser cero y exige motivo,
+  `SALE_CONSUMPTION` exige delta negativo y venta, y `PURCHASE_RECEIPT` exige
+  delta positivo y línea de recepción.
+- El ledger es inmutable: `restore` rechaza cualquier combinación de tipo, delta,
+  motivo o referencia que no corresponda.
+- La política de stock negativo solo afecta al consumo de ventas; nunca cambia
+  aperturas ni ajustes manuales.
+
+Pruebas nuevas: `pos-core::inventory_tests` (11 casos), incluidas cantidades
+límite, frontera `i64`, bloqueo de unidad, CAS del saldo, firmas de los cuatro
+tipos de movimiento y suficiencia todo-o-nada.
+
+## 8. Frente D: compras
+
+`pos-core::purchasing` (nuevo módulo, sin dependencias de infraestructura).
+
+| Tipo | Responsabilidad | Regla principal |
+| --- | --- | --- |
+| `PurchaseOrderStatus` | Estados | `DRAFT`, `ORDERED`, `PARTIALLY_RECEIVED`, `RECEIVED`, `CANCELLED` |
+| `PurchaseOrder` | Raíz del agregado | Ciclo de vida, snapshots de proveedor y moneda, revisión compartida |
+| `PurchaseOrderLine` | Partida | Cantidad positiva, número de línea, snapshots del artículo |
+| `ReceiptLineRequest` | Recepción | Cantidad positiva y línea única por recepción |
+| `ensure_within_ordered` | Regla de exceso | Nunca recibir más de lo pedido |
+| `next_order_status` | Estado resultante | `PARTIALLY_RECEIVED` o `RECEIVED` según todas las líneas |
+
+Reglas preservadas:
+
+- `issue` solo desde `DRAFT`; `cancel` desde `DRAFT` u `ORDERED` y conserva la
+  emisión; `apply_receipt` solo desde `ORDERED` o `PARTIALLY_RECEIVED`.
+- El cliente nunca fija el estado ni la moneda: la moneda es un snapshot de la
+  organización y `requireCurrency` de Java se replica con `pos_core::Currency`.
+- La cabecera y sus partidas comparten revisión: `register_line_mutation` avanza
+  la versión del agregado, igual que `registerLineMutation`.
+- `change_supplier` solo aplica en `DRAFT` y evita auditar un no-op con el mismo
+  proveedor y los mismos snapshots. El javadoc Java declara esa intención aunque
+  su setter siempre toca `updatedAt`; la diferencia se registra aquí.
+- Las recepciones acumuladas por línea determinan el estado final; el exceso se
+  rechaza con el detalle de línea, pedido, recibido e intentado.
+
+Pruebas nuevas: `pos-core::purchasing_tests` (10 casos), incluidas transiciones
+inválidas, cancelación tras emisión, detección de exceso y acumulación de
+recepciones.
+
+## 9. Frente E: ventas, pagos y modificadores
+
+`pos-core::sales` (nuevo módulo, sin dependencias de infraestructura).
+
+| Tipo | Responsabilidad | Regla principal |
+| --- | --- | --- |
+| `SaleScope` | Scope operativo | Organización, sucursal, caja y turno coinciden exactamente |
+| `Sale` | Agregado | `OPEN → COMPLETED`\|`CANCELLED`, total exacto escala 4, revisión |
+| `SaleItem` | Línea | Snapshots inmutables, cantidad `1..=1_000_000`, total exacto |
+| `Payment` | Hecho de pago | Efectivo exige entregado y calcula cambio; tarjeta no admite entregado |
+| `validate_checkout` | Regla de cobro | Una línea activa como mínimo y suma de pagos **exactamente** igual al total |
+| `resolve_modifier_pricing` | Cotización | Pertenencia, actividad, límites por grupo y precio efectivo no negativo |
+
+Reglas preservadas:
+
+- `validate_checkout` replica el orden de Java: líneas activas → máximo de pagos →
+  coherencia total/pagos → un único efectivo → suma exacta.
+- Una venta de total cero solo se cobra sin pagos; con pagos se rechaza.
+- El cambio se calcula como `entregado − importe`, sin redondeo.
+- El total de una venta suma solo líneas `ACTIVE`; retirar una línea conserva el
+  historial.
+- La cancelación es recuperación operativa y no exige padres activos; el
+  checkout sí (composición en la capa de aplicación).
+- La cotización de modificadores produce el orden canónico: grupos por asignación
+  y opciones por `display_order` e `id`.
+
+Pruebas nuevas: `pos-core::sales_tests` (14 casos), incluidas multiplicación
+exacta, overflow de línea, contratos de efectivo/tarjeta, cobertura exacta,
+máximo de pagos y todas las reglas de selección de modificadores.
+
+## 10. Pruebas ejecutadas (Windows, SQLite real)
+
+```bash
+cd backend-rust
+cargo fmt --all -- --check
+cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+cargo test --locked --workspace --all-features
+cargo build --locked --workspace --all-features
+```
+
+| Crate / binario | Pruebas | Resultado |
+| --- | --- | --- |
+| `pos-core` | 95 (18 catálogo, 10 cajas/turnos, 11 inventario, 10 compras, 14 ventas) | OK |
+| `pos-credentials` | 8 | OK |
+| `pos-storage-sqlite` | 57 (2 nuevas de primer arranque) | OK |
+| `pos-local` (lib, bin, integración) | 11 | OK |
+| `migration-lab` | 27 | OK |
+| **Total** | **198** | **0 fallos** |
+
+Cobertura nueva del dominio:
+
+- Códigos: normalización, límite de 64, rechazo de vacío, guiones extremos,
+  guiones consecutivos, espacios, acentos y separadores no admitidos.
+- SKU: mayúsculas, puntos/guiones/guiones bajos, rechazo de 65 caracteres y de
+  `ß` → `SS` (paridad Unicode con Java antes de la gramática ASCII).
+- Texto opcional: blanco → `None`, ceros iniciales conservados, límites exactos.
+- Decimales: límites de escala y dígitos, cero negativo, `5.` y `.5` rechazados,
+  ida y vuelta con `Display`, frontera `i64` de SQLite.
+- Agregados: patch atómico, no-op sin incremento de revisión, versión obsoleta,
+  desbordamiento de revisión, cambio de configuración, campos auditables.
+- Modificadores: límites parciales, semánticos derivados, propiedad derivada del
+  grupo, plan de reemplazo idempotente y rechazo de duplicados.
+
+No se ejecutó `--require-complete`, el Migration Lab PostgreSQL 17 ni ningún gate
+normativo; los resultados anteriores son exclusivamente SQLite/Windows.
+
+## 11. Estado normativo y de gates
+
+| Elemento | Estado |
+| --- | --- |
+| `0001_organization_branch.sql` | Publicada e intacta |
+| `0002`–`0007` propuestas | Sin cambios en este incremento; siguen fuera de `migrations/local` |
+| D-AUTH-01..08, D-AUTH-10, D-AUTH-11 | **Pendientes** de aceptación del titular |
+| D-AUTH-09 (Argon2id comercial) | **Bloqueada** |
+| D-INST-01, D-INST-02, ADR-0022 | **Pendientes** |
+| DDL13 / PAR / AS | Sin promoción; `PAR-08` sigue siendo el único PASS histórico |
+| CI de esta rama | No ejecutado en este entorno |
+| Migración de catálogo y cajas a SQLite | No iniciada: depende de aprobación física |
+
+## 12. Riesgos abiertos
+
+1. El dominio de catálogo no tiene aún contrato físico Local. Un adaptador no
+   puede implementarse hasta decidir la representación de importes (D3) y el
+   esquema de `category`/`product`/`modifier_*`.
+2. La unicidad de `code`/`sku`/`barcode` por organización y de `code` por grupo
+   solo puede garantizarse físicamente con FKs compuestas e índices únicos; el
+   dominio no puede sustituirlos.
+3. La búsqueda `q` de Java usa `LIKE` insensible a mayúsculas sobre nombre, SKU y
+   barcode. En SQLite ese comportamiento debe resolverse con `COLLATE NOCASE`
+   (ASCII) o normalización explícita, igual que D-AUTH-11 para el email.
+4. La autorización por permiso (`category.*`, `product.*`, `modifier.*`,
+   `cash-register.*`, `cash-shift.*`) existe en el catálogo de 59 códigos, pero no
+   hay casos de uso que la apliquen todavía.
+5. "Como máximo un turno `OPEN` por caja" solo puede garantizarlo el índice único
+   parcial del esquema físico. La regla de dominio es una precondición de
+   experiencia, nunca la autoridad ante una carrera.
+6. El cierre exige evaluar "ventas abiertas" en la misma transacción que la
+   transición de estado; esa composición requiere el esquema de ventas, todavía no
+   migrado.
+7. El inventario depende de dos garantías físicas que el dominio no puede
+   sustituir: el índice único parcial de apertura por sucursal y artículo, y el
+   trigger append-only del ledger. Además, `unit_locked` debe persistirse con una
+   sentencia dedicada que la actualización CAS del artículo no sobrescriba.
+8. El checkout completo exige componer, en una sola transacción, el lock del
+   turno, el consumo de inventario, el cobro de la venta y la auditoría; esa
+   composición pertenece a la capa de aplicación y depende del DDL aprobado.
+
+## 13. Próximo incremento recomendado
+
+1. **Cerrar 1I** con la aceptación formal del paquete D-AUTH/D-INST o, en su
+   defecto, mantener el bloqueo y completar el agregado `Supplier` y las recetas
+   de inventario, también de dominio puro.
+2. Cuando exista aprobación física, promover `0002`–`0007`, añadir las tablas de
+   catálogo, cajas, turnos, inventario, compras y ventas, y sustituir los
+   adaptadores `*_lab` por adaptadores canónicos.
+3. No declarar Auth/RBAC/auditoría productivos hasta contar con DDL aprobado,
+   verificación criptográfica de producto, principal autenticado, autorización
+   persistente y pruebas de integración completas.

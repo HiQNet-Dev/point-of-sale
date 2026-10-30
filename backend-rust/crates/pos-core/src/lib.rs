@@ -7,10 +7,24 @@ use std::fmt;
 
 /// Foundation pura de auditoría Local, independiente de DDL y adaptadores.
 pub mod audit;
+/// Cajas y turnos de caja, con recuperación explícita y sin persistencia.
+pub mod cash;
+/// Catálogo organizacional: categorías, productos y modificadores, sin persistencia.
+pub mod catalog;
 /// Identidad, credenciales y sesiones Locales, sin secretos en sus APIs públicas.
 pub mod identity;
+/// Inventario: artículos, cantidades exactas, balances y ledger, sin persistencia.
+pub mod inventory;
 /// Dominio Organization/Branch y puertos de aplicación reconstruidos tras INC-RECOVERY-01.
 pub mod organization_branch;
+/// Compras: órdenes, partidas y reglas de recepción, sin persistencia.
+pub mod purchasing;
+/// Recetas de producto, efectos de modificador y resolución de consumo.
+pub mod recipe;
+/// Ventas, pagos y cotización de modificadores, sin persistencia.
+pub mod sales;
+/// Proveedores de compras, con snapshots compatibles con `purchasing`.
+pub mod supplier;
 
 /// Código de moneda de tres letras ASCII, normalizado a mayúsculas.
 ///
@@ -189,8 +203,22 @@ impl std::error::Error for MoneyError {}
 #[cfg(test)]
 mod audit_tests;
 #[cfg(test)]
+mod cash_tests;
+#[cfg(test)]
+mod catalog_tests;
+#[cfg(test)]
 mod identity_tests;
 #[cfg(test)]
+mod inventory_tests;
+#[cfg(test)]
 mod organization_branch_tests;
+#[cfg(test)]
+mod purchasing_tests;
+#[cfg(test)]
+mod recipe_tests;
+#[cfg(test)]
+mod sales_tests;
+#[cfg(test)]
+mod supplier_tests;
 #[cfg(test)]
 mod tests;
