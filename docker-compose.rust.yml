@@ -67,6 +67,21 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  # Solo pruebas locales: sin puertos, sin bases del POS, sin red durante el run.
+  contracts:
+    build:
+      context: .
+      dockerfile: backend-rust/docker/contracts.Dockerfile
+      target: tests
+    image: hiqnet-pos-rust-contracts:local
+    profiles: ["contracts"]
+    network_mode: none
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:mode=1777
+
 volumes:
   pos-local-data:
   pos-lab-data:

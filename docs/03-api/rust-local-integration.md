@@ -94,8 +94,10 @@ pnpm test:rust-contracts
 
 El comando funciona sin variables de entorno específicas del shell. La suite
 ordinaria `pnpm test` omite las tres pruebas que exigen Cargo; **no sustituye**
-`test:rust-contracts`. El workflow `Rust Local Contracts` las ejecuta en Linux
-para PRs relevantes, sin sustituir ni debilitar CI Gate, DDL13 o require-complete.
+`test:rust-contracts`. El escenario funcional se valida primero en **Docker
+local**, no se lanza en GitHub Actions. El workflow `Rust Local Contracts` queda
+limitado a sincronización de artefactos generados y typecheck; no sustituye ni
+debilita CI Gate, DDL13 o require-complete.
 
 La prueba implementa `LabTransport` usando el binario Rust real, no un mock:
 
@@ -116,6 +118,41 @@ turno, venta, partida, total, guard de cierre, pago, consumo de inventario,
 COMPLETED, cierre y reapertura durable. **Bootstrap, sesión, sucursal y receta
 incluyen preparación sintética; no demuestra autenticación comercial completa.**
 Las migraciones candidatas siguen fuera del migrador productivo.
+
+## Linux con Docker local (sin runners de GitHub)
+
+Desde la raíz del repositorio:
+
+```sh
+docker compose -f docker-compose.rust.yml --profile contracts build contracts
+docker compose -f docker-compose.rust.yml --profile contracts run --rm --no-deps contracts
+```
+
+El servicio opt-in `contracts` usa `backend-rust/docker/contracts.Dockerfile`.
+Compila los targets Rust y prepara dependencias frontend durante el build;
+**la construcción requiere acceso a los registros de imágenes y paquetes**.
+La ejecución posterior no tiene red (`network_mode: none`), corre como UID/GID
+10001, no tiene puertos ni bind mounts ni acceso a los volúmenes `pos-local-data`
+o `pos-lab-data`. Las bases temporales se crean y eliminan dentro del contenedor.
+El contexto excluye `.env`, claves privadas, bases SQLite y artefactos locales.
+
+Es una imagen de pruebas con filesystem escribible para Cargo/Vite, no el runtime
+del producto. El servicio `pos-local` conserva su filesystem read-only y su
+volumen privado; el Compose Java no cambia. No es necesario ejecutar `up`,
+`down -v` ni borrar ningún volumen para estas pruebas.
+
+El script falla en el primer error y ejecuta fmt, Clippy con `-D warnings`, tests
+y build de todo el workspace, lint/typecheck/tests/build frontend y las tres
+pruebas de contrato contra Rust/SQLite real. Los contratos generados también se
+comparan con la fuente Rust. La imagen no modifica archivos del checkout.
+
+**Evidencia local ejecutada en Docker Desktop, Linux/amd64:** build PASS;
+script completo PASS; UID/GID 10001; frontend 209 tests PASS y tres integraciones
+PASS por separado. El build Vite mantiene una advertencia no bloqueante por
+bundle de más de 500 kB. Esto no acredita PostgreSQL 17 Migration Lab completo,
+Playwright, aprobación física, despliegue productivo ni CI remoto verde.
+La ejecución GitHub `41101144018` se canceló antes de obtener runner; no se
+utiliza como evidencia de validación Linux.
 
 ## Regenerar y verificar
 
@@ -139,7 +176,7 @@ permisos resueltos en SQLite. El cliente no los concede. La fixture posee los
 permisos necesarios; **no es allow-all ni un endpoint de provisioning**.
 El guard se comprueba por `CashShiftHasOpenSales`, no por cualquier error.
 
-Los códigos `INVALID_LAB_RESPONSE` y `LAB_SCENARIO_FAILED` se generan desde el
+no hLos códigos `INVALID_LAB_RESPONSE` y `LAB_SCENARIO_FAILED` se generan desde el
 enum Rust, junto con el tipo `LabError`. `RustLocalError.code` permite manejarlos
 sin comparar mensajes. El primero indica incompatibilidad de estructura,
 precisión, scope o estado. El segundo identifica el fallo del proceso aislado:

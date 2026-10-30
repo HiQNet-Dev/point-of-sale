@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   contracts:
-    name: Rust to TypeScript contract integration (candidate only)
+    name: Rust and TypeScript contract integrity
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -34,12 +34,10 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
+      # El escenario funcional completo se ejecuta primero en Docker local.
       - name: Check generated contracts against Rust
         working-directory: backend-rust
-        run: cargo test --locked -p pos-lab
-      - name: Invoke real SQLite scenario from TypeScript
-        working-directory: frontend
-        run: pnpm test:rust-contracts
+        run: cargo test --locked -p pos-lab checked_in_
       - name: Check frontend types
         working-directory: frontend
         run: pnpm typecheck
