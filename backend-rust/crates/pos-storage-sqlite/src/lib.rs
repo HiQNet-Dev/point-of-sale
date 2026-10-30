@@ -14,6 +14,8 @@ pub mod catalog_store;
 pub mod credential_lab;
 /// Adaptador de identidad y permisos exclusivo de laboratorio (tablas `*_lab`).
 pub mod identity_lab;
+/// Ventas y snapshots persistentes sobre el esquema candidato. No productivo.
+pub mod sales_store;
 
 use pos_core::organization_branch::{
     ApplicationError, AuditEvent, Authorization, Branch, BranchPatch, BusinessCode, DisplayName,
@@ -1036,5 +1038,7 @@ mod credential_lab_tests;
 mod identity_lab_tests;
 #[cfg(test)]
 mod proposals_tests;
+#[cfg(test)]
+mod sales_store_tests;
 #[cfg(test)]
 mod tests;

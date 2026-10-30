@@ -1,9 +1,9 @@
 //! Integración SQLite real de cajas y turnos sobre el esquema candidato.
 //!
 //! El fixture aplica las propuestas de manera explícita: `pos-local::migrate()`
-//! no descubre estos archivos. La tabla `candidate_open_sale_guard` es exclusiva
-//! de estas pruebas y demuestra el puerto de ventas mientras V13 Local todavía
-//! no existe; no forma parte del DDL candidato ni es una venta de producto.
+//! no descubre estos archivos. Las ventas y los modificadores se aplican desde
+//! sus propuestas candidatas para que el guard de cierre consulte ventas reales,
+//! no una tabla de prueba.
 #![allow(clippy::panic)]
 
 use std::time::Duration;
@@ -24,45 +24,49 @@ use sqlx::SqlitePool;
 use super::*;
 use crate::{
     cash_store::{
-        CashPage, CashRegisterUpdateRequest, CashStorageError, CloseCashShiftRequest,
-        NewCashRegisterRequest, OpenCashShiftRequest, OpenSalesForCashShift, SqliteCashApplication,
+        CashPage, CashRegisterUpdateRequest, CloseCashShiftRequest, NewCashRegisterRequest,
+        OpenCashShiftRequest, SqliteCashApplication,
     },
     identity_lab::SqliteIdentityLab,
+    sales_store::SqliteOpenSalesForCashShift,
 };
 
-const PROPOSALS: [&str; 8] = [
+const PROPOSALS: [&str; 11] = [
     include_str!("../../../proposals/local-auth/0002_installation_identity.proposed.sql"),
     include_str!("../../../proposals/local-auth/0003_user_credential_session.proposed.sql"),
     include_str!("../../../proposals/local-auth/0004_rbac_catalog.proposed.sql"),
     include_str!("../../../proposals/local-auth/0005_branch_membership.proposed.sql"),
     include_str!("../../../proposals/local-auth/0006_audit_event.proposed.sql"),
     include_str!("../../../proposals/local-auth/0007_bootstrap_record.proposed.sql"),
+    include_str!("../../../proposals/local-catalog/0008_catalog.proposed.sql"),
     include_str!("../../../proposals/local-cash/0009_cash_register.proposed.sql"),
     include_str!("../../../proposals/local-cash/0010_cash_shift.proposed.sql"),
+    include_str!("../../../proposals/local-sales/0011_modifier_catalog.proposed.sql"),
+    include_str!("../../../proposals/local-sales/0012_sales_foundation.proposed.sql"),
 ];
 
-const ORG_A: &str = "00000000-0000-0000-0000-000000000180";
+pub(super) const ORG_A: &str = "00000000-0000-0000-0000-000000000180";
 const ORG_B: &str = "00000000-0000-0000-0000-000000000181";
-const BRANCH_A: &str = "00000000-0000-0000-0000-000000000190";
+pub(super) const BRANCH_A: &str = "00000000-0000-0000-0000-000000000190";
 const BRANCH_B: &str = "00000000-0000-0000-0000-000000000191";
-const BRANCH_OTHER: &str = "00000000-0000-0000-0000-000000000192";
+pub(super) const BRANCH_OTHER: &str = "00000000-0000-0000-0000-000000000192";
 const USER_A: &str = "00000000-0000-0000-0000-0000000001a0";
 const USER_B: &str = "00000000-0000-0000-0000-0000000001a1";
 const ROLE_A: &str = "00000000-0000-0000-0000-0000000001b0";
 const ROLE_B: &str = "00000000-0000-0000-0000-0000000001b1";
 const SESSION_A: &str = "00000000-0000-0000-0000-0000000001d0";
 const SESSION_B: &str = "00000000-0000-0000-0000-0000000001d1";
-const HASH_A: &str = "1111111122222222333333334444444455555555666666667777777788888888";
-const HASH_B: &str = "2222222233333333444444445555555566666666777777778888888899999999";
-const TIME: &str = "2026-10-29T00:00:00Z";
-const LATER: &str = "2026-10-30T00:00:00Z";
+pub(super) const HASH_A: &str = "1111111122222222333333334444444455555555666666667777777788888888";
+pub(super) const HASH_B: &str = "2222222233333333444444445555555566666666777777778888888899999999";
+pub(super) const TIME: &str = "2026-10-29T00:00:00Z";
+pub(super) const LATER: &str = "2026-10-30T00:00:00Z";
 const NOW: i64 = 1_793_235_600;
 
-fn id(value: &str) -> EntityId {
+pub(super) fn id(value: &str) -> EntityId {
     EntityId::parse(value).unwrap_or_else(|error| panic!("fixture UUID: {error}"))
 }
 
-fn at(value: &str) -> AuditOccurredAt {
+pub(super) fn at(value: &str) -> AuditOccurredAt {
     AuditOccurredAt::new(value).unwrap_or_else(|error| panic!("instante: {error}"))
 }
 
@@ -79,7 +83,7 @@ fn organization(value: &str, code: &str) -> Organization {
     )
 }
 
-struct FixtureIds(u32);
+pub(super) struct FixtureIds(pub(super) u32);
 impl IdentityGenerator for FixtureIds {
     fn next_id(&mut self) -> Result<EntityId, ApplicationError> {
         self.0 += 1;
@@ -88,43 +92,21 @@ impl IdentityGenerator for FixtureIds {
     }
 }
 
-struct CandidateOpenSales;
-impl OpenSalesForCashShift for CandidateOpenSales {
-    fn has_open_sales(
-        &self,
-        transaction: &mut SqliteTransaction,
-        cash_shift_id: &EntityId,
-    ) -> impl std::future::Future<Output = Result<bool, CashStorageError>> + Send {
-        let cash_shift_id = cash_shift_id.clone();
-        async move {
-            let exists: i64 = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM candidate_open_sale_guard WHERE cash_shift_id = ?)",
-            )
-            .bind(cash_shift_id.as_str())
-            .fetch_one(transaction.connection())
-            .await
-            .map_err(|_| CashStorageError::Database)?;
-            Ok(exists != 0)
-        }
-    }
+pub(super) fn application(pool: &SqlitePool) -> SqliteCashApplication<SqliteOpenSalesForCashShift> {
+    SqliteCashApplication::new(
+        SqliteUnitOfWork::new(pool.clone()),
+        SqliteOpenSalesForCashShift,
+    )
 }
 
-fn application(pool: &SqlitePool) -> SqliteCashApplication<CandidateOpenSales> {
-    SqliteCashApplication::new(SqliteUnitOfWork::new(pool.clone()), CandidateOpenSales)
-}
-
-async fn open_candidate() -> Result<(tempfile::TempDir, SqlitePool), Box<dyn std::error::Error>> {
+pub(super) async fn open_candidate()
+-> Result<(tempfile::TempDir, SqlitePool), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
     let pool = open(&temp.path().join("cash.sqlite"), Duration::from_millis(500)).await?;
     migrate(&pool).await?;
     for statement in PROPOSALS {
         sqlx::raw_sql(statement).execute(&pool).await?;
     }
-    sqlx::query(
-        "CREATE TABLE candidate_open_sale_guard (cash_shift_id TEXT PRIMARY KEY NOT NULL) STRICT",
-    )
-    .execute(&pool)
-    .await?;
 
     let store = SqliteOrganizationBranchStore::new(pool.clone());
     for (organization_id, code) in [(ORG_A, "operacion-a"), (ORG_B, "operacion-b")] {
@@ -199,6 +181,10 @@ async fn seed_security(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Erro
         "cash-shift.read",
         "cash-shift.open",
         "cash-shift.close",
+        "sale.read",
+        "sale.create",
+        "sale.update",
+        "sale.cancel",
     ] {
         sqlx::query("INSERT INTO role_permission (role_id, permission_code) VALUES (?, ?)")
             .bind(ROLE_A)
@@ -259,7 +245,7 @@ async fn seed_security(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Erro
     Ok(())
 }
 
-async fn principal(
+pub(super) async fn principal(
     pool: &SqlitePool,
     hash: &str,
     branch_id: &EntityId,
@@ -281,8 +267,8 @@ async fn principal(
     Ok(result?)
 }
 
-async fn create_register(
-    app: &SqliteCashApplication<CandidateOpenSales>,
+pub(super) async fn create_register(
+    app: &SqliteCashApplication<SqliteOpenSalesForCashShift>,
     principal: &VerifiedPrincipal,
     identities: &mut FixtureIds,
     code: &str,
@@ -299,8 +285,8 @@ async fn create_register(
     .await
 }
 
-async fn open_shift(
-    app: &SqliteCashApplication<CandidateOpenSales>,
+pub(super) async fn open_shift(
+    app: &SqliteCashApplication<SqliteOpenSalesForCashShift>,
     principal: &VerifiedPrincipal,
     identities: &mut FixtureIds,
     register_id: EntityId,
@@ -603,10 +589,19 @@ async fn sales_guard_and_audit_failure_rollback_a_close() -> Result<(), Box<dyn 
     let mut identities = FixtureIds(90);
     let register = create_register(&app, &owner, &mut identities, "guardia").await?;
     let shift = open_shift(&app, &owner, &mut identities, register.id().clone()).await?;
-    sqlx::query("INSERT INTO candidate_open_sale_guard (cash_shift_id) VALUES (?)")
-        .bind(shift.id().as_str())
-        .execute(&pool)
-        .await?;
+    sqlx::query(
+        "INSERT INTO sale (id, organization_id, branch_id, cash_register_id, cash_shift_id, created_by_user_id, status, total_amount, version, created_at, updated_at) \
+         VALUES ('00000000-0000-0000-0000-0000000002f0', ?, ?, ?, ?, ?, 'OPEN', '0.0000', 0, ?, ?)",
+    )
+    .bind(ORG_A)
+    .bind(BRANCH_A)
+    .bind(register.id().as_str())
+    .bind(shift.id().as_str())
+    .bind(USER_A)
+    .bind(TIME)
+    .bind(TIME)
+    .execute(&pool)
+    .await?;
     assert_eq!(
         app.close_cash_shift(
             &owner,
@@ -622,10 +617,14 @@ async fn sales_guard_and_audit_failure_rollback_a_close() -> Result<(), Box<dyn 
         .await,
         Err(ApplicationError::CashShiftHasOpenSales)
     );
-    sqlx::query("DELETE FROM candidate_open_sale_guard WHERE cash_shift_id = ?")
-        .bind(shift.id().as_str())
-        .execute(&pool)
-        .await?;
+    sqlx::query(
+        "UPDATE sale SET status = 'CANCELLED', cancelled_by_user_id = ?, cancelled_at = ?, updated_at = ? WHERE id = '00000000-0000-0000-0000-0000000002f0'",
+    )
+    .bind(USER_A)
+    .bind(LATER)
+    .bind(LATER)
+    .execute(&pool)
+    .await?;
     sqlx::query("DROP TABLE audit_event").execute(&pool).await?;
     assert_eq!(
         app.close_cash_shift(
@@ -670,11 +669,20 @@ async fn candidate_create_open_sale(
         if !shift.is_open() {
             return Err(ApplicationError::CashShiftAlreadyClosed);
         }
-        sqlx::query("INSERT INTO candidate_open_sale_guard (cash_shift_id) VALUES (?)")
-            .bind(shift_id.as_str())
-            .execute(transaction.connection())
-            .await
-            .map_err(|_| ApplicationError::Storage)?;
+        sqlx::query(
+            "INSERT INTO sale (id, organization_id, branch_id, cash_register_id, cash_shift_id, created_by_user_id, status, total_amount, version, created_at, updated_at) \
+             VALUES ('00000000-0000-0000-0000-0000000002f1', ?, ?, ?, ?, ?, 'OPEN', '0.0000', 0, ?, ?)",
+        )
+        .bind(organization_id.as_str())
+        .bind(branch_id.as_str())
+        .bind(register_id.as_str())
+        .bind(shift_id.as_str())
+        .bind(USER_A)
+        .bind(TIME)
+        .bind(TIME)
+        .execute(transaction.connection())
+        .await
+        .map_err(|_| ApplicationError::Storage)?;
         Ok(())
     }
     .await;
@@ -740,12 +748,11 @@ async fn concurrent_sale_creation_and_close_are_serialized()
         .bind(shift.id().as_str())
         .fetch_one(&first_pool)
         .await?;
-    let sales: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM candidate_open_sale_guard WHERE cash_shift_id = ?",
-    )
-    .bind(shift.id().as_str())
-    .fetch_one(&first_pool)
-    .await?;
+    let sales: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM sale WHERE cash_shift_id = ? AND status = 'OPEN'")
+            .bind(shift.id().as_str())
+            .fetch_one(&first_pool)
+            .await?;
     assert!(status == "OPEN" || sales == 0);
     second_pool.close().await;
     Ok(())

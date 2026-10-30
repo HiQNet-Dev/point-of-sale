@@ -792,6 +792,16 @@ pub enum Permission {
     CashShiftOpen,
     /// Cierre de un turno abierto, incluido el camino de recuperación autorizado.
     CashShiftClose,
+    /// Lectura de ventas de un turno de caja.
+    SaleRead,
+    /// Apertura de una venta operativa.
+    SaleCreate,
+    /// Alta, modificación y retirada lógica de partidas de una venta OPEN.
+    SaleUpdate,
+    /// Cancelación operativa de una venta OPEN.
+    SaleCancel,
+    /// Checkout integral; queda reservado hasta disponer de pagos e inventario.
+    SaleCheckout,
 }
 
 impl Permission {
@@ -822,6 +832,11 @@ impl Permission {
             Self::CashShiftRead => Some("cash-shift.read"),
             Self::CashShiftOpen => Some("cash-shift.open"),
             Self::CashShiftClose => Some("cash-shift.close"),
+            Self::SaleRead => Some("sale.read"),
+            Self::SaleCreate => Some("sale.create"),
+            Self::SaleUpdate => Some("sale.update"),
+            Self::SaleCancel => Some("sale.cancel"),
+            Self::SaleCheckout => Some("sale.checkout"),
         }
     }
 }
@@ -940,6 +955,22 @@ pub enum ApplicationError {
     CashShiftHasOpenSales,
     /// Entrada de caja o turno que no cumple el contrato.
     InvalidCashInput,
+    /// Venta inexistente en el scope operativo solicitado.
+    SaleNotFound,
+    /// Partida inexistente dentro de la venta solicitada.
+    SaleItemNotFound,
+    /// La venta no está en estado OPEN.
+    SaleNotOpen,
+    /// La venta ya fue cancelada.
+    SaleAlreadyCancelled,
+    /// La venta ya fue completada.
+    SaleAlreadyCompleted,
+    /// La partida ya fue retirada lógicamente.
+    SaleItemAlreadyRemoved,
+    /// El producto no está activo para cotizar una nueva partida.
+    ProductInactive,
+    /// Entrada comercial que no cumple el contrato de ventas.
+    InvalidSaleInput,
     /// La entidad referenciada pertenece a otra organización.
     OwnershipMismatch,
     /// Una entrada de catálogo incumple el contrato de dominio.
@@ -981,6 +1012,14 @@ impl fmt::Display for ApplicationError {
             Self::CashShiftAlreadyClosed => formatter.write_str("el turno ya está cerrado"),
             Self::CashShiftHasOpenSales => formatter.write_str("el turno tiene ventas abiertas"),
             Self::InvalidCashInput => formatter.write_str("entrada de caja o turno no válida"),
+            Self::SaleNotFound => formatter.write_str("venta inexistente"),
+            Self::SaleItemNotFound => formatter.write_str("partida de venta inexistente"),
+            Self::SaleNotOpen => formatter.write_str("la venta no está abierta"),
+            Self::SaleAlreadyCancelled => formatter.write_str("la venta ya está cancelada"),
+            Self::SaleAlreadyCompleted => formatter.write_str("la venta ya está completada"),
+            Self::SaleItemAlreadyRemoved => formatter.write_str("la partida ya fue retirada"),
+            Self::ProductInactive => formatter.write_str("el producto está inactivo"),
+            Self::InvalidSaleInput => formatter.write_str("entrada de venta no válida"),
             Self::OwnershipMismatch => {
                 formatter.write_str("la entidad pertenece a otra organización")
             }

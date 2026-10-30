@@ -643,5 +643,47 @@ fn restored_entities_reject_incoherent_state() {
         )
         .is_ok()
     );
+    let line = item(7, "12.5", 2);
+    assert!(
+        SaleItem::restore(
+            line.id().clone(),
+            line.organization_id().clone(),
+            line.sale_id().clone(),
+            line.product_id().clone(),
+            line.product_sku_snapshot().clone(),
+            line.product_name_snapshot().clone(),
+            line.base_unit_price(),
+            line.modifier_unit_delta(),
+            line.effective_unit_price(),
+            line.quantity(),
+            line.line_total(),
+            line.status(),
+            line.position(),
+            None,
+            None,
+        )
+        .is_ok()
+    );
+    assert_eq!(
+        SaleItem::restore(
+            line.id().clone(),
+            line.organization_id().clone(),
+            line.sale_id().clone(),
+            line.product_id().clone(),
+            line.product_sku_snapshot().clone(),
+            line.product_name_snapshot().clone(),
+            line.base_unit_price(),
+            line.modifier_unit_delta(),
+            line.effective_unit_price(),
+            line.quantity(),
+            amount("1"),
+            line.status(),
+            line.position(),
+            None,
+            None,
+        ),
+        Err(SaleError::InvalidPersistedValue),
+        "el total persistido debe coincidir exactamente con precio efectivo por cantidad"
+    );
     assert_eq!(code("cafe").as_str(), "cafe");
 }

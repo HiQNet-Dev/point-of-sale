@@ -544,6 +544,53 @@ impl SaleItem {
         })
     }
 
+    /// Rehidrata una línea persistida y verifica tanto el total como el estado histórico.
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore(
+        id: EntityId,
+        organization_id: EntityId,
+        sale_id: EntityId,
+        product_id: EntityId,
+        product_sku_snapshot: Sku,
+        product_name_snapshot: DisplayName,
+        base_unit_price: UnitPrice,
+        modifier_unit_delta: PriceDelta,
+        effective_unit_price: UnitPrice,
+        quantity: u32,
+        persisted_line_total: UnitPrice,
+        status: SaleItemStatus,
+        position: u32,
+        removed_by_user_id: Option<EntityId>,
+        removed_at: Option<UtcSeconds>,
+    ) -> Result<Self, SaleError> {
+        validate_quantity(quantity)?;
+        if persisted_line_total != line_total(effective_unit_price, quantity)?
+            || matches!(status, SaleItemStatus::Active)
+                && (removed_by_user_id.is_some() || removed_at.is_some())
+            || matches!(status, SaleItemStatus::Removed)
+                && (removed_by_user_id.is_none() || removed_at.is_none())
+        {
+            return Err(SaleError::InvalidPersistedValue);
+        }
+        Ok(Self {
+            id,
+            organization_id,
+            sale_id,
+            product_id,
+            product_sku_snapshot,
+            product_name_snapshot,
+            base_unit_price,
+            modifier_unit_delta,
+            effective_unit_price,
+            quantity,
+            line_total: persisted_line_total,
+            status,
+            position,
+            removed_by_user_id,
+            removed_at,
+        })
+    }
+
     /// Identidad de la línea.
     pub fn id(&self) -> &EntityId {
         &self.id
