@@ -29,6 +29,7 @@ pub mod authorization;
 /// Casos de uso, DTOs y puertos de cajas y turnos.
 pub mod cash;
 /// Contexto operativo de una venta (sucursal, caja y turno vigentes).
+pub mod sales;
 pub mod sales_context;
 
 /// Resultado de una actualización condicional por revisión (CAS).

@@ -8,26 +8,18 @@
 
 use std::{collections::BTreeMap, future::Future};
 
-use pos_application::{
-    audit::append_audit,
-    authorization::require_sale_scope,
-    sales_context::{SaleOperationalContext, require_open_operational_shift},
-};
+use pos_application::sales_context::SaleOperationalContext;
 use pos_core::{
     audit::AuditOccurredAt,
     cash::{CashRegister, CashShift},
     catalog::{PriceDelta, UnitPrice},
-    identity::{UtcSeconds, VerifiedPrincipal},
-    organization_branch::{
-        ApplicationError, Branch, EntityId, IdentityGenerator, Permission, Status,
-    },
+    identity::UtcSeconds,
+    organization_branch::{ApplicationError, Branch, EntityId, IdentityGenerator},
     sales::{
-        ModifierGroupAssignment, NewSale, NewSaleItem, Sale, SaleError, SaleItem, SaleItemStatus,
-        SaleScope, SaleStatus, SelectedModifierOption, resolve_modifier_pricing,
-        total_of_active_items,
+        ModifierGroupAssignment, Sale, SaleItem, SaleItemStatus, SaleScope, SaleStatus,
+        SelectedModifierOption, resolve_modifier_pricing,
     },
 };
-use serde_json::json;
 
 use crate::{CasOutcome, SqliteTransaction, SqliteUnitOfWork, cash_store::OpenSalesForCashShift};
 
@@ -84,9 +76,6 @@ const SELECT_MODIFIER_CONFIGURATION: &str = "SELECT pmg.modifier_group_id, \
     LEFT JOIN modifier_option mo ON mo.modifier_group_id = mg.id AND mo.organization_id = mg.organization_id \
     WHERE pmg.organization_id = ? AND pmg.product_id = ? \
     ORDER BY pmg.display_order, pmg.modifier_group_id, mo.display_order, mo.id";
-
-/// Tamaño máximo de página para el historial de ventas de un turno.
-pub const MAX_SALE_PAGE_SIZE: u32 = 100;
 
 /// Error de infraestructura de ventas candidato sin exponer SQL ni entradas.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -256,18 +245,6 @@ struct ModifierConfigurationRow {
     option_status: Option<String>,
     price_delta: Option<String>,
     option_display_order: Option<i64>,
-}
-
-struct ModifierSnapshot {
-    group_id: EntityId,
-    option_id: EntityId,
-    group_code: String,
-    group_name: String,
-    option_code: String,
-    option_name: String,
-    price_delta: PriceDelta,
-    active: bool,
-    display_order: u32,
 }
 
 #[allow(missing_docs)]
@@ -670,400 +647,6 @@ impl OpenSalesForCashShift<SqliteTransaction> for SqliteOpenSalesForCashShift {
     }
 }
 
-/// Entrada para abrir una venta; el scope procede del principal y los IDs de caja/turno.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NewSaleRequest {
-    /// Caja activa dentro de la sucursal del principal.
-    pub cash_register_id: EntityId,
-    /// Turno OPEN perteneciente a la caja indicada.
-    pub cash_shift_id: EntityId,
-}
-/// Entrada para cotizar una partida; precios y snapshots son exclusivamente del servidor.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AddSaleItemRequest {
-    /// Revisión leída de la venta antes de mutarla.
-    pub expected_sale_version: u64,
-    /// Producto de la misma organización que se cotiza en servidor.
-    pub product_id: EntityId,
-    /// Cantidad entera entre uno y el máximo canónico.
-    pub quantity: u32,
-    /// Opciones de modificador; nunca contiene precios ni snapshots del cliente.
-    pub modifier_option_ids: Vec<EntityId>,
-}
-/// Entrada para recotizar una partida sin cambiar de producto.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UpdateSaleItemRequest {
-    /// Revisión leída de la venta antes de recotizar la partida.
-    pub expected_sale_version: u64,
-    /// Nueva cantidad entera de la partida activa.
-    pub quantity: u32,
-    /// Nueva selección completa de opciones de modificador.
-    pub modifier_option_ids: Vec<EntityId>,
-}
-/// Página determinista de ventas de un turno.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct SalePage {
-    /// Máximo de filas, entre uno y [`MAX_SALE_PAGE_SIZE`].
-    pub limit: u32,
-    /// Desplazamiento en el orden histórico determinista.
-    pub offset: u32,
-}
-
-/// Casos de uso candidatos de ventas. No ofrece checkout hasta que pagos e inventario sean atómicos.
-#[derive(Clone)]
-pub struct SqliteSalesApplication {
-    unit_of_work: SqliteUnitOfWork,
-}
-
-impl SqliteSalesApplication {
-    /// Ensambla ventas candidatas sobre una UoW SQLite configurada.
-    pub fn new(unit_of_work: SqliteUnitOfWork) -> Self {
-        Self { unit_of_work }
-    }
-
-    /// Abre una venta solo cuando sucursal, caja y turno están activos/abiertos.
-    pub async fn create_sale<I: IdentityGenerator>(
-        &self,
-        principal: &VerifiedPrincipal,
-        identities: &mut I,
-        request: NewSaleRequest,
-        occurred_at: &AuditOccurredAt,
-    ) -> Result<Sale, ApplicationError> {
-        let scope = require_sale_scope(
-            principal,
-            Permission::SaleCreate,
-            false,
-            request.cash_register_id,
-            request.cash_shift_id,
-        )?;
-        let sale_id = identities.next_id()?;
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let operation = async {
-            require_open_operational_shift(&mut transaction, &scope).await?;
-            let sale = Sale::open(NewSale { id: sale_id, scope: scope.clone(), created_by_user_id: principal.user_id().clone() });
-            transaction.insert_sale(&sale, occurred_at.as_str()).await.map_err(storage_error)?;
-            append_audit(&mut transaction, identities, principal, "sale.created", "sale", sale.id().clone(), json!({"cashRegisterId": scope.cash_register_id.as_str(), "cashShiftId": scope.cash_shift_id.as_str()}), occurred_at).await?;
-            Ok(sale)
-        }.await;
-        finish(transaction, operation).await
-    }
-
-    /// Lee una venta y sus partidas dentro del scope del principal.
-    pub async fn get_sale(
-        &self,
-        principal: &VerifiedPrincipal,
-        cash_register_id: EntityId,
-        cash_shift_id: EntityId,
-        sale_id: &EntityId,
-    ) -> Result<(Sale, Vec<SaleItem>), ApplicationError> {
-        let scope = require_sale_scope(
-            principal,
-            Permission::SaleRead,
-            false,
-            cash_register_id,
-            cash_shift_id,
-        )?;
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let result = async {
-            let sale = transaction
-                .get_sale(&scope, sale_id)
-                .await
-                .map_err(storage_error)?
-                .ok_or(ApplicationError::SaleNotFound)?;
-            let items = transaction
-                .list_sale_items(&scope.organization_id, sale_id)
-                .await
-                .map_err(storage_error)?;
-            Ok((sale, items))
-        }
-        .await;
-        finish(transaction, result).await
-    }
-
-    /// Lista ventas del turno scoped con filtro de estado y paginación acotada.
-    pub async fn list_sales(
-        &self,
-        principal: &VerifiedPrincipal,
-        cash_register_id: EntityId,
-        cash_shift_id: EntityId,
-        status: Option<SaleStatus>,
-        page: SalePage,
-    ) -> Result<Vec<Sale>, ApplicationError> {
-        let scope = require_sale_scope(
-            principal,
-            Permission::SaleRead,
-            false,
-            cash_register_id,
-            cash_shift_id,
-        )?;
-        if page.limit == 0 || page.limit > MAX_SALE_PAGE_SIZE {
-            return Err(ApplicationError::InvalidSaleInput);
-        }
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let result = transaction
-            .list_sales(
-                &scope,
-                status,
-                i64::from(page.limit),
-                i64::from(page.offset),
-            )
-            .await
-            .map_err(storage_error);
-        finish(transaction, result).await
-    }
-
-    /// Cotiza, persiste y audita una partida; actualiza el total de venta mediante CAS.
-    ///
-    /// Los IDs de scope permanecen explícitos para no aceptar owner ni operador desde el cliente.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn add_sale_item<I: IdentityGenerator>(
-        &self,
-        principal: &VerifiedPrincipal,
-        identities: &mut I,
-        cash_register_id: EntityId,
-        cash_shift_id: EntityId,
-        sale_id: &EntityId,
-        request: AddSaleItemRequest,
-        occurred_at: &AuditOccurredAt,
-    ) -> Result<(Sale, SaleItem), ApplicationError> {
-        let scope = require_sale_scope(
-            principal,
-            Permission::SaleUpdate,
-            false,
-            cash_register_id,
-            cash_shift_id,
-        )?;
-        let item_id = identities.next_id()?;
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let operation = async {
-            require_open_operational_shift(&mut transaction, &scope).await?;
-            let mut sale = transaction.get_sale(&scope, sale_id).await.map_err(storage_error)?.ok_or(ApplicationError::SaleNotFound)?;
-            sale.require_open().map_err(sale_error)?;
-            if sale.revision() != request.expected_sale_version { return Err(ApplicationError::ConcurrentModification); }
-            let product = transaction.get_product(&scope.organization_id, &request.product_id).await.map_err(|_| ApplicationError::Storage)?.ok_or(ApplicationError::ProductNotFound)?;
-            if product.status() != Status::Active { return Err(ApplicationError::ProductInactive); }
-            let (delta, effective, snapshots) = transaction.modifier_quote(&scope.organization_id, product.id(), &request.modifier_option_ids, product.unit_price()).await?;
-            let position = transaction.next_sale_item_position(&scope.organization_id, sale_id).await.map_err(storage_error)?;
-            let item = SaleItem::create(NewSaleItem { id: item_id, organization_id: scope.organization_id.clone(), sale_id: sale_id.clone(), product_id: product.id().clone(), product_sku_snapshot: product.sku().clone(), product_name_snapshot: product.name().clone(), base_unit_price: product.unit_price(), modifier_unit_delta: delta, effective_unit_price: effective, quantity: request.quantity, position }).map_err(sale_error)?;
-            let mut all = transaction.list_sale_items(&scope.organization_id, sale_id).await.map_err(storage_error)?;
-            all.push(item.clone());
-            let total = total_of_active_items(&all).map_err(sale_error)?;
-            let previous = sale.revision();
-            sale.recalculate_total(total).map_err(sale_error)?;
-            if transaction.update_sale_cas(previous, &sale, occurred_at.as_str()).await.map_err(storage_error)? != CasOutcome::Updated { return Err(ApplicationError::ConcurrentModification); }
-            transaction.insert_sale_item(&item, occurred_at.as_str()).await.map_err(storage_error)?;
-            transaction.replace_item_modifiers(identities, &item, &snapshots, occurred_at.as_str()).await?;
-            append_audit(&mut transaction, identities, principal, "sale.item.added", "sale", sale.id().clone(), json!({"productId": product.id().as_str(), "quantity": item.quantity(), "lineTotal": item.line_total().to_string()}), occurred_at).await?;
-            Ok((sale, item))
-        }.await;
-        finish(transaction, operation).await
-    }
-
-    /// Recotiza una partida activa y reemplaza sus snapshots en la misma UoW.
-    ///
-    /// Los IDs de scope permanecen explícitos para no aceptar owner ni operador desde el cliente.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn update_sale_item<I: IdentityGenerator>(
-        &self,
-        principal: &VerifiedPrincipal,
-        identities: &mut I,
-        cash_register_id: EntityId,
-        cash_shift_id: EntityId,
-        sale_id: &EntityId,
-        item_id: &EntityId,
-        request: UpdateSaleItemRequest,
-        occurred_at: &AuditOccurredAt,
-    ) -> Result<(Sale, SaleItem), ApplicationError> {
-        let scope = require_sale_scope(
-            principal,
-            Permission::SaleUpdate,
-            false,
-            cash_register_id,
-            cash_shift_id,
-        )?;
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let operation = async {
-            require_open_operational_shift(&mut transaction, &scope).await?;
-            let mut sale = transaction.get_sale(&scope, sale_id).await.map_err(storage_error)?.ok_or(ApplicationError::SaleNotFound)?;
-            sale.require_open().map_err(sale_error)?;
-            if sale.revision() != request.expected_sale_version { return Err(ApplicationError::ConcurrentModification); }
-            let mut item = transaction.get_sale_item(&scope.organization_id, sale_id, item_id).await.map_err(storage_error)?.ok_or(ApplicationError::SaleItemNotFound)?;
-            item.require_active().map_err(sale_error)?;
-            let product = transaction.get_product(&scope.organization_id, item.product_id()).await.map_err(|_| ApplicationError::Storage)?.ok_or(ApplicationError::ProductNotFound)?;
-            if product.status() != Status::Active { return Err(ApplicationError::ProductInactive); }
-            let (delta, effective, snapshots) = transaction.modifier_quote(&scope.organization_id, product.id(), &request.modifier_option_ids, product.unit_price()).await?;
-            let previous_options = transaction.item_option_ids(item_id).await.map_err(storage_error)?;
-            let mut requested_options = request.modifier_option_ids.clone();
-            requested_options.sort();
-            let same_options = previous_options == requested_options;
-            if item.quantity() == request.quantity && same_options { return Ok((sale, item)); }
-            item.update_quote(product.unit_price(), delta, effective, request.quantity).map_err(sale_error)?;
-            let mut all = transaction.list_sale_items(&scope.organization_id, sale_id).await.map_err(storage_error)?;
-            if let Some(existing) = all.iter_mut().find(|existing| existing.id() == item_id) { *existing = item.clone(); } else { return Err(ApplicationError::SaleItemNotFound); }
-            let total = total_of_active_items(&all).map_err(sale_error)?;
-            let previous = sale.revision(); sale.recalculate_total(total).map_err(sale_error)?;
-            if transaction.update_sale_cas(previous, &sale, occurred_at.as_str()).await.map_err(storage_error)? != CasOutcome::Updated { return Err(ApplicationError::ConcurrentModification); }
-            transaction.update_sale_item(&item, occurred_at.as_str()).await.map_err(storage_error)?;
-            transaction.replace_item_modifiers(identities, &item, &snapshots, occurred_at.as_str()).await?;
-            append_audit(&mut transaction, identities, principal, "sale.item.updated", "sale", sale.id().clone(), json!({"saleItemId": item_id.as_str(), "changedFields": ["quantity", "modifierOptionIds"]}), occurred_at).await?;
-            Ok((sale, item))
-        }.await;
-        finish(transaction, operation).await
-    }
-
-    /// Retira lógicamente una partida activa y recalcula el total con CAS.
-    ///
-    /// Los IDs de scope permanecen explícitos para no aceptar owner ni operador desde el cliente.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn remove_sale_item<I: IdentityGenerator>(
-        &self,
-        principal: &VerifiedPrincipal,
-        identities: &mut I,
-        cash_register_id: EntityId,
-        cash_shift_id: EntityId,
-        sale_id: &EntityId,
-        item_id: &EntityId,
-        expected_sale_version: u64,
-        occurred_at: &AuditOccurredAt,
-    ) -> Result<Sale, ApplicationError> {
-        let scope = require_sale_scope(
-            principal,
-            Permission::SaleUpdate,
-            false,
-            cash_register_id,
-            cash_shift_id,
-        )?;
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let operation = async {
-            require_open_operational_shift(&mut transaction, &scope).await?;
-            let mut sale = transaction
-                .get_sale(&scope, sale_id)
-                .await
-                .map_err(storage_error)?
-                .ok_or(ApplicationError::SaleNotFound)?;
-            sale.require_open().map_err(sale_error)?;
-            if sale.revision() != expected_sale_version {
-                return Err(ApplicationError::ConcurrentModification);
-            }
-            let mut item = transaction
-                .get_sale_item(&scope.organization_id, sale_id, item_id)
-                .await
-                .map_err(storage_error)?
-                .ok_or(ApplicationError::SaleItemNotFound)?;
-            item.remove(
-                principal.user_id().clone(),
-                transaction
-                    .candidate_utc_seconds(occurred_at)
-                    .await
-                    .map_err(|_| ApplicationError::Storage)?,
-            )
-            .map_err(sale_error)?;
-            let mut all = transaction
-                .list_sale_items(&scope.organization_id, sale_id)
-                .await
-                .map_err(storage_error)?;
-            if let Some(existing) = all.iter_mut().find(|existing| existing.id() == item_id) {
-                *existing = item.clone();
-            }
-            let total = total_of_active_items(&all).map_err(sale_error)?;
-            let previous = sale.revision();
-            sale.recalculate_total(total).map_err(sale_error)?;
-            if transaction
-                .update_sale_cas(previous, &sale, occurred_at.as_str())
-                .await
-                .map_err(storage_error)?
-                != CasOutcome::Updated
-            {
-                return Err(ApplicationError::ConcurrentModification);
-            }
-            transaction
-                .remove_sale_item(&item, occurred_at.as_str())
-                .await
-                .map_err(storage_error)?;
-            append_audit(
-                &mut transaction,
-                identities,
-                principal,
-                "sale.item.removed",
-                "sale",
-                sale.id().clone(),
-                json!({"saleItemId": item_id.as_str()}),
-                occurred_at,
-            )
-            .await?;
-            Ok(sale)
-        }
-        .await;
-        finish(transaction, operation).await
-    }
-
-    /// Cancela una venta OPEN conservando líneas, snapshots y total histórico.
-    ///
-    /// Los IDs de scope permanecen explícitos para no aceptar owner ni operador desde el cliente.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn cancel_sale<I: IdentityGenerator>(
-        &self,
-        principal: &VerifiedPrincipal,
-        identities: &mut I,
-        cash_register_id: EntityId,
-        cash_shift_id: EntityId,
-        sale_id: &EntityId,
-        expected_sale_version: u64,
-        occurred_at: &AuditOccurredAt,
-    ) -> Result<Sale, ApplicationError> {
-        let scope = require_sale_scope(
-            principal,
-            Permission::SaleCancel,
-            true,
-            cash_register_id,
-            cash_shift_id,
-        )?;
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let operation = async {
-            let mut sale = transaction
-                .get_sale(&scope, sale_id)
-                .await
-                .map_err(storage_error)?
-                .ok_or(ApplicationError::SaleNotFound)?;
-            if sale.revision() != expected_sale_version {
-                return Err(ApplicationError::ConcurrentModification);
-            }
-            let previous_total = sale.total_amount();
-            let previous = sale.revision();
-            sale.cancel(
-                principal.user_id().clone(),
-                transaction
-                    .candidate_utc_seconds(occurred_at)
-                    .await
-                    .map_err(|_| ApplicationError::Storage)?,
-            )
-            .map_err(sale_error)?;
-            if transaction
-                .update_sale_cas(previous, &sale, occurred_at.as_str())
-                .await
-                .map_err(storage_error)?
-                != CasOutcome::Updated
-            {
-                return Err(ApplicationError::ConcurrentModification);
-            }
-            append_audit(
-                &mut transaction,
-                identities,
-                principal,
-                "sale.cancelled",
-                "sale",
-                sale.id().clone(),
-                json!({"previousTotal": previous_total.to_string()}),
-                occurred_at,
-            )
-            .await?;
-            Ok(sale)
-        }
-        .await;
-        finish(transaction, operation).await
-    }
-}
-
 impl SaleOperationalContext for SqliteTransaction {
     fn find_branch(
         &mut self,
@@ -1119,17 +702,6 @@ impl SaleOperationalContext for SqliteTransaction {
     }
 }
 
-pub(crate) fn sale_error(error: SaleError) -> ApplicationError {
-    match error {
-        SaleError::SaleNotOpen => ApplicationError::SaleNotOpen,
-        SaleError::SaleAlreadyCancelled => ApplicationError::SaleAlreadyCancelled,
-        SaleError::SaleAlreadyCompleted => ApplicationError::SaleAlreadyCompleted,
-        SaleError::ItemAlreadyRemoved => ApplicationError::SaleItemAlreadyRemoved,
-        SaleError::ConcurrentModification => ApplicationError::ConcurrentModification,
-        SaleError::OwnershipMismatch => ApplicationError::OwnershipMismatch,
-        _ => ApplicationError::InvalidSaleInput,
-    }
-}
 pub(crate) fn storage_error(error: SalesStorageError) -> ApplicationError {
     match error {
         SalesStorageError::ForeignKey => ApplicationError::OwnershipMismatch,
@@ -1139,6 +711,252 @@ pub(crate) fn storage_error(error: SalesStorageError) -> ApplicationError {
 pub(crate) fn transaction_error(_: crate::OrganizationBranchStorageError) -> ApplicationError {
     ApplicationError::Storage
 }
+
+pub use pos_application::sales::{
+    AddSaleItemRequest, MAX_SALE_PAGE_SIZE, ModifierSnapshot, NewSaleRequest, SalePage,
+    UpdateSaleItemRequest,
+};
+
+pub use pos_application::sales::{SalesApplication, SalesTransaction, SalesUnitOfWork, sale_error};
+
+/// Alias de compatibilidad: el caso de uso vive ahora en `pos-application`.
+pub type SqliteSalesApplication = SalesApplication<SqliteUnitOfWork>;
+
+impl SalesUnitOfWork for SqliteUnitOfWork {
+    type Transaction = SqliteTransaction;
+
+    async fn begin_transaction(&self) -> Result<SqliteTransaction, ApplicationError> {
+        SqliteUnitOfWork::begin(self)
+            .await
+            .map_err(transaction_error)
+    }
+
+    async fn commit_transaction(
+        &self,
+        transaction: SqliteTransaction,
+    ) -> Result<(), ApplicationError> {
+        transaction.commit().await.map_err(transaction_error)
+    }
+
+    async fn rollback_transaction(
+        &self,
+        transaction: SqliteTransaction,
+    ) -> Result<(), ApplicationError> {
+        transaction.rollback().await.map_err(transaction_error)
+    }
+}
+
+impl SalesTransaction for SqliteTransaction {
+    fn get_sale(
+        &mut self,
+        scope: &SaleScope,
+        sale_id: &EntityId,
+    ) -> impl Future<Output = Result<Option<Sale>, ApplicationError>> + Send {
+        let scope = scope.clone();
+        let sale_id = sale_id.clone();
+        async move { self.get_sale(&scope, &sale_id).await.map_err(storage_error) }
+    }
+
+    fn list_sales(
+        &mut self,
+        scope: &SaleScope,
+        status: Option<SaleStatus>,
+        limit: i64,
+        offset: i64,
+    ) -> impl Future<Output = Result<Vec<Sale>, ApplicationError>> + Send {
+        let scope = scope.clone();
+        async move {
+            self.list_sales(&scope, status, limit, offset)
+                .await
+                .map_err(storage_error)
+        }
+    }
+
+    fn insert_sale(
+        &mut self,
+        sale: &Sale,
+        occurred_at: &str,
+    ) -> impl Future<Output = Result<(), ApplicationError>> + Send {
+        let sale = sale.clone();
+        let occurred_at = occurred_at.to_owned();
+        async move {
+            self.insert_sale(&sale, &occurred_at)
+                .await
+                .map_err(storage_error)
+        }
+    }
+
+    fn update_sale_cas(
+        &mut self,
+        previous: u64,
+        sale: &Sale,
+        occurred_at: &str,
+    ) -> impl Future<Output = Result<CasOutcome, ApplicationError>> + Send {
+        let sale = sale.clone();
+        let occurred_at = occurred_at.to_owned();
+        async move {
+            self.update_sale_cas(previous, &sale, &occurred_at)
+                .await
+                .map_err(storage_error)
+        }
+    }
+
+    fn get_sale_item(
+        &mut self,
+        organization_id: &EntityId,
+        sale_id: &EntityId,
+        item_id: &EntityId,
+    ) -> impl Future<Output = Result<Option<SaleItem>, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let sale_id = sale_id.clone();
+        let item_id = item_id.clone();
+        async move {
+            self.get_sale_item(&organization_id, &sale_id, &item_id)
+                .await
+                .map_err(storage_error)
+        }
+    }
+
+    fn list_sale_items(
+        &mut self,
+        organization_id: &EntityId,
+        sale_id: &EntityId,
+    ) -> impl Future<Output = Result<Vec<SaleItem>, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let sale_id = sale_id.clone();
+        async move {
+            self.list_sale_items(&organization_id, &sale_id)
+                .await
+                .map_err(storage_error)
+        }
+    }
+
+    fn next_sale_item_position(
+        &mut self,
+        organization_id: &EntityId,
+        sale_id: &EntityId,
+    ) -> impl Future<Output = Result<u32, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let sale_id = sale_id.clone();
+        async move {
+            self.next_sale_item_position(&organization_id, &sale_id)
+                .await
+                .map_err(storage_error)
+        }
+    }
+
+    fn insert_sale_item(
+        &mut self,
+        item: &SaleItem,
+        occurred_at: &str,
+    ) -> impl Future<Output = Result<(), ApplicationError>> + Send {
+        let item = item.clone();
+        let occurred_at = occurred_at.to_owned();
+        async move {
+            self.insert_sale_item(&item, &occurred_at)
+                .await
+                .map_err(storage_error)
+        }
+    }
+
+    fn update_sale_item(
+        &mut self,
+        item: &SaleItem,
+        occurred_at: &str,
+    ) -> impl Future<Output = Result<(), ApplicationError>> + Send {
+        let item = item.clone();
+        let occurred_at = occurred_at.to_owned();
+        async move {
+            self.update_sale_item(&item, &occurred_at)
+                .await
+                .map_err(storage_error)
+        }
+    }
+
+    fn remove_sale_item(
+        &mut self,
+        item: &SaleItem,
+        occurred_at: &str,
+    ) -> impl Future<Output = Result<(), ApplicationError>> + Send {
+        let item = item.clone();
+        let occurred_at = occurred_at.to_owned();
+        async move {
+            self.remove_sale_item(&item, &occurred_at)
+                .await
+                .map_err(storage_error)
+        }
+    }
+
+    fn item_option_ids(
+        &mut self,
+        item_id: &EntityId,
+    ) -> impl Future<Output = Result<Vec<EntityId>, ApplicationError>> + Send {
+        let item_id = item_id.clone();
+        async move { self.item_option_ids(&item_id).await.map_err(storage_error) }
+    }
+
+    fn replace_item_modifiers<I: IdentityGenerator + Send>(
+        &mut self,
+        identities: &mut I,
+        item: &SaleItem,
+        snapshots: &[ModifierSnapshot],
+        occurred_at: &str,
+    ) -> impl Future<Output = Result<(), ApplicationError>> + Send {
+        let item = item.clone();
+        let snapshots = snapshots.to_vec();
+        let occurred_at = occurred_at.to_owned();
+        async move {
+            self.replace_item_modifiers(identities, &item, &snapshots, &occurred_at)
+                .await
+        }
+    }
+
+    fn modifier_quote(
+        &mut self,
+        organization_id: &EntityId,
+        product_id: &EntityId,
+        selected: &[EntityId],
+        base: UnitPrice,
+    ) -> impl Future<
+        Output = Result<(PriceDelta, UnitPrice, Vec<ModifierSnapshot>), ApplicationError>,
+    > + Send {
+        let organization_id = organization_id.clone();
+        let product_id = product_id.clone();
+        let selected = selected.to_vec();
+        async move {
+            self.modifier_quote(&organization_id, &product_id, &selected, base)
+                .await
+        }
+    }
+
+    fn get_product(
+        &mut self,
+        organization_id: &EntityId,
+        product_id: &EntityId,
+    ) -> impl Future<Output = Result<Option<pos_core::catalog::Product>, ApplicationError>> + Send
+    {
+        let organization_id = organization_id.clone();
+        let product_id = product_id.clone();
+        async move {
+            self.get_product(&organization_id, &product_id)
+                .await
+                .map_err(|_| ApplicationError::Storage)
+        }
+    }
+
+    fn candidate_utc_seconds(
+        &mut self,
+        occurred_at: &AuditOccurredAt,
+    ) -> impl Future<Output = Result<UtcSeconds, ApplicationError>> + Send {
+        let occurred_at = occurred_at.clone();
+        async move {
+            self.candidate_utc_seconds(&occurred_at)
+                .await
+                .map_err(|_| ApplicationError::Storage)
+        }
+    }
+}
+
 pub(crate) async fn finish<T>(
     transaction: SqliteTransaction,
     operation: Result<T, ApplicationError>,
@@ -1149,11 +967,8 @@ pub(crate) async fn finish<T>(
             Ok(value)
         }
         Err(error) => {
-            if transaction.rollback().await.is_err() {
-                Err(ApplicationError::Storage)
-            } else {
-                Err(error)
-            }
+            transaction.rollback().await.map_err(transaction_error)?;
+            Err(error)
         }
     }
 }

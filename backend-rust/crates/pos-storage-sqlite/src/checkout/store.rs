@@ -39,14 +39,14 @@ use pos_core::{
 use serde_json::json;
 
 use pos_application::{
-    audit::append_audit, authorization::require_sale_scope,
+    audit::append_audit, authorization::require_sale_scope, sales::sale_error,
     sales_context::require_open_operational_shift,
 };
 
 use crate::{
     CasOutcome, SqliteTransaction, SqliteUnitOfWork,
     inventory_store::enforce_stock_policy,
-    sales_store::{finish, sale_error, storage_error, transaction_error},
+    sales_store::{finish, storage_error, transaction_error},
 };
 
 const INSERT_PAYMENT: &str = "INSERT INTO payment (id, organization_id, branch_id, \
