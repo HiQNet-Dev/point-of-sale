@@ -31,12 +31,16 @@ pos-storage-sqlite   adaptadores SQLite; implementa los puertos
 pos-local            composition root: config, SQLite, ciclo de vida
 migration-lab        herramienta de paridad/migración
 pos-lab              CLI + biblioteca de fixtures explícitamente sintéticas
-pos-desktop-lab      adaptador Tauri/IPC aislado; workspace gráfico independiente
+pos-desktop          application de escritorio (Tauri/IPC); workspace gráfico independiente
 ```
 
-En 1X, `tools/desktop-lab` compone Application y SQLite para lecturas desde una
-entrada React separada. No es el composition root comercial ni carga propuestas
-en `pos-local`. Ver [ADR-0023](adr/0023-tauri-readonly-laboratory.md).
+En 1Y, `apps/pos-desktop` tiene dos modos explícitos. El laboratorio compone
+Application y SQLite sobre una base temporal con fixtures sintéticas; el modo
+instalación abre `<directorio>/hiqnet-pos.sqlite`, aplica sólo el migrador
+aprobado y expone únicamente su estado. No hay composition root comercial ni
+propuestas cargadas fuera de `pos-lab`. Ver
+[ADR-0023](adr/0023-tauri-readonly-laboratory.md) y
+[ADR-0024](adr/0024-local-persistent-installation.md).
 
 Dirección de dependencias permitida:
 

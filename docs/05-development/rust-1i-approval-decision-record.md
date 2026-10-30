@@ -200,6 +200,12 @@ antes de que el tramo correspondiente esté desbloqueado: no se simula seguridad
 Completar solo si se acepta formalmente. Sin este bloque, el estado del
 expediente sigue siendo PENDIENTE.
 
+> En 1Y se añadió un paquete de firma por bloques que agrupa estas filas para
+> facilitar la decisión: ver
+> [`rust-increment-1y-approval-package.md`](rust-increment-1y-approval-package.md).
+> Ese paquete **no registra ninguna aprobación**; la autoridad de aceptación sigue
+> siendo esta tabla.
+
 | ID | Decisión solicitada | Respuesta (APROBADA / RECHAZADA / DIFERIDA) | Fecha | Nota |
 | --- | --- | --- | --- | --- |
 | D-AUTH-01 | | | | |

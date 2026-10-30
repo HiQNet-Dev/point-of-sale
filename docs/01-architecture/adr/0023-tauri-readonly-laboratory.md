@@ -9,9 +9,11 @@ de ADR-0020 y F4–21, sin sustituir Java ni introducir HTTP.
 
 ## Decisión de implementación
 
-- `backend-rust/tools/desktop-lab` es una herramienta independiente, no una nueva
+- `backend-rust/apps/pos-desktop` es un entrypoint independiente, no una nueva
   ruta comercial de `pos-local`. Mantiene workspace/lockfile propios para que
-  GTK/WebKit/Tauri no se conviertan en dependencias del workspace headless.
+  GTK/WebKit/Tauri no se conviertan en dependencias del workspace headless. En 1Y
+  añade el modo instalación persistente ([ADR-0024](0024-local-persistent-installation.md));
+  el laboratorio descrito aquí sigue sin datos reales.
 - Tauri **2.12.5**, Tauri Specta **=2.0.0-rc.26**, Specta **=2.0.0-rc.26**,
   Specta TypeScript **=0.0.13**, API JS **2.12.4**. Versiones comprobadas en el
   registro y en sus fuentes oficiales, compiladas con Rust 1.99.1. Specta sigue

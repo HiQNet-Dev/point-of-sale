@@ -8,9 +8,10 @@ este directorio es la capa humana que explica cómo usarlo.
 ## Transición Rust
 
 Rust todavía **no expone una API comercial** ni promete compatibilidad `/api/v1`.
-Java sigue siendo la referencia HTTP oficial. El incremento 1X incorpora
-[lecturas Tauri/IPC reales en una aplicación aislada](rust-desktop-ipc.md), con
-SQLite y sesión sintéticos; no sustituye login ni pantallas Java y no añade HTTP.
+Java sigue siendo la referencia HTTP oficial. Los incrementos 1X y 1Y incorporan
+[lecturas Tauri/IPC reales](rust-desktop-ipc.md) en una aplicación de escritorio:
+mode laboratorio con SQLite y sesión sintéticos, y modo instalación persistente
+que sólo informa su estado. No sustituye login ni pantallas Java y no añade HTTP.
 Ver [matriz AS-IS](../05-development/rust-parity-baseline.md).
 
 ### Contratos Rust Local (1W)
@@ -20,11 +21,12 @@ La [guía Rust Local](rust-local-integration.md) explica el inventario generado 
 Rust → cliente TypeScript → SQLite. La vertical está **aislada en laboratorio**;
 no añade endpoints HTTP, comandos Tauri ni login comercial.
 
-### Escritorio Rust (1X)
+### Escritorio Rust (1X–1Y)
 
-Para abrir la primera pantalla React conectada a Rust: desde `frontend/`,
-`pnpm desktop:lab`. Para probar el transporte real: `pnpm test:desktop-lab`.
-Ver [contrato IPC y requisitos](rust-desktop-ipc.md).
+Para abrir la pantalla React conectada a Rust: desde `frontend/`, `pnpm desktop:lab`
+(laboratorio efímero) o `pnpm desktop:install -- <directorio>` (instalación
+persistente). Para probar los transportes reales: `pnpm test:desktop-lab` y
+`pnpm test:desktop-installation`. Ver [contrato IPC y requisitos](rust-desktop-ipc.md).
 
 ## Especificación viva (OpenAPI)
 

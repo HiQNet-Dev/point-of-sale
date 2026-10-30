@@ -1,6 +1,6 @@
 # Tablero maestro de migración Java → Rust
 
-**Actualizado en el Incremento 1X.** Este tablero registra el estado real de la
+**Actualizado en el Incremento 1Y.** Este tablero registra el estado real de la
 migración, no el deseado. Un estado solo avanza con evidencia publicada.
 
 Arquitectura: monolito modular hexagonal (`pos-core` ← `pos-application` ←
@@ -49,8 +49,9 @@ auditoría transaccional— sobre un esquema **candidato** que aún no vive en
 | Recetas y efectos de modificador | `PERSISTENCE (fixture)` | `pos-core::recipe`, `0014` candidato, resolución de consumo y snapshots usados por checkout | Mantenimiento administrativo, aprobación D-INV, promoción, API |
 | API HTTP / OpenAPI | `NOT_STARTED` | — | Todo |
 | Transporte Local | `IPC (lab)` | Tauri v2: tres handlers de lectura, bindings generados, ACL local y sesión revalidada en SQLite; [contrato](../03-api/rust-desktop-ipc.md), ADR-0023 | Activación comercial, composición canónica y seguridad aprobada |
-| Integración React | `INTEGRATED (lab only)` | Pantalla separada: sucursales/categorías/productos; E2E Windows real React → WebView2 IPC → Application → SQLite | Login comercial, escrituras, integración de pantallas operativas y paridad completa |
-| Arnés Docker Local | `DEV HARNESS (validated)` | `backend-rust/Dockerfile` multi-stage, runtime no-root, volumen, healthcheck funcional (`verify_health`: integridad + migraciones), reinicio y `down`/`up` con checksum idéntico | No es distribución Free Local ni expone red |
+| Instalación Local persistente | `PERSISTENCE (approved 0001)` | `apps/pos-desktop --installation <dir>`: migrador aprobado, clasificación primera instalación/reapertura, rechazo de esquema posterior, cierre con checkpoint; E2E Windows de dos arranques y smoke Docker | Identidad de instalación (D-INST), directorio canónico, operaciones de negocio y aprobación del bloque D |
+| Integración React | `INTEGRATED (lab only)` | Pantalla separada de laboratorio y pantalla de instalación; E2E Windows real React → WebView2 IPC → Application → SQLite | Login comercial, escrituras, integración de pantallas operativas y paridad completa |
+| Arnés Docker Local | `DEV HARNESS (validated)` | `backend-rust/Dockerfile` multi-stage, runtime no-root, volumen, healthcheck funcional (`verify_health`: integridad + migraciones), reinicio, cierre con checkpoint, evidencia `first_install` → `reopened` y checksum idéntico | No es distribución Free Local ni expone red |
 | Arnés sintético extremo a extremo | `E2E (synthetic)` | `tools/pos-lab`: bootstrap → admin → sesión → RBAC → sucursal → categoría → producto → inventario → receta → caja → turno → venta → checkout → consumo → `COMPLETED` → auditoría → cierre → reapertura. Ejecutado en local y en Docker | Sigue sobre esquema **candidato**; no es producto |
 
 ## 3. Dinero y cantidades

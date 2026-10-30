@@ -1,7 +1,25 @@
-# Rust desktop — primera vertical IPC real (1X)
+# Rust desktop — vertical IPC real (1X) e instalación persistente (1Y)
 
-**Solo laboratorio, no productivo.** Java HTTP/OpenAPI y las pantallas existentes
-siguen operativos. No hay servidor HTTP Rust. Ver [ADR-0023](../01-architecture/adr/0023-tauri-readonly-laboratory.md).
+**Sin operaciones comerciales.** El laboratorio usa fixtures sintéticas; el modo
+instalación sólo informa su estado. Java HTTP/OpenAPI y las pantallas existentes
+siguen operativos. No hay servidor HTTP Rust. Ver
+[ADR-0023](../01-architecture/adr/0023-tauri-readonly-laboratory.md) y
+[ADR-0024](../01-architecture/adr/0024-local-persistent-installation.md).
+
+## Modos de arranque
+
+El ejecutable `backend-rust/apps/pos-desktop` exige un modo explícito; no hay
+configuración productiva por defecto ni lectura de variables de entorno.
+
+| Modo | Argumento | Base de datos | Identidad | Comandos |
+| --- | --- | --- | --- | --- |
+| Laboratorio | `--synthetic-lab` | Temporal, nueva en cada arranque | Fixture sintética fija | `lab_*` |
+| Instalación | `--installation <directorio>` | `<directorio>/hiqnet-pos.sqlite`, persistente | **Ninguna** | `installation_status` |
+
+El modo instalación aplica únicamente el migrador aprobado
+(`migrations/local`). Historial vacío ⇒ primera instalación; versión igual al
+build ⇒ reapertura; versión posterior ⇒ el arranque se rechaza. Nunca carga
+`proposals/`, nunca crea usuarios, sesiones ni credenciales.
 
 ## Levantar la aplicación para probarla
 
@@ -10,53 +28,57 @@ En Windows con Rust 1.99.1, herramientas MSVC y WebView2 instalados:
 ```sh
 cd frontend
 pnpm install --frozen-lockfile
-pnpm desktop:lab
+pnpm desktop:lab                      # laboratorio efímero
+pnpm desktop:install -- C:/datos/hiqnet-pos   # instalación persistente
 ```
 
-El comando construye una entrada React separada y abre una ventana Tauri. No
+`desktop:lab` construye una entrada React separada y abre una ventana Tauri. No
 necesita Spring Boot, PostgreSQL, Docker ni Vite escuchando. Muestra sucursales,
 categorías y productos desde **SQLite real**, con el precio exacto `12.3456`.
-El botón Actualizar vuelve a ejecutar los casos de uso por IPC.
 
-La base se crea en un directorio temporal nuevo para cada arranque. No se acepta
-una ruta de cliente, no hay bootstrap público ni capacidad de escritura desde
-la pantalla. **No es aún una instalación comercial durable**. La fixture prepara
-bootstrap, sucursal, roles, sesión y receta; utiliza un reloj sintético fijo.
-No demuestra login comercial ni expiración basada en el reloj de pared.
+`desktop:install` reutiliza la misma ventana: al abrir por primera vez muestra
+`Primera instalación`, versión de esquema y migraciones aplicadas; al cerrar y
+volver a abrir muestra `Instalación reabierta` sobre el mismo archivo. Ninguno de
+los dos modos acepta rutas, organización, actor ni sesión desde JavaScript.
 
 ## Camino ejecutado
 
 ```text
-DesktopCatalogPage (React + TanStack Query)
- → desktopCatalogService
+DesktopShell (React + TanStack Query)
+ → desktopService
  → desktop.generated.ts (Tauri Specta)
  → IPC Tauri / WebView2
  → commands.rs (solo adaptación)
- → composition.rs (principal DB-authoritative + composición)
+ → LocalState: modo laboratorio o modo instalación
  → Application y puertos
  → adaptadores SQLite existentes
  → DTO tipado → React
 ```
 
-La fixture de `pos-lab` se comparte como biblioteca; no se ha copiado el flujo
-comercial al handler. `pos-local` conserva exclusivamente las migraciones
-aprobadas, sin cargar `proposals/`. No se activan servicios candidatos en el
-composition root de producto.
+La fixture de `pos-lab` se comparte como biblioteca sólo en el modo laboratorio.
+`pos-local` y el modo instalación conservan exclusivamente el migrador aprobado,
+sin cargar `proposals/`. El caso de uso `pos-application::installation` es común a
+contenedor y escritorio.
 
 ## Contratos registrados
 
-Fuente verificable: `tools/desktop-lab/src/commands.rs` + `dto.rs`, relativa a
+Fuente verificable: `apps/pos-desktop/src/commands.rs` + `dto.rs`, relativa a
 `backend-rust/`. El mismo registro configura dispatcher y generación de bindings.
 
-| Comando real | Request IPC | Response de éxito | Permiso | Scope |
-| --- | --- | --- | --- | --- |
-| `lab_list_branches` | `{}` | `BranchDto[]` | `branch.read` | Organización del principal |
-| `lab_list_categories` | `{ "request": { "limit": 20, "offset": 0 } }` | `CategoryDto[]` | `category.read` | Organización del principal |
-| `lab_list_products` | `{ "request": { "limit": 20, "offset": 0 } }` | `ProductDto_Serialize[]` | `product.read` | Organización del principal |
+| Comando real | Modo | Request IPC | Response de éxito | Permiso | Scope |
+| --- | --- | --- | --- | --- | --- |
+| `lab_list_branches` | Laboratorio | `{}` | `BranchDto[]` | `branch.read` | Organización del principal |
+| `lab_list_categories` | Laboratorio | `{ "request": { "limit": 20, "offset": 0 } }` | `CategoryDto[]` | `category.read` | Organización del principal |
+| `lab_list_products` | Laboratorio | `{ "request": { "limit": 20, "offset": 0 } }` | `ProductDto_Serialize[]` | `product.read` | Organización del principal |
+| `installation_status` | Instalación | `{}` | `InstallationStatusDto` | Ninguno (sin datos de negocio) | Instalación local |
 
-Estado: **EXPOSED_VIA_IPC en app de laboratorio** y consumidos por su pantalla
-React. No son IPC comercial ni `EXPOSED_VIA_HTTP`. El catálogo generado 1W sigue
-inventariando casos de aplicación, no este registro de comandos de laboratorio.
+`InstallationStatusDto`: `state` (`FIRST_INSTALL`/`REOPENED`), `schemaVersion`
+y `appliedMigrations`. No contiene rutas, usuarios, sesiones ni precios. El comando
+de un modo responde `OPERATION_NOT_AVAILABLE` en el otro, sin consultar SQL.
+
+Estado: **EXPOSED_VIA_IPC en aplicación de escritorio**. No son IPC comercial ni
+`EXPOSED_VIA_HTTP`. El catálogo generado 1W sigue inventariando casos de
+aplicación, no este registro de comandos.
 
 `limit`: entero 1–100; `offset`: entero u32 desde cero. Los listados de catálogo
 son ventanas por offset, **sin total/páginas calculadas**. Sucursales devuelve el
@@ -74,15 +96,18 @@ sustituyen consumidores existentes ni aprueban el futuro contrato de escritura
 ## Consumir desde React
 
 ```ts
-import { desktopCatalogService } from '../../shared/rust-local/desktop-client'
+import { desktopService } from '../../shared/rust-local/desktop-client'
 
-const products = await desktopCatalogService.listProducts()
+const status = await desktopService.installationStatus()
+// { state: 'REOPENED', schemaVersion: 1, appliedMigrations: 1 }
+const products = await desktopService.listProducts()
 // products[0].unitPrice === '12.3456'; se conserva texto exacto.
 ```
 
-El uso real y compilado está en `DesktopCatalogPage.tsx`. No repartir `invoke()`
-por componentes. Los bindings generados envuelven el resultado en `{status:'ok',
-data}` o `{status:'error',error}`; el servicio los traduce a datos o
+El uso real y compilado está en `DesktopShell.tsx`, `InstallationPage.tsx` y
+`DesktopCatalogPage.tsx`. No repartir `invoke()` por componentes. Los bindings
+generados envuelven el resultado en `{status:'ok', data}` o
+`{status:'error',error}`; el servicio los traduce a datos o
 `DesktopCommandError.code`.
 
 | Código tipado | Condición | Tratamiento frontend |
@@ -90,6 +115,7 @@ data}` o `{status:'error',error}`; el servicio los traduce a datos o
 | `UNAUTHORIZED` | Sesión inválida/vencida/revocada o estado no válido | No reintentar automáticamente |
 | `FORBIDDEN` | Sesión válida sin permiso | Mostrar acceso denegado |
 | `VALIDATION_ERROR` | Página fuera del contrato | Corregir request |
+| `OPERATION_NOT_AVAILABLE` | El comando no existe en el modo actual | No reintentar; el modo lo decide el proceso |
 | `INTERNAL_ERROR` | Fallo interno o fallo técnico IPC | Mensaje seguro, sin SQL/stderr |
 
 Los errores de deserialización y ACL de Tauri se normalizan como fallo técnico
@@ -101,6 +127,7 @@ por el servicio. No son automáticamente el `ApiError`/status HTTP de Java.
 # Desde frontend/
 pnpm generate:desktop-contracts
 pnpm test:desktop-lab
+pnpm test:desktop-installation
 ```
 
 `generate:desktop-contracts` utiliza Specta a partir de firmas Rust reales.
@@ -112,17 +139,27 @@ el código de aplicación.
 
 `test:desktop-lab` construye el frontend y el ejecutable y ejecuta **WebView2 real**.
 Playwright verifica el render React de sucursal/categoría/producto y el precio,
-actualiza y comprueba página inválida y rechazo de overposting. El puerto
-DevTools es efímero de loopback, solo del proceso de prueba; no se abre en el
-arranque manual. La limpieza solo cierra el proceso creado por la prueba.
+actualiza y comprueba página inválida, rechazo de overposting y que el laboratorio
+no expone `installation_status`.
+
+`test:desktop-installation` arranca **dos veces** sobre el mismo directorio
+temporal con `--installation`, verifica `Primera instalación` y después
+`Instalación reabierta` con la misma versión de esquema, comprueba que el archivo
+sobrevive al cierre y que el modo instalación no sirve catálogo sintético.
+
+En ambos casos el puerto DevTools es efímero de loopback, sólo del proceso de
+prueba; no se abre en el arranque manual. La limpieza sólo cierra el proceso
+creado por la prueba.
 
 Separación de evidencias:
 
 - Vitest `DesktopCatalogPage.test.tsx`: presentación unitaria con servicio mock.
 - `pnpm test:rust-contracts`: proceso Rust/JSON del laboratorio 1W, **no IPC**.
-- `cargo test --locked` en `backend-rust/tools/desktop-lab`: dispatcher Tauri con
-  MockRuntime, snapshots y seguridad SQLite; **no GUI real**.
-- `pnpm test:desktop-lab`: React/WebView2/IPC/SQLite real, **E2E de escritorio**.
+- `cargo test --locked` en `backend-rust/apps/pos-desktop`: dispatcher Tauri con
+  MockRuntime, modos, persistencia por reapertura, rechazo de esquema posterior,
+  snapshots y aislamiento por organización; **no GUI real**.
+- `pnpm test:desktop-lab` y `pnpm test:desktop-installation`:
+  React/WebView2/IPC/SQLite real, **E2E de escritorio**.
 - Docker `contracts`: suite Linux headless; **no reemplaza** el E2E de escritorio.
 
 El workspace gráfico es independiente para no introducir GTK/WebKit en los
@@ -131,10 +168,12 @@ build. Windows es el entorno gráfico ejecutado; no se afirma E2E desktop Linux.
 
 ## Bloqueos y siguiente vertical
 
-No hay escritura IPC ni autenticación comercial. D-AUTH, D-INST, D-CAT, D-CASH,
-D-SALES, D-INV y ADR-0022 siguen sujetos al expediente canónico; D-AUTH-09
-continúa bloqueada. No se promueve DDL candidato ni se resuelve SYSTEM por
-introducir un transporte. Próxima vertical: sesión comercial autorizada y
-lectura de catálogo en el composition root canónico; después escritura CAS con
-auditoría, solo cuando el bloque físico y de seguridad correspondiente esté
-aceptado. Spring Boot no se retira.
+No hay login comercial ni escritura IPC. D-AUTH, D-INST, D-CAT, D-CASH, D-SALES,
+D-INV y ADR-0022 siguen sujetos al expediente canónico; D-AUTH-09 continúa
+bloqueada y el paquete de firma está en
+[`rust-increment-1y-approval-package.md`](../05-development/rust-increment-1y-approval-package.md).
+No se promueve DDL candidato ni se resuelve SYSTEM por introducir un transporte.
+Próxima vertical: sesión comercial autorizada y lectura de catálogo sobre la
+instalación persistente; después escritura CAS con auditoría, sólo cuando el
+bloque físico y de seguridad correspondiente esté aceptado. Spring Boot no se
+retira.
