@@ -68,44 +68,17 @@ impl std::fmt::Display for CatalogStorageError {
 
 impl std::error::Error for CatalogStorageError {}
 
-const SELECT_CATEGORY: &str = "SELECT id, organization_id, code, name, status, version \
-     FROM category WHERE organization_id = ? AND id = ?";
 const CATEGORY_CODE_EXISTS: &str =
     "SELECT EXISTS (SELECT 1 FROM category WHERE organization_id = ? AND code = ?)";
-const INSERT_CATEGORY: &str = "INSERT INTO category \
-     (id, organization_id, code, name, status, version, created_at, updated_at) \
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-const UPDATE_CATEGORY_CAS: &str = "UPDATE category \
-     SET name = ?, status = ?, version = ?, updated_at = ? \
-     WHERE organization_id = ? AND id = ? AND version = ?";
 const SELECT_CATEGORY_VERSION: &str =
     "SELECT version FROM category WHERE organization_id = ? AND id = ?";
-const LIST_CATEGORIES: &str = "SELECT id, organization_id, code, name, status, version \
-     FROM category WHERE organization_id = ? AND (? IS NULL OR status = ?) \
-     ORDER BY name, id LIMIT ? OFFSET ?";
 
-const SELECT_PRODUCT: &str = "SELECT id, organization_id, category_id, sku, barcode, name, \
-     description, unit_price, status, version \
-     FROM product WHERE organization_id = ? AND id = ?";
 const PRODUCT_SKU_EXISTS: &str =
     "SELECT EXISTS (SELECT 1 FROM product WHERE organization_id = ? AND sku = ?)";
 const PRODUCT_BARCODE_EXISTS: &str =
     "SELECT EXISTS (SELECT 1 FROM product WHERE organization_id = ? AND barcode = ?)";
-const INSERT_PRODUCT: &str = "INSERT INTO product \
-     (id, organization_id, category_id, sku, barcode, name, description, unit_price, status, \
-      version, created_at, updated_at) \
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-const UPDATE_PRODUCT_CAS: &str = "UPDATE product \
-     SET category_id = ?, barcode = ?, name = ?, description = ?, unit_price = ?, status = ?, \
-         version = ?, updated_at = ? \
-     WHERE organization_id = ? AND id = ? AND version = ?";
 const SELECT_PRODUCT_VERSION: &str =
     "SELECT version FROM product WHERE organization_id = ? AND id = ?";
-const LIST_PRODUCTS: &str = "SELECT id, organization_id, category_id, sku, barcode, name, \
-     description, unit_price, status, version \
-     FROM product WHERE organization_id = ? AND (? IS NULL OR status = ?) \
-       AND (? IS NULL OR category_id = ?) \
-     ORDER BY name, id LIMIT ? OFFSET ?";
 
 #[derive(sqlx::FromRow)]
 struct CategoryRow {
@@ -507,6 +480,8 @@ pub use pos_application::catalog::{
     CatalogApplication, CatalogPage, CatalogTransaction, CatalogUnitOfWork, CategoryUpdateRequest,
     NewCategoryRequest, NewProductRequest, ProductUpdateRequest,
 };
+
+use super::queries::*;
 
 /// Alias de compatibilidad: el caso de uso vive ahora en `pos-application`.
 pub type SqliteCatalogApplication = CatalogApplication<SqliteUnitOfWork>;

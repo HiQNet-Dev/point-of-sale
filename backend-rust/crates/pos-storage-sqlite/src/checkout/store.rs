@@ -28,13 +28,6 @@ use pos_core::{
 
 use crate::{CasOutcome, SqliteTransaction, SqliteUnitOfWork};
 
-const INSERT_PAYMENT: &str = "INSERT INTO payment (id, organization_id, branch_id, \
-    cash_register_id, cash_shift_id, sale_id, position, method, amount, tendered_amount, \
-    change_amount, created_by_user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-const INSERT_INVENTORY_COMPONENT: &str = "INSERT INTO sale_item_inventory_component \
-    (id, organization_id, sale_item_id, inventory_item_id, base_unit, quantity_per_unit, \
-    quantity_total, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-
 impl SqliteTransaction {
     async fn insert_payment(
         &mut self,
@@ -102,6 +95,8 @@ pub use pos_application::checkout::{
     CheckoutApplication, CheckoutOutcome, CheckoutPaymentRequest, CheckoutRequest,
     CheckoutTransaction,
 };
+
+use super::queries::*;
 
 /// Alias de compatibilidad: el caso de uso vive ahora en `pos-application`.
 pub type SqliteCheckoutApplication = CheckoutApplication<SqliteUnitOfWork>;
