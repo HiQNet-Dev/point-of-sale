@@ -372,6 +372,11 @@ impl Decimal4 {
         i64::try_from(self.0).map_err(|_| CatalogError::InvalidPrice)
     }
 
+    /// Cero exacto con escala 4.
+    pub fn zero() -> Self {
+        Self(0)
+    }
+
     /// Indica si el valor es estrictamente negativo.
     pub fn is_negative(&self) -> bool {
         self.0 < 0
@@ -417,6 +422,11 @@ impl UnitPrice {
     /// Devuelve [`CatalogError::InvalidPrice`] en cualquier incumplimiento.
     pub fn parse(input: &str) -> Result<Self, CatalogError> {
         Self::new(Decimal4::parse(input)?)
+    }
+
+    /// Importe cero.
+    pub fn zero() -> Self {
+        Self(Decimal4::zero())
     }
 
     /// Valor decimal subyacente.

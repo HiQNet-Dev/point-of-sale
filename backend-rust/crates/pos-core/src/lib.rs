@@ -19,6 +19,8 @@ pub mod inventory;
 pub mod organization_branch;
 /// Compras: órdenes, partidas y reglas de recepción, sin persistencia.
 pub mod purchasing;
+/// Ventas, pagos y cotización de modificadores, sin persistencia.
+pub mod sales;
 
 /// Código de moneda de tres letras ASCII, normalizado a mayúsculas.
 ///
@@ -208,5 +210,7 @@ mod inventory_tests;
 mod organization_branch_tests;
 #[cfg(test)]
 mod purchasing_tests;
+#[cfg(test)]
+mod sales_tests;
 #[cfg(test)]
 mod tests;
