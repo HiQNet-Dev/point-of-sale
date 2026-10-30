@@ -27,7 +27,8 @@ desde el HEAD exacto de 1P y un PR Draft contra `dev`:
 | --- | --- |
 | Rama | `chore/ci-validation-1q` (mismo árbol que 1P) |
 | PR | #75, Draft, base `dev`, propósito único de validación |
-| Ejecución | [run 40937623585](https://github.com/HiQNet-Dev/point-of-sale/actions/runs/40937623585) |
+| Ejecución consolidación (1P) | [run 40937623585](https://github.com/HiQNet-Dev/point-of-sale/actions/runs/40937623585) |
+| Ejecución catálogo (1Q) | [run 40949925572](https://github.com/HiQNet-Dev/point-of-sale/actions/runs/40949925572) |
 | Evento | `pull_request` |
 | Runner | `ubuntu-latest` (primera validación Linux del código consolidado) |
 
@@ -69,6 +70,25 @@ pruebas, build, escaneo de secretos, auditoría de dependencias y evidencia téc
 de migración. El único fallo es el gate DDL13/normativo, que sigue bloqueado por
 las decisiones pendientes del titular. No se modificó `--require-complete`, no se
 añadió `continue-on-error` ni `|| true`, y no se declaró CI verde.
+
+### 2.3 Segunda ejecución: código de 1Q en Linux
+
+La rama de validación avanzó por *fast-forward* al commit `18912228` (mismo
+contenido que este PR), de modo que el workflow real volvió a ejecutarse sobre
+formato, Clippy, pruebas y build **con el código nuevo**:
+
+| Paso | Resultado |
+| --- | --- |
+| Check Rust formatting | ✅ |
+| Clippy (all targets and features) | ✅ |
+| **Test Rust workspace (246 pruebas, incluidas las 18 nuevas)** | ✅ |
+| Build Rust workspace | ✅ |
+| Secret scan y `cargo audit` | ✅ |
+| PostgreSQL 17 + evidencia técnica | ✅ |
+| Require complete normative evidence | ❌ **bloqueo normativo esperado** |
+
+La rama de validación y el PR #75 son desechables: no autorizan merge y no se
+mantendrán después de recoger la evidencia.
 
 ## 3. Decisiones normativas (sin cambios de estado)
 
@@ -213,7 +233,8 @@ frente P1 tras el catálogo, sin bloquearlo.
 | `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings` | ✅ |
 | `cargo test --locked --workspace --all-features` | ✅ **246 pruebas, 0 fallos** |
 | `cargo build --locked --workspace --all-features` | ✅ |
-| Linux (CI, ubuntu) fmt/clippy/test/build | ✅ (run 40937623585) |
+| Linux (CI, ubuntu) fmt/clippy/test/build, 1P | ✅ (run 40937623585) |
+| Linux (CI, ubuntu) fmt/clippy/test/build, 1Q | ✅ (run 40949925572) |
 | Secret scan y `cargo audit` | ✅ (CI) |
 | PostgreSQL 17 / Migration Lab | ✅ técnico; gate normativo bloqueado |
 | Windows SQLite real | ✅ 246 pruebas |
