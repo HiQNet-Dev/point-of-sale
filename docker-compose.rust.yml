@@ -1,0 +1,44 @@
+# Arnés Docker del backend Rust Local.
+#
+# Separado de `docker-compose.yml` (stack Java/PostgreSQL). No expone puertos:
+# `pos-local` no publica HTTP y la distribución Free Local no debe exponer
+# servicios. Sirve para compilar, arrancar, reiniciar y comprobar persistencia
+# de la migración aprobada `0001`.
+#
+# Uso:
+#   docker compose -f docker-compose.rust.yml build
+#   docker compose -f docker-compose.rust.yml up -d
+#   docker compose -f docker-compose.rust.yml ps
+#   docker compose -f docker-compose.rust.yml logs
+#   docker compose -f docker-compose.rust.yml down
+
+name: hiqnet-pos-rust
+
+services:
+  pos-local:
+    build:
+      context: ./backend-rust
+      dockerfile: Dockerfile
+    image: hiqnet-pos-local:dev
+    environment:
+      POS_LOCAL_DB_PATH: /data/pos.sqlite
+      POS_LOCAL_BUSY_TIMEOUT_MS: "5000"
+    volumes:
+      - pos-local-data:/data
+    # El proceso solo necesita escribir en su volumen y en /tmp.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 15s
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/pos-local-health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  pos-local-data:
