@@ -15,6 +15,8 @@ pub mod catalog;
 pub mod identity;
 /// Inventario: artículos, cantidades exactas, balances y ledger, sin persistencia.
 pub mod inventory;
+/// Conversión exacta entre las familias monetarias del workspace.
+pub mod money_scale;
 /// Dominio Organization/Branch y puertos de aplicación reconstruidos tras INC-RECOVERY-01.
 pub mod organization_branch;
 /// Compras: órdenes, partidas y reglas de recepción, sin persistencia.
@@ -210,6 +212,8 @@ mod catalog_tests;
 mod identity_tests;
 #[cfg(test)]
 mod inventory_tests;
+#[cfg(test)]
+mod money_scale_tests;
 #[cfg(test)]
 mod organization_branch_tests;
 #[cfg(test)]
