@@ -1,6 +1,6 @@
 # Tablero maestro de migración Java → Rust
 
-**Actualizado en el Incremento 1S.** Este tablero registra el estado real de la
+**Actualizado en el Incremento 1T.** Este tablero registra el estado real de la
 migración, no el deseado. Un estado solo avanza con evidencia publicada.
 
 ## 1. Escala de estados
@@ -36,14 +36,15 @@ auditoría transaccional— sobre un esquema **candidato** que aún no vive en
 | Modificadores | `PERSISTENCE (fixture)` | `0011` candidato, FKs same-org y snapshots de opciones usados por ventas SQLite | CRUD/autorización administrativa, aprobación D-SALES, promoción, API |
 | Cajas | `APPLICATION (candidate)` | `pos-core::cash`, `0009` candidato, `SqliteCashApplication`, SQLite real: scope, CAS, auditoría, reapertura | Aprobación D-CASH, promoción, API |
 | Turnos | `APPLICATION (candidate)` | `pos-core::cash`, `0010` candidato, índice parcial OPEN, guard real `sale.status=OPEN`/UoW, dos pools y recuperación | Aprobación D-CASH/D-SALES, promoción, API |
-| Inventario (artículos, saldos, ledger) | `DOMAIN` | `pos-core::inventory`, cantidades exactas, unidad bloqueable, CAS y ledger tipado | DDL, trigger append-only, adaptador, API |
-| Ventas | `APPLICATION (candidate)` | `0011`/`0012` candidatos, `SqliteSalesApplication`, snapshots, CAS, auditoría, carreras venta/cierre y reapertura | Aprobación D-SALES, checkout/pagos/inventario atómicos, promoción, API |
-| Checkout y pagos | `DOMAIN` | `pos-core::sales`, cobertura exacta, efectivo/tarjeta y cambio | DDL, composición transaccional con inventario y turno, API |
+| Inventario (artículos, saldos, ledger) | `APPLICATION (candidate)` | `pos-core::inventory`, `0013` candidato, `SqliteInventoryApplication`, ledger append-only por trigger, apertura única, CAS y dos pools | Aprobación D-INV, promoción, API |
+| Ventas | `APPLICATION (candidate)` | `0011`/`0012` candidatos, `SqliteSalesApplication`, snapshots, CAS, auditoría, carreras venta/cierre y reapertura | Aprobación D-SALES, promoción, API |
+| Checkout y pagos | `APPLICATION (candidate)` | `0015` candidato, `SqliteCheckoutApplication`, pagos + consumo + `COMPLETED` + auditoría en una UoW, política de stock y rollback | Aprobación D-SALES-04/05, promoción, API |
 | Compras y recepciones | `DOMAIN` | `pos-core::purchasing`, ciclo de vida, snapshots, recepciones acumuladas y exceso | DDL, adaptador, API |
 | Proveedores | `DOMAIN` | `pos-core::supplier`, slug inmutable, contacto acotado, email normalizado y snapshot | DDL, adaptador, API |
-| Recetas y efectos de modificador | `DOMAIN` | `pos-core::recipe`, reemplazo, resolución de consumo y snapshots de línea | DDL, adaptador, composición de checkout |
+| Recetas y efectos de modificador | `PERSISTENCE (fixture)` | `pos-core::recipe`, `0014` candidato, resolución de consumo y snapshots usados por checkout | Mantenimiento administrativo, aprobación D-INV, promoción, API |
 | API HTTP / OpenAPI | `NOT_STARTED` | — | Todo |
 | Integración React | `NOT_STARTED` | — | Todo |
+| Arnés Docker Local | `DEV HARNESS (validated)` | `backend-rust/Dockerfile` multi-stage, runtime no-root, volumen, healthcheck y reinicio con checksum idéntico (Windows/Linux Docker) | No es distribución Free Local ni expone red |
 
 ## 3. Dinero y cantidades
 
@@ -54,9 +55,9 @@ auditoría transaccional— sobre un esquema **candidato** que aún no vive en
 | Importación decimal exacta con escala explícita | Implementado |
 | `Decimal4` de catálogo (escala fija 4, rango `NUMERIC(19,4)`) | Implementado (1J) |
 | Puente `MoneyMinor` ↔ `Decimal4` con exponente explícito y error ante pérdida | Implementado (1Q, 9 pruebas) |
-| Cantidades y conversión de unidades | Pendiente |
+| Cantidades y conversión de unidades | Cantidades exactas escala 6 implementadas; conversión entre unidades pendiente |
 | Redondeo e impuestos | Pendiente |
-| Política de stock negativo | Representada en el dominio; sin ledger |
+| Política de stock negativo | Aplicada en checkout candidato (`STRICT`/`ALLOW_NEGATIVE`) sobre saldos reales |
 
 ## 4. Bloqueos normativos activos
 
@@ -67,7 +68,8 @@ auditoría transaccional— sobre un esquema **candidato** que aún no vive en
 | D-INST-01, D-INST-02, ADR-0022 | Instalación y reconciliación física | Impide cerrar `installation_identity` |
 | Representación física del catálogo | Importes, nombres de tabla | Impide promover `0008` (D-CAT-01, D-CAT-02) |
 | Cajas y turnos candidatos | Nombres, importes, índice parcial y coordinación venta/cierre | Impide promover `0009`–`0010` (D-CASH-01..04) |
-| Ventas y modificadores candidatos | Tablas, snapshots, dinero `TEXT` exacto y coordinación SQLite | Impide promover `0011`–`0012` (D-SALES-01..04) |
+| Ventas y modificadores candidatos | Tablas, snapshots, dinero `TEXT` exacto y coordinación SQLite | Impide promover `0011`–`0012` (D-SALES-01..03) |
+| Inventario, recetas y checkout candidatos | Cantidades `TEXT` escala 6, triggers, pagos y snapshots de consumo | Impide promover `0013`–`0015` (D-INV-01..02, D-SALES-04/05) |
 
 Ningún bloqueo autoriza a debilitar FKs, `--require-complete` ni los gates
 DDL13/PAR/AS.

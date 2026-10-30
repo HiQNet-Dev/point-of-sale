@@ -86,6 +86,32 @@ sobre SQLite real en pruebas. No son una aprobación ni habilitan ventas.
 | D-CASH-03 | Aprobar `TEXT` canónico para no perder exactitud/rango mediante `REAL` o `i64` |
 | D-CASH-04 | Aprobar: el índice parcial y la UoW compartida son obligatorios, no optimizaciones |
 
+### 2.4 Ventas, inventario y checkout Local (incrementos 1S y 1T)
+
+Las propuestas `0011`–`0015` tampoco están cargadas por SQLx. `0015` habilita
+checkout candidato en pruebas; **no autoriza** cobrar en producción ni retirar
+las guardas normativas.
+
+| ID | Decisión | Contrato vigente | Propuesta verificada | Riesgo | Bloquea |
+| --- | --- | --- | --- | --- | --- |
+| D-SALES-01 | Catálogo Local de modificadores | V10: grupos, opciones y asignación producto-grupo | `modifier_group`, `modifier_option`, `product_modifier_group` con FKs same-org | Bajo: sin CRUD administrativo todavía | `0011` |
+| D-SALES-02 | Venta, partidas y snapshots | V13/V19: estados OPEN/CANCELLED/COMPLETED, snapshots de producto y precio | `sale`, `sale_item`, `sale_item_modifier` con dinero `TEXT` escala 4 y FK a la superclave del turno | Medio: `COMPLETED` existe en el DDL pero solo checkout puede alcanzarlo | `0012` |
+| D-SALES-03 | Coordinación SQLite venta/cierre | ADR-0007: lock compartido en Java | `BEGIN IMMEDIATE` + guard real sobre `sale.status='OPEN'` en la misma UoW | Medio: sustituye el lock de JVM por serialización de escritor | `0012`, cierre de turno |
+| D-INV-01 | Artículos, saldos y ledger | V18/V20: `NUMERIC(19,6)`, apertura única, ledger append-only | `inventory_item`, `inventory_balance`, `inventory_ledger` con cantidades `TEXT` escala 6 y triggers | Bajo: triggers desactivables por un administrador del archivo | `0013` |
+| D-INV-02 | Recetas y efectos de modificador | V18/V21: receta por producto, efectos por opción | `product_recipe`, `recipe_component`, `modifier_inventory_effect` con FKs same-org | Bajo: sin mantenimiento administrativo de recetas aún | `0014` |
+| D-SALES-05 | Pagos y snapshots de consumo | V14/V19: pagos inmutables y consumo congelado por línea | `payment` y `sale_item_inventory_component` con FK a la superclave de la venta | Medio: checkout permanece no productivo | `0015` |
+| D-SALES-04 | Checkout atómico | ADR-0008/0014: pagos + inventario + `COMPLETED` en una transacción | Implementado en pruebas: UoW única, política de stock, auditoría y rollback | Bajo técnico; sigue bloqueado por aprobación | `0015`, operación comercial |
+
+| ID | Recomendación |
+| --- | --- |
+| D-SALES-01 | Aprobar la estructura Local como restauración de V10 |
+| D-SALES-02 | Aprobar `TEXT` escala 4 y la superclave turno→venta, que impide ventas de otra caja/sucursal/organización |
+| D-SALES-03 | Aprobar `BEGIN IMMEDIATE` como reemplazo del lock de JVM, con el guard dentro de la misma transacción |
+| D-INV-01 | Aprobar cantidades `TEXT` escala 6, apertura única y ledger append-only por trigger |
+| D-INV-02 | Aprobar la estructura de recetas/efectos; su administración puede llegar después |
+| D-SALES-05 | Aprobar pagos y snapshots de consumo; sin ellos no debe existir ruta a `COMPLETED` |
+| D-SALES-04 | Aprobar el contrato de checkout atómico; la activación comercial sigue requiriendo D-AUTH-09 resuelta |
+
 ## 3. Bloqueos por migración
 
 | Migración | Decisiones indispensables | Puede seguir bloqueada sin impedir |
@@ -99,6 +125,11 @@ sobre SQLite real en pruebas. No son una aprobación ni habilitan ventas.
 | `0008` catalog | D-CAT-01, D-CAT-02 | `0002`–`0007` (no depende de ellas) |
 | `0009` cash_register | D-CASH-01 | `0002`–`0008` salvo que una promoción agrupada decida el orden |
 | `0010` cash_shift | D-CASH-02, D-CASH-03, D-CASH-04 y `0003` | ventas, checkout e inventario |
+| `0011` modifier_catalog | D-SALES-01 | `0008` |
+| `0012` sale/sale_item | D-SALES-02, D-SALES-03 y `0010` | `0013`–`0015` |
+| `0013` inventory | D-INV-01 | `0014`, `0015` |
+| `0014` recipes | D-INV-02 y `0011`/`0013` | `0015` |
+| `0015` checkout | D-SALES-04, D-SALES-05 y `0014` | Operación comercial |
 
 D-AUTH-09 no aparece en ninguna fila: es una decisión de **parámetros**
 criptográficos, no de esquema, y no impide promover el DDL. Sí impide declarar
@@ -192,6 +223,13 @@ expediente sigue siendo PENDIENTE.
 | D-CASH-02 | | | |
 | D-CASH-03 | | | |
 | D-CASH-04 | | | |
+| D-SALES-01 | | | |
+| D-SALES-02 | | | |
+| D-SALES-03 | | | |
+| D-SALES-04 | | | |
+| D-SALES-05 | | | |
+| D-INV-01 | | | |
+| D-INV-02 | | | |
 
 Autorización de promoción a `migrations/local`:
 

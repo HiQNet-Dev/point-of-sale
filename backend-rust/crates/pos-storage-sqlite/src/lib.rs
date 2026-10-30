@@ -10,10 +10,14 @@ pub mod bootstrap_candidate;
 pub mod cash_store;
 /// Catálogo organizacional persistente sobre el esquema candidato. No productivo.
 pub mod catalog_store;
+/// Checkout candidato: pagos, consumo y cierre de venta en una única UoW.
+pub mod checkout_store;
 /// Transición de credenciales de laboratorio (BCrypt → Argon2id) sobre la UoW.
 pub mod credential_lab;
 /// Adaptador de identidad y permisos exclusivo de laboratorio (tablas `*_lab`).
 pub mod identity_lab;
+/// Inventario persistente candidato: artículos, saldos, ledger y recetas.
+pub mod inventory_store;
 /// Ventas y snapshots persistentes sobre el esquema candidato. No productivo.
 pub mod sales_store;
 
@@ -1033,9 +1037,13 @@ mod cash_store_tests;
 #[cfg(test)]
 mod catalog_store_tests;
 #[cfg(test)]
+mod checkout_store_tests;
+#[cfg(test)]
 mod credential_lab_tests;
 #[cfg(test)]
 mod identity_lab_tests;
+#[cfg(test)]
+mod inventory_store_tests;
 #[cfg(test)]
 mod proposals_tests;
 #[cfg(test)]

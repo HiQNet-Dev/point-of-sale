@@ -800,8 +800,20 @@ pub enum Permission {
     SaleUpdate,
     /// Cancelación operativa de una venta OPEN.
     SaleCancel,
-    /// Checkout integral; queda reservado hasta disponer de pagos e inventario.
+    /// Checkout integral de una venta con pagos e inventario atómicos.
     SaleCheckout,
+    /// Lectura de artículos de inventario.
+    InventoryItemRead,
+    /// Alta y mantenimiento de artículos de inventario.
+    InventoryItemWrite,
+    /// Lectura de saldos de stock y del ledger de una sucursal.
+    InventoryStockRead,
+    /// Aperturas y ajustes de stock.
+    InventoryStockAdjust,
+    /// Lectura de recetas de producto y efectos de modificador.
+    InventoryRecipeRead,
+    /// Mantenimiento de recetas y efectos de inventario de modificadores.
+    InventoryRecipeWrite,
 }
 
 impl Permission {
@@ -837,6 +849,12 @@ impl Permission {
             Self::SaleUpdate => Some("sale.update"),
             Self::SaleCancel => Some("sale.cancel"),
             Self::SaleCheckout => Some("sale.checkout"),
+            Self::InventoryItemRead => Some("inventory.item.read"),
+            Self::InventoryItemWrite => Some("inventory.item.write"),
+            Self::InventoryStockRead => Some("inventory.stock.read"),
+            Self::InventoryStockAdjust => Some("inventory.stock.adjust"),
+            Self::InventoryRecipeRead => Some("inventory.recipe.read"),
+            Self::InventoryRecipeWrite => Some("inventory.recipe.write"),
         }
     }
 }
@@ -971,6 +989,18 @@ pub enum ApplicationError {
     ProductInactive,
     /// Entrada comercial que no cumple el contrato de ventas.
     InvalidSaleInput,
+    /// Artículo de inventario inexistente en la organización del principal.
+    InventoryItemNotFound,
+    /// Código de artículo duplicado dentro de la organización.
+    InventoryItemCodeAlreadyExists,
+    /// El artículo de inventario no está activo para la operación.
+    InventoryItemInactive,
+    /// El artículo ya tiene apertura registrada.
+    InventoryOpeningAlreadyExists,
+    /// El stock disponible no cubre el consumo bajo política estricta.
+    InsufficientInventory,
+    /// Entrada de inventario o receta que no cumple el contrato.
+    InvalidInventoryInput,
     /// La entidad referenciada pertenece a otra organización.
     OwnershipMismatch,
     /// Una entrada de catálogo incumple el contrato de dominio.
@@ -1020,6 +1050,20 @@ impl fmt::Display for ApplicationError {
             Self::SaleItemAlreadyRemoved => formatter.write_str("la partida ya fue retirada"),
             Self::ProductInactive => formatter.write_str("el producto está inactivo"),
             Self::InvalidSaleInput => formatter.write_str("entrada de venta no válida"),
+            Self::InventoryItemNotFound => {
+                formatter.write_str("artículo de inventario inexistente")
+            }
+            Self::InventoryItemCodeAlreadyExists => {
+                formatter.write_str("código de artículo de inventario duplicado")
+            }
+            Self::InventoryItemInactive => {
+                formatter.write_str("el artículo de inventario está inactivo")
+            }
+            Self::InventoryOpeningAlreadyExists => {
+                formatter.write_str("el artículo ya tiene apertura registrada")
+            }
+            Self::InsufficientInventory => formatter.write_str("existencias insuficientes"),
+            Self::InvalidInventoryInput => formatter.write_str("entrada de inventario no válida"),
             Self::OwnershipMismatch => {
                 formatter.write_str("la entidad pertenece a otra organización")
             }

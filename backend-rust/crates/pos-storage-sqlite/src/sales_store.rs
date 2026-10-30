@@ -1064,7 +1064,7 @@ impl SqliteSalesApplication {
     }
 }
 
-async fn require_open_operational_shift(
+pub(crate) async fn require_open_operational_shift(
     transaction: &mut SqliteTransaction,
     scope: &SaleScope,
 ) -> Result<(), ApplicationError> {
@@ -1104,7 +1104,7 @@ async fn require_open_operational_shift(
     Ok(())
 }
 
-fn require_sale_scope(
+pub(crate) fn require_sale_scope(
     principal: &VerifiedPrincipal,
     permission: Permission,
     allow_recovery: bool,
@@ -1139,7 +1139,7 @@ fn require_sale_scope(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn append_audit<I: IdentityGenerator>(
+pub(crate) async fn append_audit<I: IdentityGenerator>(
     transaction: &mut SqliteTransaction,
     identities: &mut I,
     principal: &VerifiedPrincipal,
@@ -1161,7 +1161,7 @@ async fn append_audit<I: IdentityGenerator>(
     SqliteAuditWriter::append(transaction, &event).await
 }
 
-fn sale_error(error: SaleError) -> ApplicationError {
+pub(crate) fn sale_error(error: SaleError) -> ApplicationError {
     match error {
         SaleError::SaleNotOpen => ApplicationError::SaleNotOpen,
         SaleError::SaleAlreadyCancelled => ApplicationError::SaleAlreadyCancelled,
@@ -1172,16 +1172,16 @@ fn sale_error(error: SaleError) -> ApplicationError {
         _ => ApplicationError::InvalidSaleInput,
     }
 }
-fn storage_error(error: SalesStorageError) -> ApplicationError {
+pub(crate) fn storage_error(error: SalesStorageError) -> ApplicationError {
     match error {
         SalesStorageError::ForeignKey => ApplicationError::OwnershipMismatch,
         _ => ApplicationError::Storage,
     }
 }
-fn transaction_error(_: crate::OrganizationBranchStorageError) -> ApplicationError {
+pub(crate) fn transaction_error(_: crate::OrganizationBranchStorageError) -> ApplicationError {
     ApplicationError::Storage
 }
-async fn finish<T>(
+pub(crate) async fn finish<T>(
     transaction: SqliteTransaction,
     operation: Result<T, ApplicationError>,
 ) -> Result<T, ApplicationError> {

@@ -31,7 +31,7 @@ use crate::{
     sales_store::SqliteOpenSalesForCashShift,
 };
 
-const PROPOSALS: [&str; 11] = [
+const PROPOSALS: [&str; 14] = [
     include_str!("../../../proposals/local-auth/0002_installation_identity.proposed.sql"),
     include_str!("../../../proposals/local-auth/0003_user_credential_session.proposed.sql"),
     include_str!("../../../proposals/local-auth/0004_rbac_catalog.proposed.sql"),
@@ -43,6 +43,9 @@ const PROPOSALS: [&str; 11] = [
     include_str!("../../../proposals/local-cash/0010_cash_shift.proposed.sql"),
     include_str!("../../../proposals/local-sales/0011_modifier_catalog.proposed.sql"),
     include_str!("../../../proposals/local-sales/0012_sales_foundation.proposed.sql"),
+    include_str!("../../../proposals/local-inventory/0013_inventory.proposed.sql"),
+    include_str!("../../../proposals/local-inventory/0014_inventory_recipes.proposed.sql"),
+    include_str!("../../../proposals/local-sales/0015_checkout.proposed.sql"),
 ];
 
 pub(super) const ORG_A: &str = "00000000-0000-0000-0000-000000000180";
@@ -185,6 +188,13 @@ async fn seed_security(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Erro
         "sale.create",
         "sale.update",
         "sale.cancel",
+        "sale.checkout",
+        "inventory.item.read",
+        "inventory.item.write",
+        "inventory.stock.read",
+        "inventory.stock.adjust",
+        "inventory.recipe.read",
+        "inventory.recipe.write",
     ] {
         sqlx::query("INSERT INTO role_permission (role_id, permission_code) VALUES (?, ?)")
             .bind(ROLE_A)
