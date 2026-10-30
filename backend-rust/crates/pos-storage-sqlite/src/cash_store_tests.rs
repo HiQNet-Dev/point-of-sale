@@ -8,6 +8,8 @@
 
 use std::time::Duration;
 
+use tokio::sync::oneshot;
+
 use pos_core::{
     audit::AuditOccurredAt,
     cash::CashShiftStatus,
@@ -819,6 +821,46 @@ async fn recovery_scope_can_close_after_deactivation_and_revoked_sessions_cannot
             .is_err(),
         "una sesión revocada no construye un principal nuevo"
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancelled_cash_transaction_rolls_back_before_connection_reuse()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (_temp, pool) = open_candidate().await?;
+    let (inserted, observed) = oneshot::channel();
+    let uow = SqliteUnitOfWork::new(pool.clone());
+    let register = pos_core::cash::CashRegister::create(pos_core::cash::NewCashRegister {
+        id: id("00000000-0000-0000-0000-0000000002fb"),
+        organization_id: id(ORG_A),
+        branch_id: id(BRANCH_A),
+        code: pos_core::catalog::CatalogCode::new("cancelada")
+            .unwrap_or_else(|error| panic!("code: {error}")),
+        name: DisplayName::new("Caja cancelada").unwrap_or_else(|error| panic!("name: {error}")),
+    });
+    let task = tokio::spawn(async move {
+        let mut transaction = uow.begin().await.map_err(|_| ApplicationError::Storage)?;
+        transaction
+            .insert_cash_register(&register, TIME)
+            .await
+            .map_err(|_| ApplicationError::Storage)?;
+        inserted.send(()).map_err(|_| ApplicationError::Storage)?;
+        std::future::pending::<()>().await;
+        #[allow(unreachable_code)]
+        transaction
+            .commit()
+            .await
+            .map_err(|_| ApplicationError::Storage)
+    });
+    observed.await?;
+    task.abort();
+    let join_result = task.await;
+    assert!(matches!(join_result, Err(error) if error.is_cancelled()));
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM cash_register WHERE code = 'cancelada'")
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(count, 0, "la transacción abortada no deja una caja parcial");
     Ok(())
 }
 

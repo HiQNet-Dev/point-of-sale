@@ -77,7 +77,7 @@ de venta.
 
 ## 5. Pruebas SQLite reales
 
-`cash_store_tests` ejecuta ocho escenarios sobre un archivo temporal:
+`cash_store_tests` ejecuta nueve escenarios sobre un archivo temporal:
 
 1. Caja → turno → cierre → auditoría USER → reapertura durable.
 2. Unicidad de código por sucursal, FK cross-org y rechazo de cinco decimales.
@@ -89,6 +89,8 @@ de venta.
 7. Cierre de recuperación tras desactivar branch/caja; sesión revocada no vuelve a
    construir un principal.
 8. Deny-by-default cross-org, límites de página y update de caja con CAS.
+9. Cancelación de una UoW `BEGIN IMMEDIATE` tras insertar una caja: el rollback
+   implícito ocurre antes de reutilizar la conexión y no queda una escritura parcial.
 
 ## 6. Validación ejecutada
 
@@ -96,14 +98,14 @@ de venta.
 | --- | --- |
 | `cargo fmt --all -- --check` | ✅ |
 | `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings` | ✅ |
-| `cargo test --locked --workspace --all-features` | ✅ 254 pruebas, 0 fallos |
+| `cargo test --locked --workspace --all-features` | ✅ 255 pruebas, 0 fallos |
 | `cargo build --locked --workspace --all-features` | ✅ |
-| Prueba focalizada `cash_store_tests` | ✅ 8 pruebas SQLite reales |
+| Prueba focalizada `cash_store_tests` | ✅ 9 pruebas SQLite reales |
 | Linux/CI y Migration Lab PostgreSQL 17 | No ejecutados en este incremento Windows; la última evidencia Linux de 1Q sigue condicionada por el gate normativo |
 
 Distribución observada: `migration-lab` 27 · `pos-core` 125 ·
-`pos-credentials` 8 · `pos-local` 11 · `pos-storage-sqlite` 83. El incremento
-suma ocho pruebas de persistencia candidata de caja/turno al total 1Q de 246.
+`pos-credentials` 8 · `pos-local` 11 · `pos-storage-sqlite` 84. El incremento
+suma nueve pruebas de persistencia candidata de caja/turno al total 1Q de 246.
 
 ## 7. Decisiones pendientes
 
