@@ -134,16 +134,16 @@ Extracción incremental pendiente, en este orden:
    - `identity` (`mod`, `errors`, `user`, `credential`, `session`, `principal`,
      `service`).
    Todos conservan su ruta pública mediante reexportaciones.
-4. División de `pos-storage-sqlite` — **en curso**:
-   - Hecho: directorios por contexto (`audit/`, `bootstrap/`, `cash/`,
-     `catalog/`, `checkout/`, `credential/`, `identity/`, `inventory/`,
-     `sales/`) con alias `*_store`/`*_lab` de compatibilidad, y `connection.rs`
-     separado del facade.
-   - Pendiente: dividir cada `store.rs` en `repository`/`mapper`/`queries` y
-     retirar los alias.
-5. Extracción de los casos de uso de caja, ventas, catálogo y inventario a
-   `pos-application`. Es el **único punto restante** para considerar la
-   arquitectura hexagonal completa: hoy viven en `pos-storage-sqlite` y solo la
-   coordinación compartida está en la capa de aplicación.
+4. División de `pos-storage-sqlite` — **completada en capas**:
+   - Directorios por contexto (`audit/`, `bootstrap/`, `cash/`, `catalog/`,
+     `checkout/`, `credential/`, `identity/`, `inventory/`, `sales/`).
+   - `connection.rs` separado del facade.
+   - Solo SQL, mappers y `impl` de puertos; sin reglas de negocio.
+5. Casos de uso en `pos-application` — **completado**:
+   - `cash`, `sales`, `checkout`, `catalog`, `inventory` y `organization`
+     (Organization/Branch) con puertos, DTOs y `use_cases`.
+   - `pos-core` conserva únicamente dominio y puertos compartidos.
+6. Pendiente de mantenibilidad (no de capas): dividir cada `store.rs` en
+   `repository`/`mapper`/`queries`.
 
 Cada paso conserva pruebas y no promueve DDL.
