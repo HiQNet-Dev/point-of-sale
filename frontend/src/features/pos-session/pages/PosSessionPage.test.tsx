@@ -252,7 +252,9 @@ describe('POS session operational vertical', () => {
     expect(backend.shiftRequests
       .filter((request) => request.method === 'GET')
       .every((request) => request.url.searchParams.get('status') === 'OPEN')).toBe(true)
-  })
+    // Recorrido con login, tres consultas y cierre: bajo carga paralela supera el
+    // límite global de 5 s, así que declara un límite propio sin relajar aserciones.
+  }, 20_000)
 
   it('discovers resources from responses, opens with exact decimal string, then refreshes OPEN shifts', async () => {
     const backend = createBackend()
