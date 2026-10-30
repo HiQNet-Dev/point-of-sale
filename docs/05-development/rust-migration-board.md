@@ -33,8 +33,8 @@ productiva: las tablas implicadas siguen sin aprobación física.
 | Cajas | `DOMAIN` | `pos-core::cash`, scope de sucursal y patch CAS | DDL, adaptador, casos de uso, API |
 | Turnos | `DOMAIN` | `pos-core::cash`, apertura/cierre, recuperación y no idempotencia | DDL, índice único parcial, port de ventas abiertas, API |
 | Inventario (artículos, saldos, ledger) | `DOMAIN` | `pos-core::inventory`, cantidades exactas, unidad bloqueable, CAS y ledger tipado | DDL, trigger append-only, adaptador, API |
-| Ventas | `NOT_STARTED` | — | Todo |
-| Checkout y pagos | `NOT_STARTED` | — | Todo |
+| Ventas | `DOMAIN` | `pos-core::sales`, ciclo de vida, snapshots, totales exactos y modificadores | DDL, consumo de inventario, adaptador, API |
+| Checkout y pagos | `DOMAIN` | `pos-core::sales`, cobertura exacta, efectivo/tarjeta y cambio | DDL, composición transaccional con inventario y turno, API |
 | Compras y recepciones | `DOMAIN` | `pos-core::purchasing`, ciclo de vida, snapshots, recepciones acumuladas y exceso | DDL, agregado `Supplier`, adaptador, API |
 | API HTTP / OpenAPI | `NOT_STARTED` | — | Todo |
 | Integración React | `NOT_STARTED` | — | Todo |

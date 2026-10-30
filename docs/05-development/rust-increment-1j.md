@@ -1,4 +1,4 @@
-# Incremento 1J — Dominio de catálogo, cajas, turnos, inventario y compras
+# Incremento 1J — Dominio de catálogo, cajas, turnos, inventario, compras y ventas
 
 **Estado: DOMINIO IMPLEMENTADO Y PROBADO. Sin DDL productivo de catálogo.**
 
@@ -24,9 +24,9 @@ El paquete **D-AUTH-01..08, D-AUTH-10, D-AUTH-11, D-INST-01, D-INST-02** y
 ADR-0022 sigue sin aceptación formal del titular. Ese bloqueo impide promover
 `0002`–`0007` a `migrations/local`, no impide avanzar en trabajo independiente.
 
-Este incremento ejecuta los **frentes independientes A, B, C y D** del programa
-maestro: reglas puras de catálogo, cajas, turnos, inventario y compras, sin
-persistencia ni DDL.
+Este incremento ejecuta los **frentes independientes A, B, C, D y E** del programa
+maestro: reglas puras de catálogo, cajas, turnos, inventario, compras y ventas,
+sin persistencia ni DDL.
 
 ```mermaid
 graph TD
@@ -245,7 +245,37 @@ Pruebas nuevas: `pos-core::purchasing_tests` (10 casos), incluidas transiciones
 inválidas, cancelación tras emisión, detección de exceso y acumulación de
 recepciones.
 
-## 9. Pruebas ejecutadas (Windows, SQLite real)
+## 9. Frente E: ventas, pagos y modificadores
+
+`pos-core::sales` (nuevo módulo, sin dependencias de infraestructura).
+
+| Tipo | Responsabilidad | Regla principal |
+| --- | --- | --- |
+| `SaleScope` | Scope operativo | Organización, sucursal, caja y turno coinciden exactamente |
+| `Sale` | Agregado | `OPEN → COMPLETED`\|`CANCELLED`, total exacto escala 4, revisión |
+| `SaleItem` | Línea | Snapshots inmutables, cantidad `1..=1_000_000`, total exacto |
+| `Payment` | Hecho de pago | Efectivo exige entregado y calcula cambio; tarjeta no admite entregado |
+| `validate_checkout` | Regla de cobro | Una línea activa como mínimo y suma de pagos **exactamente** igual al total |
+| `resolve_modifier_pricing` | Cotización | Pertenencia, actividad, límites por grupo y precio efectivo no negativo |
+
+Reglas preservadas:
+
+- `validate_checkout` replica el orden de Java: líneas activas → máximo de pagos →
+  coherencia total/pagos → un único efectivo → suma exacta.
+- Una venta de total cero solo se cobra sin pagos; con pagos se rechaza.
+- El cambio se calcula como `entregado − importe`, sin redondeo.
+- El total de una venta suma solo líneas `ACTIVE`; retirar una línea conserva el
+  historial.
+- La cancelación es recuperación operativa y no exige padres activos; el
+  checkout sí (composición en la capa de aplicación).
+- La cotización de modificadores produce el orden canónico: grupos por asignación
+  y opciones por `display_order` e `id`.
+
+Pruebas nuevas: `pos-core::sales_tests` (14 casos), incluidas multiplicación
+exacta, overflow de línea, contratos de efectivo/tarjeta, cobertura exacta,
+máximo de pagos y todas las reglas de selección de modificadores.
+
+## 10. Pruebas ejecutadas (Windows, SQLite real)
 
 ```bash
 cd backend-rust
@@ -257,12 +287,12 @@ cargo build --locked --workspace --all-features
 
 | Crate / binario | Pruebas | Resultado |
 | --- | --- | --- |
-| `pos-core` | 81 (18 catálogo, 10 cajas/turnos, 11 inventario, 10 compras) | OK |
+| `pos-core` | 95 (18 catálogo, 10 cajas/turnos, 11 inventario, 10 compras, 14 ventas) | OK |
 | `pos-credentials` | 8 | OK |
 | `pos-storage-sqlite` | 57 (2 nuevas de primer arranque) | OK |
 | `pos-local` (lib, bin, integración) | 11 | OK |
 | `migration-lab` | 27 | OK |
-| **Total** | **184** | **0 fallos** |
+| **Total** | **198** | **0 fallos** |
 
 Cobertura nueva del dominio:
 
@@ -281,7 +311,7 @@ Cobertura nueva del dominio:
 No se ejecutó `--require-complete`, el Migration Lab PostgreSQL 17 ni ningún gate
 normativo; los resultados anteriores son exclusivamente SQLite/Windows.
 
-## 10. Estado normativo y de gates
+## 11. Estado normativo y de gates
 
 | Elemento | Estado |
 | --- | --- |
@@ -294,7 +324,7 @@ normativo; los resultados anteriores son exclusivamente SQLite/Windows.
 | CI de esta rama | No ejecutado en este entorno |
 | Migración de catálogo y cajas a SQLite | No iniciada: depende de aprobación física |
 
-## 11. Riesgos abiertos
+## 12. Riesgos abiertos
 
 1. El dominio de catálogo no tiene aún contrato físico Local. Un adaptador no
    puede implementarse hasta decidir la representación de importes (D3) y el
@@ -318,15 +348,18 @@ normativo; los resultados anteriores son exclusivamente SQLite/Windows.
    sustituir: el índice único parcial de apertura por sucursal y artículo, y el
    trigger append-only del ledger. Además, `unit_locked` debe persistirse con una
    sentencia dedicada que la actualización CAS del artículo no sobrescriba.
+8. El checkout completo exige componer, en una sola transacción, el lock del
+   turno, el consumo de inventario, el cobro de la venta y la auditoría; esa
+   composición pertenece a la capa de aplicación y depende del DDL aprobado.
 
-## 12. Próximo incremento recomendado
+## 13. Próximo incremento recomendado
 
 1. **Cerrar 1I** con la aceptación formal del paquete D-AUTH/D-INST o, en su
-   defecto, mantener el bloqueo y avanzar el agregado `Supplier` y las ventas
-   (partidas, snapshots y totales), también de dominio puro.
+   defecto, mantener el bloqueo y completar el agregado `Supplier` y las recetas
+   de inventario, también de dominio puro.
 2. Cuando exista aprobación física, promover `0002`–`0007`, añadir las tablas de
-   catálogo, cajas, turnos, inventario y compras, y sustituir los adaptadores
-   `*_lab` por adaptadores canónicos.
+   catálogo, cajas, turnos, inventario, compras y ventas, y sustituir los
+   adaptadores `*_lab` por adaptadores canónicos.
 3. No declarar Auth/RBAC/auditoría productivos hasta contar con DDL aprobado,
    verificación criptográfica de producto, principal autenticado, autorización
    persistente y pruebas de integración completas.
