@@ -70,7 +70,13 @@ Fuente verificable: `apps/pos-desktop/src/commands.rs` + `dto.rs`, relativa a
 | `lab_list_branches` | Laboratorio | `{}` | `BranchDto[]` | `branch.read` | Organización del principal |
 | `lab_list_categories` | Laboratorio | `{ "request": { "limit": 20, "offset": 0 } }` | `CategoryDto[]` | `category.read` | Organización del principal |
 | `lab_list_products` | Laboratorio | `{ "request": { "limit": 20, "offset": 0 } }` | `ProductDto_Serialize[]` | `product.read` | Organización del principal |
+| `lab_create_product` | Laboratorio | `{ "request": { "sku", "name", "unitPrice", "categoryId?", "barcode?", "description?" } }` | `CreatedProductDto` | `product.create` | Organización del principal |
 | `installation_status` | Instalación | `{}` | `InstallationStatusDto` | Ninguno (sin datos de negocio) | Instalación local |
+
+`CreatedProductDto` devuelve `id`, `sku`, `name`, `unitPrice` exacto, `categoryId`
+y `version`. La escritura es la única mutación expuesta y **solo existe en el
+laboratorio**: la auditoría `product.created` se escribe en la misma transacción y
+el actor se deriva del principal, nunca del request.
 
 `InstallationStatusDto`: `state` (`FIRST_INSTALL`/`REOPENED`), `schemaVersion`
 y `appliedMigrations`. No contiene rutas, usuarios, sesiones ni precios. El comando
@@ -102,6 +108,10 @@ const status = await desktopService.installationStatus()
 // { state: 'REOPENED', schemaVersion: 1, appliedMigrations: 1 }
 const products = await desktopService.listProducts()
 // products[0].unitPrice === '12.3456'; se conserva texto exacto.
+const created = await desktopService.createProduct({
+  sku: 'CAFE-2', name: 'Café doble', unitPrice: '9.9900',
+})
+// created.unitPrice === '9.9900'; requiere product.create
 ```
 
 El uso real y compilado está en `DesktopShell.tsx`, `InstallationPage.tsx` y
@@ -114,7 +124,9 @@ generados envuelven el resultado en `{status:'ok', data}` o
 | --- | --- | --- |
 | `UNAUTHORIZED` | Sesión inválida/vencida/revocada o estado no válido | No reintentar automáticamente |
 | `FORBIDDEN` | Sesión válida sin permiso | Mostrar acceso denegado |
-| `VALIDATION_ERROR` | Página fuera del contrato | Corregir request |
+| `VALIDATION_ERROR` | Página fuera del contrato o entrada de dominio inválida | Corregir request |
+| `CONFLICT` | La entidad ya existe en el scope (SKU o código de barras) | Mostrar conflicto, no reintentar |
+| `NOT_FOUND` | La categoría o entidad referenciada no existe en el scope | Corregir referencia |
 | `OPERATION_NOT_AVAILABLE` | El comando no existe en el modo actual | No reintentar; el modo lo decide el proceso |
 | `INTERNAL_ERROR` | Fallo interno o fallo técnico IPC | Mensaje seguro, sin SQL/stderr |
 
@@ -139,8 +151,10 @@ el código de aplicación.
 
 `test:desktop-lab` construye el frontend y el ejecutable y ejecuta **WebView2 real**.
 Playwright verifica el render React de sucursal/categoría/producto y el precio,
-actualiza y comprueba página inválida, rechazo de overposting y que el laboratorio
-no expone `installation_status`.
+actualiza, **crea un producto por el formulario**, comprueba el precio exacto
+`9.9900` en la tabla y el `CONFLICT` al repetir el SKU. También comprueba página
+inválida, rechazo de overposting y que el laboratorio no expone
+`installation_status`.
 
 `test:desktop-installation` arranca **dos veces** sobre el mismo directorio
 temporal con `--installation`, verifica `Primera instalación` y después

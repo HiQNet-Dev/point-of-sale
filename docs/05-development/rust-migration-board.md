@@ -1,6 +1,6 @@
 # Tablero maestro de migración Java → Rust
 
-**Actualizado en el Incremento 1Y.** Este tablero registra el estado real de la
+**Actualizado en el Incremento 1Z.** Este tablero registra el estado real de la
 migración, no el deseado. Un estado solo avanza con evidencia publicada.
 
 Arquitectura: monolito modular hexagonal (`pos-core` ← `pos-application` ←
@@ -37,7 +37,7 @@ auditoría transaccional— sobre un esquema **candidato** que aún no vive en
 | Users / Auth | `PERSISTENCE (lab)` | `pos-core::identity`, `identity_lab`, `credential_lab`, `pos-credentials` | DDL aprobado, verificación productiva, sesiones operativas |
 | RBAC | `PERSISTENCE (lab)` | Catálogo exacto de 59 permisos, override de organización, modo recuperación | DDL aprobado, resolución contextual productiva |
 | Bootstrap | `PERSISTENCE (fixture)` | Pruebas de one-shot, ownership compuesto y rollback; tramo Organization en Rust | Secreto pre-body, DDL aprobado, endpoint/servicio de producto |
-| Catálogo (categorías, productos) | `APPLICATION (candidate)` | `pos-core::catalog`, `proposals/local-catalog/0008`, `SqliteCatalogApplication`, `SqliteCatalogTransaction`, 9 pruebas de integración (CAS, tenant, rollback por auditoría, reapertura) | Aprobación D-CAT, promoción a `migrations/local`, API |
+| Catálogo (categorías, productos) | `APPLICATION (candidate)` | `pos-core::catalog`, `proposals/local-catalog/0008`, `SqliteCatalogApplication`, 9 pruebas de integración (CAS, tenant, rollback por auditoría, reapertura); escritura expuesta solo en laboratorio por IPC con auditoría transaccional | Aprobación D-CAT, promoción a `migrations/local`, API |
 | Modificadores | `PERSISTENCE (fixture)` | `0011` candidato, FKs same-org y snapshots de opciones usados por ventas SQLite | CRUD/autorización administrativa, aprobación D-SALES, promoción, API |
 | Cajas | `APPLICATION (candidate)` | `pos-core::cash`, `0009` candidato, `SqliteCashApplication`, SQLite real: scope, CAS, auditoría, reapertura | Aprobación D-CASH, promoción, API |
 | Turnos | `APPLICATION (candidate)` | `pos-core::cash`, `0010` candidato, índice parcial OPEN, guard real `sale.status=OPEN`/UoW, dos pools y recuperación | Aprobación D-CASH/D-SALES, promoción, API |
@@ -50,9 +50,9 @@ auditoría transaccional— sobre un esquema **candidato** que aún no vive en
 | API HTTP / OpenAPI | `NOT_STARTED` | — | Todo |
 | Transporte Local | `IPC (lab)` | Tauri v2: tres handlers de lectura, bindings generados, ACL local y sesión revalidada en SQLite; [contrato](../03-api/rust-desktop-ipc.md), ADR-0023 | Activación comercial, composición canónica y seguridad aprobada |
 | Instalación Local persistente | `PERSISTENCE (approved 0001)` | `apps/pos-desktop --installation <dir>`: migrador aprobado, clasificación primera instalación/reapertura, rechazo de esquema posterior, cierre con checkpoint; E2E Windows de dos arranques y smoke Docker | Identidad de instalación (D-INST), directorio canónico, operaciones de negocio y aprobación del bloque D |
-| Integración React | `INTEGRATED (lab only)` | Pantalla separada de laboratorio y pantalla de instalación; E2E Windows real React → WebView2 IPC → Application → SQLite | Login comercial, escrituras, integración de pantallas operativas y paridad completa |
+| Integración React | `INTEGRATED (lab only)` | Pantalla separada de laboratorio (lectura + creación de producto) y pantalla de instalación; E2E Windows real React → WebView2 IPC → Application → SQLite → auditoría | Login comercial, escrituras en producto, integración de pantallas operativas y paridad completa |
 | Arnés Docker Local | `DEV HARNESS (validated)` | `backend-rust/Dockerfile` multi-stage, runtime no-root, volumen, healthcheck funcional (`verify_health`: integridad + migraciones), reinicio, cierre con checkpoint, evidencia `first_install` → `reopened` y checksum idéntico | No es distribución Free Local ni expone red |
-| Arnés sintético extremo a extremo | `E2E (synthetic)` | `tools/pos-lab`: bootstrap → admin → sesión → RBAC → sucursal → categoría → producto → inventario → receta → caja → turno → venta → checkout → consumo → `COMPLETED` → auditoría → cierre → reapertura. Ejecutado en local y en Docker | Sigue sobre esquema **candidato**; no es producto |
+| Arnés sintético extremo a extremo | `E2E (synthetic)` | `tools/pos-lab`: bootstrap → admin → sesión → RBAC → sucursal → categoría → producto → inventario → receta → caja → turno → venta → checkout → consumo → `COMPLETED` → auditoría → cierre → reapertura, más matriz ejecutable de dependencias `0002`–`0015` (FK y `foreign_key_check` por paso). Ejecutado en local y en Docker | Sigue sobre esquema **candidato**; no es producto |
 
 ## 3. Dinero y cantidades
 

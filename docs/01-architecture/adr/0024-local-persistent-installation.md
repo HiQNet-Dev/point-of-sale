@@ -63,6 +63,46 @@ y no invente identidad** mientras las decisiones físicas siguen pendientes.
 - El identificador de bundle se mantiene sin cambios. Fijar el directorio de datos
   por plataforma e identidad de instalación depende de `D-INST` (bloque D).
 
+## Resolución 1Z del bloque D (propuesta, sin aceptación)
+
+El titular debe confirmar esta política. 1Z la implementa solo en la parte que no
+requiere promover DDL.
+
+| Elemento | Resolución propuesta | Implementado en 1Z |
+| --- | --- | --- |
+| Transporte principal de Free Local | Tauri v2/IPC; sin servidor HTTP local | Sí (ya en 1X/1Y) |
+| Base de datos | Una única SQLite por instalación | Sí |
+| Directorio de datos | Directorio privado del sistema operativo, elegido por la aplicación | **No**: depende de `D-INST` y del identificador de bundle |
+| Identificador de aplicación | Estable y decidido por producto | No (se conserva `local.hiqnet.rustlab`) |
+| Rutas explícitas | Solo desarrollo, recuperación y herramientas autorizadas | Sí (`--installation`) |
+| Rutas desde JavaScript | Prohibidas | Sí (ningún comando las acepta) |
+| HTTP local | Prohibido por defecto | Sí (no existe) |
+| Separación laboratorio/producto | Modos disjuntos, sin fixtures en producto | Sí |
+
+### Reglas de directorio ya implementadas
+
+`apps/pos-desktop::installation_dir` valida antes de abrir SQLite:
+
+- rechaza un archivo o ruta vacía;
+- rechaza un directorio o archivo de base de datos que sea enlace simbólico;
+- crea el directorio con permisos `0700` en Unix;
+- rechaza un directorio escribible por todos;
+- nunca borra ni reemplaza el archivo existente.
+
+Limitación declarada: en Windows los *junctions* no se distinguen de un
+directorio con la API estándar; la comprobación cubre enlaces simbólicos. El
+bloqueo entre procesos sigue siendo responsabilidad de SQLite (un pool por
+proceso, `BEGIN IMMEDIATE` para escrituras críticas).
+
+### Pendiente para cerrar el bloque D
+
+1. Elegir el directorio por plataforma (`app_data_dir`) y el identificador de
+   aplicación; ambos son decisiones de identidad de producto.
+2. Decidir si la instalación admite varias bases (por sucursal o por perfil) o
+   exactamente una.
+3. Confirmar que la recuperación administrativa usa una ruta explícita y no un
+   modo oculto.
+
 ## Alternativas descartadas
 
 - **Reutilizar el laboratorio como producto**: mezclaría fixtures con datos
