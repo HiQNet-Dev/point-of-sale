@@ -25,13 +25,12 @@ use pos_core::{
     catalog::{CatalogCode, Description},
     identity::{UtcSeconds, VerifiedPrincipal}, /*  */
     inventory::{
-        ConsumptionRequirement, InventoryBaseUnit, InventoryError, InventoryItem,
-        InventoryMovement, InventoryMovementType, MovementReason, NewInventoryItem, NewMovement,
-        Quantity, StockBalance, ensure_opening_allowed, ensure_sufficient,
+        InventoryBaseUnit, InventoryError, InventoryItem, InventoryMovement, InventoryMovementType,
+        MovementReason, NewInventoryItem, NewMovement, Quantity, StockBalance,
+        ensure_opening_allowed,
     },
     organization_branch::{
-        ApplicationError, DisplayName, EntityId, IdentityGenerator, NegativeStockPolicy,
-        Permission, Status,
+        ApplicationError, DisplayName, EntityId, IdentityGenerator, Permission, Status,
     },
     recipe::{ResolvedComponent, ResolvedEffect},
 };
@@ -966,15 +965,4 @@ impl SqliteInventoryApplication {
         .await;
         finish(transaction, operation).await
     }
-}
-
-/// Comprueba suficiencia de stock con la política de la organización.
-///
-/// Compartido con el checkout para no duplicar la regla de negocio.
-pub(crate) fn enforce_stock_policy(
-    policy: NegativeStockPolicy,
-    balances: &[(EntityId, Quantity)],
-    requirements: &[ConsumptionRequirement],
-) -> Result<(), ApplicationError> {
-    ensure_sufficient(policy, balances, requirements).map_err(inventory_error)
 }

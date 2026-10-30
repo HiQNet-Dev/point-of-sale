@@ -28,6 +28,8 @@ pub mod audit;
 pub mod authorization;
 /// Casos de uso, DTOs y puertos de cajas y turnos.
 pub mod cash;
+/// Caso de uso de checkout atómico.
+pub mod checkout;
 /// Contexto operativo de una venta (sucursal, caja y turno vigentes).
 pub mod sales;
 pub mod sales_context;
