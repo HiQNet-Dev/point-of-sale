@@ -21,29 +21,6 @@ pub mod inventory;
 /// Ventas y snapshots persistentes sobre el esquema candidato. No productivo.
 pub mod sales;
 
-// Alias de compatibilidad: conservan las rutas `*_store`/`*_lab` mientras los
-// consumidores migran a los nombres por contexto. Retirar en un cambio dedicado.
-#[doc(hidden)]
-pub use audit as audit_writer;
-#[doc(hidden)]
-pub use bootstrap as bootstrap_candidate;
-#[doc(hidden)]
-pub use cash as cash_store;
-#[doc(hidden)]
-pub use catalog as catalog_store;
-#[doc(hidden)]
-pub use checkout as checkout_store;
-#[doc(hidden)]
-pub use credential as credential_lab;
-#[doc(hidden)]
-pub use identity as identity_lab;
-#[doc(hidden)]
-pub use inventory as inventory_store;
-#[doc(hidden)]
-pub use sales as sales_store;
-
-pub use connection::{StorageError, checkpoint, migrate, open};
-
 use pos_core::organization_branch::{
     ApplicationError, AuditEvent, Authorization, Branch, BranchPatch, BusinessCode, DisplayName,
     DomainError, EntityId, IdentityGenerator, IsoCurrency, LocaleTag, NegativeStockPolicy,
@@ -52,6 +29,7 @@ use pos_core::organization_branch::{
 };
 use sqlx::{SqlStr, Sqlite, SqliteConnection, SqlitePool, Transaction};
 
+pub use connection::{StorageError, checkpoint, migrate, open};
 /// Resultado de una actualización condicional por revisión (CAS).
 pub use pos_application::CasOutcome;
 

@@ -25,11 +25,11 @@ use sqlx::SqlitePool;
 
 use super::*;
 use crate::{
-    catalog_store::{
+    catalog::{
         CatalogPage, CategoryUpdateRequest, MAX_PAGE_SIZE, NewCategoryRequest, NewProductRequest,
         ProductUpdateRequest, SqliteCatalogApplication,
     },
-    identity_lab::SqliteIdentityLab,
+    identity::SqliteIdentityLab,
 };
 
 const PROPOSALS: [&str; 7] = [

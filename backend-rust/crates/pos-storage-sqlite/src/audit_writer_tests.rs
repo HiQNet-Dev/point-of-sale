@@ -22,8 +22,8 @@ use serde_json::json;
 
 use super::*;
 use crate::{
-    audit_writer::SqliteAuditWriter,
-    identity_lab::{SqliteIdentityLab, ensure_lab_identity_schema},
+    audit::SqliteAuditWriter,
+    identity::{SqliteIdentityLab, ensure_lab_identity_schema},
 };
 
 const PROPOSAL_INSTALLATION: &str =

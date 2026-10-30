@@ -11,16 +11,16 @@ use pos_core::{
 
 use super::*;
 use crate::{
-    cash_store::{CloseCashShiftRequest, SqliteCashApplication},
+    cash::{CloseCashShiftRequest, SqliteCashApplication},
     cash_store_tests::{
         BRANCH_A, FixtureIds, HASH_A, LATER, ORG_A, TIME, application, at, create_register, id,
         open_candidate, open_shift, principal,
     },
-    checkout_store::{CheckoutPaymentRequest, CheckoutRequest, SqliteCheckoutApplication},
-    inventory_store::{
+    checkout::{CheckoutPaymentRequest, CheckoutRequest, SqliteCheckoutApplication},
+    inventory::{
         AdjustStockRequest, NewInventoryItemRequest, OpenStockRequest, SqliteInventoryApplication,
     },
-    sales_store::{
+    sales::{
         AddSaleItemRequest, NewSaleRequest, SqliteOpenSalesForCashShift, SqliteSalesApplication,
     },
 };

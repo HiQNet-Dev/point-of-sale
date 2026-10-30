@@ -15,7 +15,7 @@ use crate::{
         BRANCH_A, BRANCH_OTHER, FixtureIds, HASH_A, HASH_B, LATER, TIME, at, id, open_candidate,
         principal,
     },
-    inventory_store::{
+    inventory::{
         AdjustStockRequest, InventoryPage, NewInventoryItemRequest, OpenStockRequest,
         SqliteInventoryApplication,
     },

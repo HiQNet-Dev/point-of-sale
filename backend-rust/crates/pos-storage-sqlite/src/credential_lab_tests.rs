@@ -23,11 +23,11 @@ use pos_credentials::{
 
 use super::*;
 use crate::{
-    credential_lab::{
+    credential::{
         CredentialAttempt, CredentialAuditEntry, CredentialAuditWriter, CredentialTransition,
         SqliteCredentialLab, VerificationGate, authenticate_and_upgrade as orchestrator, prepare,
     },
-    identity_lab::ensure_lab_identity_schema,
+    identity::ensure_lab_identity_schema,
 };
 
 const ORG: &str = "00000000-0000-0000-0000-000000000080";
@@ -476,7 +476,7 @@ async fn deactivated_user_between_snapshot_and_commit_is_rejected()
     transaction.commit().await?;
     assert_eq!(
         applied,
-        crate::credential_lab::AppliedCredential {
+        crate::credential::AppliedCredential {
             transition: CredentialTransition::Rejected,
             persisted: false,
         }
@@ -815,7 +815,7 @@ async fn reset_and_disable_between_snapshot_and_apply_are_observed()
     transaction.commit().await?;
     assert_eq!(
         applied,
-        crate::credential_lab::AppliedCredential {
+        crate::credential::AppliedCredential {
             transition: CredentialTransition::ResetRequired,
             persisted: false,
         }
@@ -852,7 +852,7 @@ async fn reset_and_disable_between_snapshot_and_apply_are_observed()
     transaction.commit().await?;
     assert_eq!(
         applied,
-        crate::credential_lab::AppliedCredential {
+        crate::credential::AppliedCredential {
             transition: CredentialTransition::Rejected,
             persisted: false,
         }

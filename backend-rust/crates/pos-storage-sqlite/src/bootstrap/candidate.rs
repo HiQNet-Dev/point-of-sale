@@ -25,7 +25,7 @@ use pos_core::{
 };
 use sqlx::SqliteConnection;
 
-use crate::{SqliteTransaction, audit_writer::SqliteAuditWriter};
+use crate::{SqliteTransaction, audit::SqliteAuditWriter};
 
 /// Datos del provisioning inicial.
 #[derive(Clone, Debug)]

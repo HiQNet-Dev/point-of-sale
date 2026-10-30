@@ -21,7 +21,7 @@ use pos_core::{
     },
 };
 
-use crate::{CasOutcome, SqliteTransaction, SqliteUnitOfWork, cash_store::OpenSalesForCashShift};
+use crate::{CasOutcome, SqliteTransaction, SqliteUnitOfWork, cash::OpenSalesForCashShift};
 
 const SELECT_SALE: &str = "SELECT id, organization_id, branch_id, cash_register_id, cash_shift_id, \
     created_by_user_id, cancelled_by_user_id, completed_by_user_id, status, total_amount, version, \

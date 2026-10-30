@@ -16,10 +16,8 @@ use super::cash_store_tests::{
 };
 use super::*;
 use crate::{
-    cash_store::CloseCashShiftRequest,
-    sales_store::{
-        AddSaleItemRequest, NewSaleRequest, SqliteSalesApplication, UpdateSaleItemRequest,
-    },
+    cash::CloseCashShiftRequest,
+    sales::{AddSaleItemRequest, NewSaleRequest, SqliteSalesApplication, UpdateSaleItemRequest},
 };
 
 const PRODUCT: &str = "00000000-0000-0000-0000-000000000310";

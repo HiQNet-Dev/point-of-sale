@@ -16,7 +16,7 @@ use pos_core::{
 };
 
 use super::*;
-use crate::identity_lab::{SqliteIdentityLab, ensure_lab_identity_schema};
+use crate::identity::{SqliteIdentityLab, ensure_lab_identity_schema};
 
 const HASH: &str = "aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffff0000000011111111";
 

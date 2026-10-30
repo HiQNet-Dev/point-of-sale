@@ -27,9 +27,9 @@ use sqlx::SqlitePool;
 
 use super::*;
 use crate::{
-    audit_writer::SqliteAuditWriter,
-    bootstrap_candidate::{BootstrapRequest, provision_initial_installation},
-    identity_lab::SqliteIdentityLab,
+    audit::SqliteAuditWriter,
+    bootstrap::{BootstrapRequest, provision_initial_installation},
+    identity::SqliteIdentityLab,
 };
 
 const PROPOSALS: [&str; 6] = [

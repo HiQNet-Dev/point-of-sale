@@ -23,12 +23,12 @@ use sqlx::SqlitePool;
 
 use super::*;
 use crate::{
-    cash_store::{
+    cash::{
         CashPage, CashRegisterUpdateRequest, CloseCashShiftRequest, NewCashRegisterRequest,
         OpenCashShiftRequest, SqliteCashApplication,
     },
-    identity_lab::SqliteIdentityLab,
-    sales_store::SqliteOpenSalesForCashShift,
+    identity::SqliteIdentityLab,
+    sales::SqliteOpenSalesForCashShift,
 };
 
 const PROPOSALS: [&str; 14] = [
