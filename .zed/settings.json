@@ -1,0 +1,14 @@
+{
+  "lsp": {
+    "rust-analyzer": {
+      "initialization_options": {
+        "linkedProjects": ["backend-rust/Cargo.toml"],
+        "checkOnSave": true,
+        "cargo": {
+          "allFeatures": true,
+          "allTargets": true
+        }
+      }
+    }
+  }
+}
