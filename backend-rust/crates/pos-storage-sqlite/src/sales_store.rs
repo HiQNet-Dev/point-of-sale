@@ -8,15 +8,19 @@
 
 use std::{collections::BTreeMap, future::Future};
 
+use pos_application::{
+    audit::append_audit,
+    authorization::require_sale_scope,
+    sales_context::{SaleOperationalContext, require_open_operational_shift},
+};
 use pos_core::{
-    audit::{
-        AuditAction, AuditEntityType, AuditEventId, AuditEventRecord, AuditMetadata,
-        AuditOccurredAt,
-    },
-    cash::CashShiftStatus,
+    audit::AuditOccurredAt,
+    cash::{CashRegister, CashShift},
     catalog::{PriceDelta, UnitPrice},
-    identity::{PermissionCode, PrincipalScope, ScopeMode, UtcSeconds, VerifiedPrincipal},
-    organization_branch::{ApplicationError, EntityId, IdentityGenerator, Permission, Status},
+    identity::{UtcSeconds, VerifiedPrincipal},
+    organization_branch::{
+        ApplicationError, Branch, EntityId, IdentityGenerator, Permission, Status,
+    },
     sales::{
         ModifierGroupAssignment, NewSale, NewSaleItem, Sale, SaleError, SaleItem, SaleItemStatus,
         SaleScope, SaleStatus, SelectedModifierOption, resolve_modifier_pricing,
@@ -27,7 +31,6 @@ use serde_json::json;
 
 use crate::{
     CasOutcome, SqliteTransaction, SqliteUnitOfWork,
-    audit_writer::SqliteAuditWriter,
     cash_store::{CashStorageError, OpenSalesForCashShift},
 };
 
@@ -1064,101 +1067,59 @@ impl SqliteSalesApplication {
     }
 }
 
-pub(crate) async fn require_open_operational_shift(
-    transaction: &mut SqliteTransaction,
-    scope: &SaleScope,
-) -> Result<(), ApplicationError> {
-    let branch = transaction
-        .get_branch(&scope.organization_id, &scope.branch_id)
-        .await
-        .map_err(transaction_error)?
-        .ok_or(ApplicationError::BranchNotFound)?;
-    if branch.status() != Status::Active {
-        return Err(ApplicationError::BranchInactive);
+impl SaleOperationalContext for SqliteTransaction {
+    fn find_branch(
+        &mut self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+    ) -> impl Future<Output = Result<Option<Branch>, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let branch_id = branch_id.clone();
+        async move {
+            self.get_branch(&organization_id, &branch_id)
+                .await
+                .map_err(|_| ApplicationError::Storage)
+        }
     }
-    let register = transaction
-        .get_cash_register(
-            &scope.organization_id,
-            &scope.branch_id,
-            &scope.cash_register_id,
-        )
-        .await
-        .map_err(|_| ApplicationError::Storage)?
-        .ok_or(ApplicationError::CashRegisterNotFound)?;
-    if !register.is_active() {
-        return Err(ApplicationError::CashRegisterInactive);
-    }
-    let shift = transaction
-        .get_cash_shift(
-            &scope.organization_id,
-            &scope.branch_id,
-            &scope.cash_register_id,
-            &scope.cash_shift_id,
-        )
-        .await
-        .map_err(|_| ApplicationError::Storage)?
-        .ok_or(ApplicationError::CashShiftNotFound)?;
-    if shift.status() != CashShiftStatus::Open {
-        return Err(ApplicationError::CashShiftAlreadyClosed);
-    }
-    Ok(())
-}
 
-pub(crate) fn require_sale_scope(
-    principal: &VerifiedPrincipal,
-    permission: Permission,
-    allow_recovery: bool,
-    cash_register_id: EntityId,
-    cash_shift_id: EntityId,
-) -> Result<SaleScope, ApplicationError> {
-    if !allow_recovery && principal.scope().mode() != ScopeMode::Normal {
-        return Err(ApplicationError::Forbidden);
+    fn find_cash_register(
+        &mut self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+        cash_register_id: &EntityId,
+    ) -> impl Future<Output = Result<Option<CashRegister>, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let branch_id = branch_id.clone();
+        let cash_register_id = cash_register_id.clone();
+        async move {
+            self.get_cash_register(&organization_id, &branch_id, &cash_register_id)
+                .await
+                .map_err(|_| ApplicationError::Storage)
+        }
     }
-    let organization_id = principal.scope().organization_id().clone();
-    let branch_id = principal
-        .scope()
-        .branch_id()
-        .cloned()
-        .ok_or(ApplicationError::Forbidden)?;
-    let code = PermissionCode::new(permission.as_code().ok_or(ApplicationError::Forbidden)?)
-        .map_err(|_| ApplicationError::Forbidden)?;
-    let checked_scope = if principal.scope().mode() == ScopeMode::Recovery {
-        PrincipalScope::recovery(organization_id.clone(), branch_id.clone())
-    } else {
-        PrincipalScope::new(organization_id.clone(), Some(branch_id.clone()))
-    };
-    principal
-        .authorize(&code, &checked_scope)
-        .map_err(|_| ApplicationError::Forbidden)?;
-    Ok(SaleScope {
-        organization_id,
-        branch_id,
-        cash_register_id,
-        cash_shift_id,
-    })
-}
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) async fn append_audit<I: IdentityGenerator>(
-    transaction: &mut SqliteTransaction,
-    identities: &mut I,
-    principal: &VerifiedPrincipal,
-    action: &str,
-    entity_type: &str,
-    entity_id: EntityId,
-    metadata: serde_json::Value,
-    occurred_at: &AuditOccurredAt,
-) -> Result<(), ApplicationError> {
-    let event = AuditEventRecord::from_verified_principal(
-        AuditEventId::new(identities.next_id()?),
-        principal,
-        AuditAction::new(action).map_err(|_| ApplicationError::Audit)?,
-        AuditEntityType::new(entity_type).map_err(|_| ApplicationError::Audit)?,
-        Some(entity_id),
-        AuditMetadata::new(metadata).map_err(|_| ApplicationError::Audit)?,
-        occurred_at.clone(),
-    );
-    SqliteAuditWriter::append(transaction, &event).await
+    fn find_cash_shift(
+        &mut self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+        cash_register_id: &EntityId,
+        cash_shift_id: &EntityId,
+    ) -> impl Future<Output = Result<Option<CashShift>, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let branch_id = branch_id.clone();
+        let cash_register_id = cash_register_id.clone();
+        let cash_shift_id = cash_shift_id.clone();
+        async move {
+            self.get_cash_shift(
+                &organization_id,
+                &branch_id,
+                &cash_register_id,
+                &cash_shift_id,
+            )
+            .await
+            .map_err(|_| ApplicationError::Storage)
+        }
+    }
 }
 
 pub(crate) fn sale_error(error: SaleError) -> ApplicationError {

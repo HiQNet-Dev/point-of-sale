@@ -12,25 +12,26 @@
 
 use std::future::Future;
 
+use pos_application::{
+    audit::{append_audit, append_audit_with_id},
+    authorization::require_branch_scope,
+};
 use pos_core::{
-    audit::{
-        AuditAction, AuditEntityType, AuditEventId, AuditEventRecord, AuditMetadata,
-        AuditOccurredAt,
-    },
+    audit::AuditOccurredAt,
     cash::{
         CashError, CashRegister, CashRegisterPatch, CashShift, CashShiftStatus, CloseCashShift,
         NewCashRegister, NewCashShift, cash_register_changed_fields, ensure_close_allowed,
         ensure_open_allowed,
     },
     catalog::{CatalogCode, UnitPrice},
-    identity::{PermissionCode, PrincipalScope, ScopeMode, UtcSeconds, VerifiedPrincipal},
+    identity::{ScopeMode, UtcSeconds, VerifiedPrincipal},
     organization_branch::{
         ApplicationError, DisplayName, EntityId, IdentityGenerator, Permission, Status,
     },
 };
 use serde_json::json;
 
-use crate::{CasOutcome, SqliteTransaction, SqliteUnitOfWork, audit_writer::SqliteAuditWriter};
+use crate::{CasOutcome, SqliteTransaction, SqliteUnitOfWork};
 
 const SELECT_REGISTER: &str = "SELECT id, organization_id, branch_id, code, name, status, version \
     FROM cash_register WHERE organization_id = ? AND branch_id = ? AND id = ?";
@@ -576,7 +577,7 @@ impl<S: OpenSalesForCashShift> SqliteCashApplication<S> {
         occurred_at: &AuditOccurredAt,
     ) -> Result<CashRegister, ApplicationError> {
         let (organization_id, branch_id) =
-            require_cash_scope(principal, Permission::CashRegisterCreate, false)?;
+            require_branch_scope(principal, Permission::CashRegisterCreate, false)?;
         let code =
             CatalogCode::new(&request.code).map_err(|_| ApplicationError::InvalidCashInput)?;
         let name =
@@ -631,7 +632,7 @@ impl<S: OpenSalesForCashShift> SqliteCashApplication<S> {
         cash_register_id: &EntityId,
     ) -> Result<CashRegister, ApplicationError> {
         let (organization_id, branch_id) =
-            require_cash_scope(principal, Permission::CashRegisterRead, false)?;
+            require_branch_scope(principal, Permission::CashRegisterRead, false)?;
         let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
         let result = transaction
             .get_cash_register(&organization_id, &branch_id, cash_register_id)
@@ -649,7 +650,7 @@ impl<S: OpenSalesForCashShift> SqliteCashApplication<S> {
         page: CashPage,
     ) -> Result<Vec<CashRegister>, ApplicationError> {
         let (organization_id, branch_id) =
-            require_cash_scope(principal, Permission::CashRegisterRead, false)?;
+            require_branch_scope(principal, Permission::CashRegisterRead, false)?;
         if page.limit == 0 || page.limit > MAX_CASH_PAGE_SIZE {
             return Err(ApplicationError::InvalidCashInput);
         }
@@ -677,7 +678,7 @@ impl<S: OpenSalesForCashShift> SqliteCashApplication<S> {
         occurred_at: &AuditOccurredAt,
     ) -> Result<CashRegister, ApplicationError> {
         let (organization_id, branch_id) =
-            require_cash_scope(principal, Permission::CashRegisterUpdate, false)?;
+            require_branch_scope(principal, Permission::CashRegisterUpdate, false)?;
         let event_id = identities.next_id()?;
         let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
         let operation = async {
@@ -738,7 +739,7 @@ impl<S: OpenSalesForCashShift> SqliteCashApplication<S> {
         occurred_at: &AuditOccurredAt,
     ) -> Result<CashShift, ApplicationError> {
         let (organization_id, branch_id) =
-            require_cash_scope(principal, Permission::CashShiftOpen, false)?;
+            require_branch_scope(principal, Permission::CashShiftOpen, false)?;
         let opening_amount = UnitPrice::parse(&request.opening_amount)
             .map_err(|_| ApplicationError::InvalidCashInput)?;
         let shift_id = identities.next_id()?;
@@ -808,7 +809,7 @@ impl<S: OpenSalesForCashShift> SqliteCashApplication<S> {
         cash_register_id: &EntityId,
     ) -> Result<Option<CashShift>, ApplicationError> {
         let (organization_id, branch_id) =
-            require_cash_scope(principal, Permission::CashShiftRead, false)?;
+            require_branch_scope(principal, Permission::CashShiftRead, false)?;
         let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
         let result = transaction
             .get_open_cash_shift(&organization_id, &branch_id, cash_register_id)
@@ -825,7 +826,7 @@ impl<S: OpenSalesForCashShift> SqliteCashApplication<S> {
         cash_shift_id: &EntityId,
     ) -> Result<CashShift, ApplicationError> {
         let (organization_id, branch_id) =
-            require_cash_scope(principal, Permission::CashShiftRead, false)?;
+            require_branch_scope(principal, Permission::CashShiftRead, false)?;
         let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
         let result = transaction
             .get_cash_shift(
@@ -849,7 +850,7 @@ impl<S: OpenSalesForCashShift> SqliteCashApplication<S> {
         page: CashPage,
     ) -> Result<Vec<CashShift>, ApplicationError> {
         let (organization_id, branch_id) =
-            require_cash_scope(principal, Permission::CashShiftRead, false)?;
+            require_branch_scope(principal, Permission::CashShiftRead, false)?;
         if page.limit == 0 || page.limit > MAX_CASH_PAGE_SIZE {
             return Err(ApplicationError::InvalidCashInput);
         }
@@ -883,7 +884,7 @@ impl<S: OpenSalesForCashShift> SqliteCashApplication<S> {
         occurred_at: &AuditOccurredAt,
     ) -> Result<CashShift, ApplicationError> {
         let (organization_id, branch_id) =
-            require_cash_scope(principal, Permission::CashShiftClose, true)?;
+            require_branch_scope(principal, Permission::CashShiftClose, true)?;
         let declared_amount = UnitPrice::parse(&request.closing_declared_amount)
             .map_err(|_| ApplicationError::InvalidCashInput)?;
         let event_id = identities.next_id()?;
@@ -963,80 +964,6 @@ impl<S: OpenSalesForCashShift> SqliteCashApplication<S> {
         .await;
         finish(transaction, operation).await
     }
-}
-
-fn require_cash_scope(
-    principal: &VerifiedPrincipal,
-    permission: Permission,
-    allow_recovery: bool,
-) -> Result<(EntityId, EntityId), ApplicationError> {
-    if !allow_recovery && principal.scope().mode() != ScopeMode::Normal {
-        return Err(ApplicationError::Forbidden);
-    }
-    let organization_id = principal.scope().organization_id().clone();
-    let branch_id = principal
-        .scope()
-        .branch_id()
-        .cloned()
-        .ok_or(ApplicationError::Forbidden)?;
-    let code = permission.as_code().ok_or(ApplicationError::Forbidden)?;
-    let code = PermissionCode::new(code).map_err(|_| ApplicationError::Forbidden)?;
-    let scope = if principal.scope().mode() == ScopeMode::Recovery {
-        PrincipalScope::recovery(organization_id.clone(), branch_id.clone())
-    } else {
-        PrincipalScope::new(organization_id.clone(), Some(branch_id.clone()))
-    };
-    principal
-        .authorize(&code, &scope)
-        .map_err(|_| ApplicationError::Forbidden)?;
-    Ok((organization_id, branch_id))
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn append_audit<I: IdentityGenerator>(
-    transaction: &mut SqliteTransaction,
-    identities: &mut I,
-    principal: &VerifiedPrincipal,
-    action: &str,
-    entity_type: &str,
-    entity_id: EntityId,
-    metadata: serde_json::Value,
-    occurred_at: &AuditOccurredAt,
-) -> Result<(), ApplicationError> {
-    append_audit_with_id(
-        transaction,
-        identities.next_id()?,
-        principal,
-        action,
-        entity_type,
-        entity_id,
-        metadata,
-        occurred_at,
-    )
-    .await
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn append_audit_with_id(
-    transaction: &mut SqliteTransaction,
-    event_id: EntityId,
-    principal: &VerifiedPrincipal,
-    action: &str,
-    entity_type: &str,
-    entity_id: EntityId,
-    metadata: serde_json::Value,
-    occurred_at: &AuditOccurredAt,
-) -> Result<(), ApplicationError> {
-    let event = AuditEventRecord::from_verified_principal(
-        AuditEventId::new(event_id),
-        principal,
-        AuditAction::new(action).map_err(|_| ApplicationError::Audit)?,
-        AuditEntityType::new(entity_type).map_err(|_| ApplicationError::Audit)?,
-        Some(entity_id),
-        AuditMetadata::new(metadata).map_err(|_| ApplicationError::Audit)?,
-        occurred_at.clone(),
-    );
-    SqliteAuditWriter::append(transaction, &event).await
 }
 
 fn cash_domain_error(error: CashError) -> ApplicationError {

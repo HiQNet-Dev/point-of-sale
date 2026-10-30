@@ -16,10 +16,14 @@
 //! - El ledger es append-only por trigger; el saldo se materializa por CAS.
 //! - La sucursal siempre procede del principal verificado, nunca del cliente.
 
+use pos_application::{
+    audit::append_audit,
+    authorization::{require_operational_branch, require_organization_scope},
+};
 use pos_core::{
     audit::AuditOccurredAt,
     catalog::{CatalogCode, Description},
-    identity::{PermissionCode, ScopeMode, UtcSeconds, VerifiedPrincipal},
+    identity::{UtcSeconds, VerifiedPrincipal}, /*  */
     inventory::{
         ConsumptionRequirement, InventoryBaseUnit, InventoryError, InventoryItem,
         InventoryMovement, InventoryMovementType, MovementReason, NewInventoryItem, NewMovement,
@@ -33,10 +37,7 @@ use pos_core::{
 };
 use serde_json::json;
 
-use crate::{
-    CasOutcome, SqliteTransaction, SqliteUnitOfWork,
-    sales_store::{append_audit, finish},
-};
+use crate::{CasOutcome, SqliteTransaction, SqliteUnitOfWork, sales_store::finish};
 
 /// Tamaño máximo de página para listados de inventario.
 pub const MAX_INVENTORY_PAGE_SIZE: u32 = 100;
@@ -965,33 +966,6 @@ impl SqliteInventoryApplication {
         .await;
         finish(transaction, operation).await
     }
-}
-
-fn require_organization_scope(
-    principal: &VerifiedPrincipal,
-    permission: Permission,
-) -> Result<EntityId, ApplicationError> {
-    if principal.scope().mode() != ScopeMode::Normal {
-        return Err(ApplicationError::Forbidden);
-    }
-    let organization_id = principal.scope().organization_id().clone();
-    let code = PermissionCode::new(permission.as_code().ok_or(ApplicationError::Forbidden)?)
-        .map_err(|_| ApplicationError::Forbidden)?;
-    // El scope autorizado es exactamente el del principal: un permiso resuelto
-    // para la sucursal A nunca se amplía al alcance de organización.
-    principal
-        .authorize(&code, principal.scope())
-        .map_err(|_| ApplicationError::Forbidden)?;
-    Ok(organization_id)
-}
-
-/// La sucursal operativa procede siempre del principal verificado.
-fn require_operational_branch(principal: &VerifiedPrincipal) -> Result<EntityId, ApplicationError> {
-    principal
-        .scope()
-        .branch_id()
-        .cloned()
-        .ok_or(ApplicationError::Forbidden)
 }
 
 /// Comprueba suficiencia de stock con la política de la organización.

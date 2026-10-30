@@ -22,6 +22,7 @@
 //! - El historial es append-only por trigger del esquema, no por criptografía:
 //!   un administrador del archivo puede desactivarlo (registrado en 1M).
 
+use pos_application::audit::AuditAppender;
 use pos_core::{audit::AuditEventRecord, organization_branch::EntityId};
 use sqlx::SqliteConnection;
 
@@ -88,4 +89,14 @@ async fn write(
         .await
         .map_err(|_| ApplicationError::Audit)?;
     Ok(())
+}
+
+impl AuditAppender for SqliteTransaction {
+    fn append_audit_event(
+        &mut self,
+        event: &AuditEventRecord,
+    ) -> impl std::future::Future<Output = Result<(), ApplicationError>> + Send {
+        let event = event.clone();
+        async move { SqliteAuditWriter::append(self, &event).await }
+    }
 }
