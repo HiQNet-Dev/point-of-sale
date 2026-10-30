@@ -127,9 +127,24 @@ Hallazgo adicional: el job Rust (`rust_run`, `backend-rust`, Migration Lab con
 dispatch desde `main` no validaría Rust.
 
 Acción realizada: `workflow_dispatch` desde `dev` con
-`target_sha=723c1cbb1011fcecb7251eddf896885744661129`, sin cambiar triggers ni
-gates. El resultado se registra en el PR; un fallo del gate normativo es esperado
-y **no** se oculta con `continue-on-error` ni `|| true`.
+`target_sha=723c1cbb1011fcecb7251eddf896885744661129`. Resultado: run `40936337891`
+falló en el paso **Validate requested SHA input** de todos los jobs.
+
+Causa exacta, leída del workflow: el dispatch manual solo se acepta desde `main`
+(`if event == workflow_dispatch && ref != refs/heads/main → exit 1`). Como la
+copia de `main` no contiene el job Rust, **no existe hoy un camino permitido para
+ejecutar el CI Rust de una rama feature**. El gate normativo además falló al no
+encontrar `backend-rust` porque el checkout quedó en `dev`.
+
+Ningún control se debilitó: no se tocaron triggers, gates ni `--require-complete`.
+Propuestas, en orden de preferencia y sujetas a aprobación del titular:
+
+1. Abrir el PR de activación contra `dev` cuando exista firma: el trigger
+   `pull_request → dev` usa el workflow de `dev`, que sí incluye el job Rust.
+2. Permitir `workflow_dispatch` desde `dev` en `ci.yml` (cambio de workflow, sin
+   tocar gates) para validar SHAs de ramas feature antes de abrir el PR.
+3. Añadir `feat/backend/**` a `pull_request.branches` para que los PR apilados
+   ejecuten el workflow de su rama base.
 
 ## 9. Decisiones normativas
 
