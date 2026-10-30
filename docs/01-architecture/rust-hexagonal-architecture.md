@@ -121,8 +121,10 @@ Extracción incremental pendiente, en este orden:
 
 1. Casos de uso de catálogo → `pos-application` conservando contratos.
 2. Casos de uso de caja, ventas e inventario con los mismos puertos.
-3. División física de `pos-core::{catalog, sales, organization_branch}` en
-   directorios por contexto, manteniendo reexportaciones.
+3. División física del resto de `pos-core`:
+   - Hecho: `sales` ya es un directorio (`mod`, `errors`, `state`, `sale`,
+     `sale_item`, `payment`, `checkout`, `pricing`).
+   - Pendiente: `catalog` y `organization_branch`.
 4. División de `pos-storage-sqlite/src/lib.rs` en `connection/`, `transaction/`
    y `organization/`.
 
