@@ -35,7 +35,9 @@ productiva: las tablas implicadas siguen sin aprobación física.
 | Inventario (artículos, saldos, ledger) | `DOMAIN` | `pos-core::inventory`, cantidades exactas, unidad bloqueable, CAS y ledger tipado | DDL, trigger append-only, adaptador, API |
 | Ventas | `DOMAIN` | `pos-core::sales`, ciclo de vida, snapshots, totales exactos y modificadores | DDL, consumo de inventario, adaptador, API |
 | Checkout y pagos | `DOMAIN` | `pos-core::sales`, cobertura exacta, efectivo/tarjeta y cambio | DDL, composición transaccional con inventario y turno, API |
-| Compras y recepciones | `DOMAIN` | `pos-core::purchasing`, ciclo de vida, snapshots, recepciones acumuladas y exceso | DDL, agregado `Supplier`, adaptador, API |
+| Compras y recepciones | `DOMAIN` | `pos-core::purchasing`, ciclo de vida, snapshots, recepciones acumuladas y exceso | DDL, adaptador, API |
+| Proveedores | `DOMAIN` | `pos-core::supplier`, slug inmutable, contacto acotado, email normalizado y snapshot | DDL, adaptador, API |
+| Recetas y efectos de modificador | `DOMAIN` | `pos-core::recipe`, reemplazo, resolución de consumo y snapshots de línea | DDL, adaptador, composición de checkout |
 | API HTTP / OpenAPI | `NOT_STARTED` | — | Todo |
 | Integración React | `NOT_STARTED` | — | Todo |
 

@@ -144,9 +144,11 @@ no cero. Un checkpoint **no es un backup**.
   (scope de sucursal, apertura/cierre, recuperación y no idempotencia),
   `pos-core::inventory` las de artículos, cantidades exactas, unidad base
   bloqueable, saldos con CAS y ledger tipado, `pos-core::purchasing` el ciclo
-  de vida de órdenes de compra y sus recepciones, y `pos-core::sales` el ciclo de
-  vida de la venta, los pagos y la cotización de modificadores, sin persistencia.
-  SQLite prueba las
+  de vida de órdenes de compra y sus recepciones, `pos-core::supplier` los datos
+  maestros de proveedor con su snapshot, `pos-core::recipe` recetas, efectos de
+  modificador y resolución de consumo, y `pos-core::sales` el ciclo de vida de la
+  venta, los pagos y la cotización de modificadores, sin persistencia. SQLite
+  prueba las
   foundations de seguridad mediante fixtures aisladas y adaptadores de
   laboratorio (`identity_lab`, `credential_lab`). No hay
   writer ni auditoría productiva, autenticación/RBAC DB-authoritative concreta,
@@ -212,6 +214,7 @@ No ejecutar down migrations sobre bases reales.
 - [Preparación del esquema físico 1I](../docs/05-development/rust-increment-1i-prep.md).
 - [Dominio de catálogo y primer arranque 1J](../docs/05-development/rust-increment-1j.md).
 - [Tablero maestro de migración](../docs/05-development/rust-migration-board.md).
+- [Expediente de aprobación 1I](../docs/05-development/rust-1i-approval-decision-record.md).
 - [Especificación real del lab y artefactos](tools/migration-lab/README.md).
 - [ADR-0020](../docs/01-architecture/adr/0020-rust-foundation-sqlx-migration-boundary.md).
 - [CI y gate normativo obligatorio](../docs/05-development/ci.md).
