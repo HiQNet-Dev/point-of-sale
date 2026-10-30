@@ -1,33 +1,34 @@
 //! Caracterización reproducible de Argon2id para D-AUTH-09.
 //!
-//! **No aprueba parámetros.** Mide candidatos sobre el hardware donde se ejecute
-//! y emite JSON consumible por el expediente normativo.
+//! **No aprueba parámetros.** Mide candidatos sobre el hardware donde se ejecute y
+//! emite JSON consumible por el expediente normativo.
 //!
 //! ```sh
 //! cargo run -p pos-credentials --release --example argon2_bench -- \
-//!   --rounds 5 --workers 1,2,4 --json target/argon2-bench.json
+//!   --rounds 20 --workers 1,4,16 --burst 32 --json target/argon2-bench.json
 //! ```
 //!
 //! # Qué mide
 //!
 //! 1. La ruta pública real (`hash_password` + `verify_credential`) para las
-//!    políticas registradas `LAB_V0`/`LAB_V1`.
-//! 2. Candidatos adicionales construidos con `argon2::Params` **solo para medir**:
-//!    el benchmark no puede eludir los límites de [`pos_credentials::Argon2Policy`]
-//!    en código productivo, pero sí necesita cuantificar por qué un candidato
-//!    queda fuera de política.
-//! 3. Verificaciones concurrentes, para saber si un equipo pequeño satura la CPU.
+//!    políticas registradas `LAB_V0`/`LAB_V1`, con latencias individuales
+//!    (p50/p95/p99) de generación y verificación por separado.
+//! 2. Candidatos construidos con `argon2::Params` **solo para medir**, incluidos
+//!    los que la política actual rechaza.
+//! 3. Carga concurrente y una ráfaga de intentos simultáneos, que modela una
+//!    avalancha de logins; el benchmark informa saturación, no aplica límites.
+//! 4. Pico de RSS cuando el sistema expone `/proc`.
 //!
 //! # Entorno
 //!
 //! CPU y memoria se detectan sin dependencias externas cuando el sistema lo
-//! permite (`PROCESSOR_IDENTIFIER`, `/proc/cpuinfo`, `/proc/meminfo`). El
-//! operador puede declarar las etiquetas del equipo objetivo con
-//! `POS_BENCH_CPU` y `POS_BENCH_MEMORY_KIB`; es la vía prevista para ejecutar el
-//! mismo binario en el hardware de una PyME.
+//! permite. El operador declara el equipo objetivo con `POS_BENCH_CPU`,
+//! `POS_BENCH_MEMORY_KIB` y `POS_BENCH_HARDWARE_CLASS`. Los límites de CPU/RAM se
+//! aplican **externamente** (contenedor, `systemd`, `taskset`) y deben
+//! registrarse en la clase de hardware, no simularse dentro del binario.
 //!
-//! El pico de RSS solo se puede leer en sistemas con `/proc`; en otros se informa
-//! `null` y se conserva el coste de memoria configurado (`m`).
+//! El límite de intentos simultáneos es una política de aplicación, no
+//! criptográfica: este instrumento mide el coste real de atenderlos.
 
 use std::{
     env, fs,
@@ -40,21 +41,22 @@ use argon2::{
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 use pos_core::identity::{CredentialAlgorithm, CredentialKind};
-use pos_credentials::{Argon2Policy, VerifyRequest, hash_password, verify_credential};
+use pos_credentials::{
+    Argon2Policy, VerificationOutcome, VerifyRequest, hash_password, verify_credential,
+};
 use serde_json::{Value, json};
 
 const PASSWORD: &str = "bench-only-passphrase";
-const DEFAULT_ROUNDS: u32 = 5;
+const DEFAULT_ROUNDS: u32 = 20;
+const DEFAULT_BURST: u32 = 32;
 const SALT_BYTES: usize = 16;
 const OUTPUT_BYTES: usize = 32;
 
-/// Candidato medido con parámetros crudos.
 struct Candidate {
     label: &'static str,
     memory_kib: u32,
     iterations: u32,
     lanes: u32,
-    /// `true` si la política registrada lo aceptaría para verificación.
     accepted_by_policy: bool,
 }
 
@@ -91,7 +93,8 @@ const CANDIDATES: [Candidate; 4] = [
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut rounds = DEFAULT_ROUNDS;
-    let mut workers = vec![1_u32, 2, 4];
+    let mut workers = vec![1_u32, 4, 16];
+    let mut burst = DEFAULT_BURST;
     let mut output: Option<String> = None;
     let mut arguments = env::args().skip(1);
     while let Some(argument) = arguments.next() {
@@ -113,23 +116,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
+            "--burst" => {
+                if let Some(value) = arguments.next() {
+                    burst = value.parse().unwrap_or(DEFAULT_BURST).max(1);
+                }
+            }
             "--json" => output = arguments.next(),
             _ => {}
         }
     }
 
     let policies = measure_registered_policies(rounds)?;
+    let after_policies = peak_rss_kib();
     let candidates = measure_candidates(rounds)?;
+    let after_candidates = peak_rss_kib();
     let concurrency = measure_concurrency(&workers, rounds)?;
+    let after_concurrency = peak_rss_kib();
+    let burst_report = measure_burst(burst)?;
     let report = json!({
         "status": "OBSERVED",
-        "normative": "D-AUTH-09 remains blocked until target hardware evidence is recorded",
+        "normative": "D-AUTH-09 remains blocked until target hardware evidence is recorded and the holder approves",
         "environment": environment(),
-        "rounds": rounds,
+        "input": { "rounds": rounds, "workers": workers, "burst": burst },
         "policies": policies,
         "candidates": candidates,
         "concurrency": concurrency,
-        "memory": memory_profile(),
+        "burst": burst_report,
+        "memory": memory_profile(after_policies, after_candidates, after_concurrency),
     });
 
     let rendered = serde_json::to_string_pretty(&report)?;
@@ -151,6 +164,7 @@ fn environment() -> Value {
         "memory_total_kib": env::var("POS_BENCH_MEMORY_KIB").ok().and_then(|value| value.parse::<u64>().ok()).or_else(detect_total_memory_kib),
         "rust_version": option_env!("CARGO_PKG_RUST_VERSION").unwrap_or("unknown"),
         "hardware_class": env::var("POS_BENCH_HARDWARE_CLASS").unwrap_or_else(|_| "UNSPECIFIED".to_owned()),
+        "external_limits": env::var("POS_BENCH_LIMITS").unwrap_or_else(|_| "UNSPECIFIED".to_owned()),
     })
 }
 
@@ -175,10 +189,19 @@ fn detect_total_memory_kib() -> Option<u64> {
     })
 }
 
-fn memory_profile() -> Value {
+/// Pico acumulado de RSS por fase; `VmHWM` es monótono, así que un valor que no
+/// crece indica que la fase no aumentó el pico.
+fn memory_profile(
+    after_policies: Option<u64>,
+    after_candidates: Option<u64>,
+    after_concurrency: Option<u64>,
+) -> Value {
     json!({
         "peak_rss_kib": peak_rss_kib(),
-        "note": "El coste de memoria de Argon2id está gobernado por el parámetro m; el pico de RSS agregado depende de las verificaciones concurrentes.",
+        "after_policies_kib": after_policies,
+        "after_candidates_kib": after_candidates,
+        "after_concurrency_kib": after_concurrency,
+        "note": "VmHWM es el pico del proceso y es monótono; el coste de Argon2id está gobernado por m, pero el asignador puede retener memoria por hilo bajo concurrencia.",
     })
 }
 
@@ -194,37 +217,35 @@ fn peak_rss_kib() -> Option<u64> {
 fn measure_registered_policies(rounds: u32) -> Result<Value, Box<dyn std::error::Error>> {
     let mut measured = Vec::new();
     for policy in [Argon2Policy::LAB_V0, Argon2Policy::LAB_V1] {
-        let hash = hash_password(PASSWORD, policy)?;
-        let started = Instant::now();
+        let mut hash_samples = Vec::with_capacity(rounds as usize);
         for _ in 0..rounds {
-            hash_password(PASSWORD, policy)?;
+            let started = Instant::now();
+            let hash = hash_password(PASSWORD, policy)?;
+            hash_samples.push(millis(started.elapsed()));
+            drop(hash);
         }
-        let hash_ms = per_round(started.elapsed(), rounds);
-
-        let started = Instant::now();
+        let stored = hash_password(PASSWORD, policy)?;
+        let mut verify_samples = Vec::with_capacity(rounds as usize);
         for _ in 0..rounds {
+            let started = Instant::now();
             let outcome = verify_credential(&VerifyRequest {
                 purpose: CredentialKind::Password,
                 algorithm: CredentialAlgorithm::Argon2id,
-                stored: &hash,
+                stored: &stored,
                 password: PASSWORD,
             })?;
-            if !matches!(
-                outcome,
-                pos_credentials::VerificationOutcome::Verified { .. }
-            ) {
+            verify_samples.push(millis(started.elapsed()));
+            if !matches!(outcome, VerificationOutcome::Verified { .. }) {
                 return Err("verificación de la ruta pública rechazada".into());
             }
         }
-        let verify_ms = per_round(started.elapsed(), rounds);
-
         measured.push(json!({
             "id": policy.id(),
             "m_kib": policy.memory_kib(),
             "t": policy.iterations(),
             "p": policy.lanes(),
-            "hash_ms": hash_ms,
-            "verify_ms": verify_ms,
+            "hash": distribution(&hash_samples),
+            "verify": distribution(&verify_samples),
             "policy_cap_kib": pos_credentials::MAX_ARGON2_MEMORY_KIB,
         }));
     }
@@ -234,54 +255,61 @@ fn measure_registered_policies(rounds: u32) -> Result<Value, Box<dyn std::error:
 fn measure_candidates(rounds: u32) -> Result<Value, Box<dyn std::error::Error>> {
     let mut measured = Vec::new();
     for candidate in &CANDIDATES {
-        let params = Params::new(
+        let Ok(params) = Params::new(
             candidate.memory_kib,
             candidate.iterations,
             candidate.lanes,
             Some(OUTPUT_BYTES),
-        );
-        let Ok(params) = params else {
+        ) else {
             measured.push(json!({"label": candidate.label, "status": "INVALID_PARAMS"}));
             continue;
         };
         let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-        let salt = SaltString::generate(&mut OsRng);
-        let Ok(encoded) = argon
-            .hash_password(PASSWORD.as_bytes(), &salt)
-            .map(|hash| hash.to_string())
-        else {
+        let mut hash_samples = Vec::with_capacity(rounds as usize);
+        let mut verify_samples = Vec::with_capacity(rounds as usize);
+        let mut encoded = String::new();
+        let mut failed = false;
+        for _ in 0..rounds {
+            let salt = SaltString::generate(&mut OsRng);
+            let started = Instant::now();
+            match argon.hash_password(PASSWORD.as_bytes(), &salt) {
+                Ok(hash) => {
+                    hash_samples.push(millis(started.elapsed()));
+                    encoded = hash.to_string();
+                }
+                Err(_) => {
+                    failed = true;
+                    break;
+                }
+            }
+        }
+        if failed {
             measured.push(json!({"label": candidate.label, "status": "HASH_FAILED"}));
             continue;
-        };
+        }
         let Ok(parsed) = PasswordHash::new(&encoded) else {
             measured.push(json!({"label": candidate.label, "status": "PARSE_FAILED"}));
             continue;
         };
-
-        let started = Instant::now();
         for _ in 0..rounds {
-            let fresh = SaltString::generate(&mut OsRng);
-            if argon.hash_password(PASSWORD.as_bytes(), &fresh).is_err() {
-                return Err("hash del candidato falló".into());
-            }
-        }
-        let hash_ms = per_round(started.elapsed(), rounds);
-
-        let started = Instant::now();
-        for _ in 0..rounds {
+            let started = Instant::now();
             if argon.verify_password(PASSWORD.as_bytes(), &parsed).is_err() {
-                return Err("verificación del candidato falló".into());
+                failed = true;
+                break;
             }
+            verify_samples.push(millis(started.elapsed()));
         }
-        let verify_ms = per_round(started.elapsed(), rounds);
-
+        if failed {
+            measured.push(json!({"label": candidate.label, "status": "VERIFY_FAILED"}));
+            continue;
+        }
         measured.push(json!({
             "label": candidate.label,
             "m_kib": candidate.memory_kib,
             "t": candidate.iterations,
             "p": candidate.lanes,
-            "hash_ms": hash_ms,
-            "verify_ms": verify_ms,
+            "hash": distribution(&hash_samples),
+            "verify": distribution(&verify_samples),
             "accepted_by_current_policy": candidate.accepted_by_policy,
         }));
     }
@@ -293,32 +321,40 @@ fn measure_concurrency(workers: &[u32], rounds: u32) -> Result<Value, Box<dyn st
     let stored = hash_password(PASSWORD, policy)?;
     let mut results = Vec::new();
     for &count in workers {
-        let mut failures = 0_u32;
         let started = Instant::now();
+        let mut failures = 0_u32;
+        let mut samples = Vec::new();
         std::thread::scope(|scope| {
             let handles: Vec<_> = (0..count)
                 .map(|_| {
                     let reference = stored.clone();
                     scope.spawn(move || {
                         let mut local_failures = 0_u32;
+                        let mut local_samples = Vec::with_capacity(rounds as usize);
                         for _ in 0..rounds {
+                            let op_started = Instant::now();
                             match verify_credential(&VerifyRequest {
                                 purpose: CredentialKind::Password,
                                 algorithm: CredentialAlgorithm::Argon2id,
                                 stored: &reference,
                                 password: PASSWORD,
                             }) {
-                                Ok(pos_credentials::VerificationOutcome::Verified { .. }) => {}
+                                Ok(VerificationOutcome::Verified { .. }) => {
+                                    local_samples.push(millis(op_started.elapsed()));
+                                }
                                 _ => local_failures += 1,
                             }
                         }
-                        local_failures
+                        (local_failures, local_samples)
                     })
                 })
                 .collect();
             for handle in handles {
                 match handle.join() {
-                    Ok(local) => failures += local,
+                    Ok((local_failures, local_samples)) => {
+                        failures += local_failures;
+                        samples.extend(local_samples);
+                    }
                     Err(_) => failures += rounds,
                 }
             }
@@ -329,21 +365,102 @@ fn measure_concurrency(workers: &[u32], rounds: u32) -> Result<Value, Box<dyn st
             "policy": policy.id(),
             "workers": count,
             "operations": operations,
-            "total_ms": millis(elapsed),
-            "per_operation_ms": per_round(elapsed, u32::try_from(operations).unwrap_or(u32::MAX)),
-            "wall_throughput_per_s": throughput(operations, elapsed),
+            "wall_ms": millis(elapsed),
+            "throughput_per_s": throughput(operations, elapsed),
+            "latency": distribution(&samples),
             "failures": failures,
         }));
     }
     Ok(Value::Array(results))
 }
 
-fn millis(duration: Duration) -> f64 {
-    duration.as_secs_f64() * 1_000.0
+/// Ráfaga corta: muchos intentos a la vez, como una avalancha de credenciales.
+///
+/// No aplica límites: mide cuánto tarda el sistema en atender la ráfaga y si
+/// alguna verificación falla por contención.
+fn measure_burst(workers: u32) -> Result<Value, Box<dyn std::error::Error>> {
+    let policy = Argon2Policy::LAB_V1;
+    let stored = hash_password(PASSWORD, policy)?;
+    let started = Instant::now();
+    let mut failures = 0_u32;
+    let mut samples = Vec::new();
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                let reference = stored.clone();
+                scope.spawn(move || {
+                    let op_started = Instant::now();
+                    let outcome = verify_credential(&VerifyRequest {
+                        purpose: CredentialKind::Password,
+                        algorithm: CredentialAlgorithm::Argon2id,
+                        stored: &reference,
+                        password: PASSWORD,
+                    });
+                    match outcome {
+                        Ok(VerificationOutcome::Verified { .. }) => {
+                            (0_u32, Some(millis(op_started.elapsed())))
+                        }
+                        _ => (1_u32, None),
+                    }
+                })
+            })
+            .collect();
+        for handle in handles {
+            match handle.join() {
+                Ok((local_failures, sample)) => {
+                    failures += local_failures;
+                    if let Some(value) = sample {
+                        samples.push(value);
+                    }
+                }
+                Err(_) => failures += 1,
+            }
+        }
+    });
+    let elapsed = started.elapsed();
+    Ok(json!({
+        "policy": policy.id(),
+        "simultaneous_attempts": workers,
+        "wall_ms": millis(elapsed),
+        "throughput_per_s": throughput(u64::from(workers), elapsed),
+        "latency": distribution(&samples),
+        "failures": failures,
+        "note": "Una ráfaga sin límites mide contención; el throttling por usuario/IP es política de aplicación, no criptográfica.",
+    }))
 }
 
-fn per_round(duration: Duration, rounds: u32) -> f64 {
-    millis(duration) / f64::from(rounds.max(1))
+/// Distribución de latencias en milisegundos, incluidos percentiles.
+fn distribution(samples: &[f64]) -> Value {
+    if samples.is_empty() {
+        return json!({ "count": 0 });
+    }
+    let mut sorted = samples.to_vec();
+    sorted.sort_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
+    let count = sorted.len();
+    json!({
+        "count": count,
+        "min_ms": sorted[0],
+        "p50_ms": percentile(&sorted, 50.0),
+        "p95_ms": percentile(&sorted, 95.0),
+        "p99_ms": percentile(&sorted, 99.0),
+        "max_ms": sorted[count - 1],
+        "mean_ms": sorted.iter().sum::<f64>() / f64::from(u32::try_from(count).unwrap_or(1)),
+    })
+}
+
+fn percentile(sorted: &[f64], percentile: f64) -> f64 {
+    let last = sorted.len().saturating_sub(1);
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    let index = ((percentile / 100.0) * last as f64).round() as usize;
+    sorted[index.min(last)]
+}
+
+fn millis(duration: Duration) -> f64 {
+    duration.as_secs_f64() * 1_000.0
 }
 
 fn throughput(operations: u64, duration: Duration) -> f64 {
@@ -356,5 +473,5 @@ fn throughput(operations: u64, duration: Duration) -> f64 {
     }
 }
 
-/// Mantiene el importe de SALT_BYTES documentado junto al contrato PHC.
+/// Mantiene documentada la longitud de sal exigida por el contrato PHC.
 const _: usize = SALT_BYTES;
