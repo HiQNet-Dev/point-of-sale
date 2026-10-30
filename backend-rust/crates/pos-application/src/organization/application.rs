@@ -1,4 +1,4 @@
-use super::*;
+use pos_core::organization_branch::*;
 
 /// Casos de uso de Organization sobre puertos transaccionales.
 pub struct OrganizationApplication<U, A, I> {

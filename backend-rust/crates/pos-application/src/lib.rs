@@ -32,6 +32,9 @@ pub mod cash;
 pub mod catalog;
 /// Caso de uso de checkout atómico.
 pub mod checkout;
+/// Casos de uso de Organization y Branch.
+pub mod organization;
+
 /// Casos de uso, DTOs y puertos de inventario.
 pub mod inventory;
 /// Contexto operativo de una venta (sucursal, caja y turno vigentes).
@@ -51,3 +54,5 @@ pub enum CasOutcome {
 
 #[cfg(test)]
 mod architecture_tests;
+#[cfg(test)]
+mod organization_tests;

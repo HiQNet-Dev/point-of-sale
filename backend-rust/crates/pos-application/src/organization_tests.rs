@@ -4,12 +4,34 @@
 
 use std::collections::VecDeque;
 
-use crate::organization_branch::{
-    ApplicationError, AuditAppender, AuditEvent, Authorization, Branch, BranchApplication,
-    BranchPatch, BranchRepository, BusinessCode, DisplayName, DomainError, EntityId,
-    IdentityGenerator, IsoCurrency, LocaleTag, NegativeStockPolicy, NewBranch, NewOrganization,
-    Organization, OrganizationApplication, OrganizationPatch, OrganizationRepository, Permission,
-    Status, Timezone, TimezoneOverridePatch, UnitOfWork,
+use crate::organization::{BranchApplication, OrganizationApplication};
+use pos_core::organization_branch::{
+    ApplicationError,
+    AuditAppender,
+    AuditEvent,
+    Authorization,
+    Branch,
+    BranchPatch,
+    BranchRepository,
+    BusinessCode,
+    DisplayName,
+    DomainError,
+    EntityId,
+    // Aplicaciones movidas a la capa de aplicación.
+    IdentityGenerator,
+    IsoCurrency,
+    LocaleTag,
+    NegativeStockPolicy,
+    NewBranch,
+    NewOrganization,
+    Organization,
+    OrganizationPatch,
+    OrganizationRepository,
+    Permission,
+    Status,
+    Timezone,
+    TimezoneOverridePatch,
+    UnitOfWork,
 };
 
 fn id(value: &str) -> EntityId {

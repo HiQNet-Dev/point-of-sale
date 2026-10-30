@@ -11,7 +11,6 @@
 //! [`application`]. La API pública se reexporta aquí, de modo que
 //! `pos_core::organization_branch::<Item>` conserva su ruta.
 
-mod application;
 mod audit_event;
 mod branch;
 mod errors;
@@ -22,7 +21,6 @@ mod ports;
 mod text;
 mod values;
 
-pub use application::{BranchApplication, OrganizationApplication};
 pub use audit_event::{AuditEvent, UtcTimestamp};
 pub use branch::{Branch, BranchPatch, NewBranch, TimezoneOverridePatch, branch_changed_fields};
 pub use errors::{ApplicationError, DomainError};
