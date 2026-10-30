@@ -6,6 +6,8 @@ use std::{path::Path, time::Duration};
 pub mod audit_writer;
 /// Provisioning inicial sobre el esquema candidato. No productivo.
 pub mod bootstrap_candidate;
+/// Catálogo organizacional persistente sobre el esquema candidato. No productivo.
+pub mod catalog_store;
 /// Transición de credenciales de laboratorio (BCrypt → Argon2id) sobre la UoW.
 pub mod credential_lab;
 /// Adaptador de identidad y permisos exclusivo de laboratorio (tablas `*_lab`).
@@ -1022,6 +1024,8 @@ fn storage_error(error: OrganizationBranchStorageError) -> ApplicationError {
 mod audit_writer_tests;
 #[cfg(test)]
 mod candidate_flow_tests;
+#[cfg(test)]
+mod catalog_store_tests;
 #[cfg(test)]
 mod credential_lab_tests;
 #[cfg(test)]

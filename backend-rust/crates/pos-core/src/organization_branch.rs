@@ -766,6 +766,46 @@ pub enum Permission {
     BranchRead,
     /// Actualización de sucursal.
     BranchUpdate,
+    /// Alta de categoría de catálogo.
+    CategoryCreate,
+    /// Lectura de categorías.
+    CategoryRead,
+    /// Actualización de categoría.
+    CategoryUpdate,
+    /// Alta de producto.
+    ProductCreate,
+    /// Lectura de productos.
+    ProductRead,
+    /// Actualización de producto y de su precio base.
+    ProductUpdate,
+    /// Descubrimiento del catálogo operativo desde una sucursal.
+    PosCatalogRead,
+}
+
+impl Permission {
+    /// Código canónico equivalente en el catálogo de permisos Java (V5–V25).
+    ///
+    /// Es la única traducción autorizada entre el enum de aplicación y el
+    /// lenguaje que persiste el RBAC Local. [`Self::BootstrapOrganization`]
+    /// devuelve `None`: el bootstrap no se concede con un permiso de rol, sino
+    /// con la capacidad explícita de provisioning.
+    pub const fn as_code(self) -> Option<&'static str> {
+        match self {
+            Self::BootstrapOrganization => None,
+            Self::OrganizationRead => Some("organization.read"),
+            Self::OrganizationUpdate => Some("organization.update"),
+            Self::BranchCreate => Some("branch.create"),
+            Self::BranchRead => Some("branch.read"),
+            Self::BranchUpdate => Some("branch.update"),
+            Self::CategoryCreate => Some("category.create"),
+            Self::CategoryRead => Some("category.read"),
+            Self::CategoryUpdate => Some("category.update"),
+            Self::ProductCreate => Some("product.create"),
+            Self::ProductRead => Some("product.read"),
+            Self::ProductUpdate => Some("product.update"),
+            Self::PosCatalogRead => Some("pos.catalog.read"),
+        }
+    }
 }
 
 /// Repositorio de organización expresado en operaciones del negocio.
@@ -852,6 +892,22 @@ pub enum ApplicationError {
     OrganizationCodeAlreadyExists,
     /// Código de sucursal duplicado dentro del owner.
     BranchCodeAlreadyExists,
+    /// Categoría inexistente en la organización del principal.
+    CategoryNotFound,
+    /// Producto inexistente en la organización del principal.
+    ProductNotFound,
+    /// Código de categoría duplicado dentro de la organización.
+    CategoryCodeAlreadyExists,
+    /// SKU duplicado dentro de la organización.
+    ProductSkuAlreadyExists,
+    /// Código de barras duplicado dentro de la organización.
+    ProductBarcodeAlreadyExists,
+    /// La categoría destino está inactiva.
+    CategoryInactive,
+    /// La entidad referenciada pertenece a otra organización.
+    OwnershipMismatch,
+    /// Una entrada de catálogo incumple el contrato de dominio.
+    InvalidCatalogInput,
     /// CAS perdido después de haber validado el patch.
     ConcurrentModification,
     /// Fallo de dominio conservando su tipado.
@@ -872,6 +928,16 @@ impl fmt::Display for ApplicationError {
                 formatter.write_str("código de organización duplicado")
             }
             Self::BranchCodeAlreadyExists => formatter.write_str("código de sucursal duplicado"),
+            Self::CategoryNotFound => formatter.write_str("categoría inexistente"),
+            Self::ProductNotFound => formatter.write_str("producto inexistente"),
+            Self::CategoryCodeAlreadyExists => formatter.write_str("código de categoría duplicado"),
+            Self::ProductSkuAlreadyExists => formatter.write_str("SKU duplicado"),
+            Self::ProductBarcodeAlreadyExists => formatter.write_str("código de barras duplicado"),
+            Self::CategoryInactive => formatter.write_str("la categoría está inactiva"),
+            Self::OwnershipMismatch => {
+                formatter.write_str("la entidad pertenece a otra organización")
+            }
+            Self::InvalidCatalogInput => formatter.write_str("entrada de catálogo no válida"),
             Self::ConcurrentModification => formatter.write_str("modificación concurrente"),
             Self::Domain(error) => error.fmt(formatter),
             Self::Storage => formatter.write_str("operación de almacenamiento fallida"),
