@@ -1,0 +1,45 @@
+name: Rust Local Contracts
+
+on:
+  pull_request:
+    paths:
+      - "backend-rust/**"
+      - "frontend/src/shared/rust-local/**"
+      - "frontend/scripts/test-rust-contracts.mjs"
+      - "frontend/package.json"
+      - "frontend/pnpm-lock.yaml"
+      - "docs/03-api/rust-operations.generated.json"
+      - ".github/workflows/rust-contracts.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    name: Rust to TypeScript contract integration (candidate only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Check generated contracts against Rust
+        working-directory: backend-rust
+        run: cargo test --locked -p pos-lab
+      - name: Invoke real SQLite scenario from TypeScript
+        working-directory: frontend
+        run: pnpm test:rust-contracts
+      - name: Check frontend types
+        working-directory: frontend
+        run: pnpm typecheck

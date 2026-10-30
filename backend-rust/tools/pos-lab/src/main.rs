@@ -35,6 +35,9 @@
 //! mal escrito, nunca una entrada de usuario.
 #![allow(clippy::panic)]
 
+mod contract;
+mod operations;
+
 use std::{
     error::Error,
     path::{Path, PathBuf},
@@ -458,8 +461,11 @@ async fn run(pool: &SqlitePool) -> Result<Value, Box<dyn Error>> {
             },
             &at(CLOSED_AT),
         )
-        .await
-        .is_err();
+        .await;
+    let close_blocked = matches!(close_blocked, Err(ApplicationError::CashShiftHasOpenSales));
+    if !close_blocked {
+        return Err("el cierre no devolvió CashShiftHasOpenSales".into());
+    }
 
     let total = quoted.total_amount().to_string();
     let checkout = SqliteCheckoutApplication::new(SqliteUnitOfWork::new(pool.clone()));
@@ -574,17 +580,40 @@ fn database_path() -> PathBuf {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let path = database_path();
-    if path.exists() {
-        std::fs::remove_file(&path)?;
+async fn main() {
+    if execute().await.is_err() {
+        // La frontera pública no devuelve errores SQL ni material de identidad.
+        eprintln!(
+            "{}",
+            json!({ "code": contract::LabErrorCode::LabScenarioFailed })
+        );
+        std::process::exit(1);
     }
+}
+
+async fn execute() -> Result<(), Box<dyn Error>> {
+    if std::env::args().any(|argument| argument == "--export-operations") {
+        println!("{}", serde_json::to_string_pretty(&operations::catalog()?)?);
+        return Ok(());
+    }
+    if std::env::args().any(|argument| argument == "--export-contract") {
+        print!("{}", contract::bindings());
+        return Ok(());
+    }
+    let contract_report = std::env::args().any(|argument| argument == "--contract-report");
+    let path = database_path();
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
         std::fs::create_dir_all(parent)?;
     }
 
+    // Reserva exclusiva: nunca borrar ni reutilizar una base suministrada por el usuario.
+    let reservation = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)?;
+    drop(reservation);
     let pool = open(&path, Duration::from_millis(500)).await?;
     let flow = run(&pool).await;
     let reopened = match &flow {
@@ -603,16 +632,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             flow["reopen"] = reopen;
             flow
         }
-        (Err(error), _) | (_, Err(error)) => {
-            eprintln!(
-                "{}",
-                json!({ "status": "FAILED", "error": error.to_string() })
-            );
-            return Err(error);
-        }
+        (Err(error), _) | (_, Err(error)) => return Err(error),
     };
 
-    println!("{report}");
+    let typed = contract::ScenarioReport::from_internal(&report)?;
+    if contract_report {
+        println!("{}", serde_json::to_string(&typed)?);
+    } else {
+        println!("{report}");
+    }
     Ok(())
 }
 

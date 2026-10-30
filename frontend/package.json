@@ -14,6 +14,7 @@
     "typecheck:e2e": "tsc -p tsconfig.e2e.json",
     "lint": "eslint .",
     "test": "vitest run",
+        "test:rust-contracts": "node scripts/test-rust-contracts.mjs",
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed",
     "dev:seed": "node scripts/dev/seed.mjs",

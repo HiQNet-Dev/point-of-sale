@@ -11,6 +11,7 @@ pos-core.workspace = true
 pos-application.workspace = true
 pos-storage-sqlite.workspace = true
 serde_json.workspace = true
+serde.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
 

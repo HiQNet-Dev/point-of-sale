@@ -15,6 +15,13 @@ Ver [matriz AS-IS](../05-development/rust-parity-baseline.md) y
 [alcance Rust](../05-development/rust-foundation.md). Las pruebas diferenciales
 quedan pendientes hasta existir el adaptador de transporte y sus casos de uso.
 
+### Contratos Rust Local (1W)
+
+La [guía Rust Local](rust-local-integration.md) explica el inventario generado de
+32 casos de uso, los bindings TypeScript/JSON Schema y la prueba real
+Rust → cliente TypeScript → SQLite. La vertical está **aislada en laboratorio**;
+no añade endpoints HTTP, comandos Tauri ni login comercial.
+
 ## Especificación viva (OpenAPI)
 
 | Recurso | URL (desarrollo local) |
