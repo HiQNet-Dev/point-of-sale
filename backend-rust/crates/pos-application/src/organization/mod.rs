@@ -4,5 +4,8 @@
 //! puertos; el adaptador SQLite los implementa.
 
 mod application;
+mod queries;
+
+pub use queries::{BranchReader, list_authorized_branches};
 
 pub use application::{BranchApplication, OrganizationApplication};

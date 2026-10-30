@@ -1,15 +1,17 @@
 # Rust Local — contratos verificables (1W)
 
-## Qué puede consumir hoy el frontend
+## Alcance histórico de la vertical 1W
 
-**No hay comandos Tauri registrados ni endpoints Rust HTTP.** La referencia HTTP
+**1W no registra comandos Tauri ni endpoints Rust HTTP.** Para los tres comandos
+IPC reales de laboratorio añadidos en 1X, ver [Rust desktop IPC](rust-desktop-ipc.md). La referencia HTTP
 Java sigue siendo Springdoc `/v3/api-docs`; Swagger y su flujo Authorize no cambian.
 El cliente Java existente no se sustituye. No hay compatibilidad JSON implícita:
 los importes Rust de esta vertical son **strings exactos**, no `number`.
 
 La arquitectura vigente contempla Tauri/IPC **cuando se apruebe**. Este incremento
 no aprueba su activación, no añade sockets, Tauri, Specta, Axum ni Swagger a Rust.
-No se ha validado una combinación de versiones Tauri/Specta y no se fija ninguna.
+En 1W no se validó una combinación Tauri/Specta; la combinación comprobada para
+el laboratorio 1X está documentada por separado.
 El catálogo no representa un servidor ni un registro de comandos de escritorio.
 
 ## Descubrimiento por operación

@@ -30,7 +30,13 @@ pos-credentials      hashing y verificación (BCrypt/Argon2id)
 pos-storage-sqlite   adaptadores SQLite; implementa los puertos
 pos-local            composition root: config, SQLite, ciclo de vida
 migration-lab        herramienta de paridad/migración
+pos-lab              CLI + biblioteca de fixtures explícitamente sintéticas
+pos-desktop-lab      adaptador Tauri/IPC aislado; workspace gráfico independiente
 ```
+
+En 1X, `tools/desktop-lab` compone Application y SQLite para lecturas desde una
+entrada React separada. No es el composition root comercial ni carga propuestas
+en `pos-local`. Ver [ADR-0023](adr/0023-tauri-readonly-laboratory.md).
 
 Dirección de dependencias permitida:
 
@@ -58,6 +64,7 @@ Estas reglas se verifican automáticamente en
 
 | Puerto | Consumidor | Implementación |
 | --- | --- | --- |
+| `organization::BranchReader` | listado autenticado de sucursales | `SqliteOrganizationBranchStore` |
 | `authorization::{require_organization_scope, require_branch_scope, require_sale_scope, require_operational_branch}` | casos de uso SQLite | funciones puras sobre `VerifiedPrincipal` |
 | `audit::AuditAppender` | caja, ventas, inventario, checkout | `SqliteTransaction` sobre la misma conexión |
 | `sales_context::SaleOperationalContext` | ventas y checkout | `SqliteTransaction` |

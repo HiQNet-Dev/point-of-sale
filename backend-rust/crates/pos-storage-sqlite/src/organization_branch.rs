@@ -58,6 +58,17 @@ pub struct SqliteOrganizationBranchStore {
     pool: SqlitePool,
 }
 
+impl pos_application::organization::BranchReader for SqliteOrganizationBranchStore {
+    async fn read_branches(
+        &self,
+        organization: &EntityId,
+    ) -> Result<Vec<Branch>, ApplicationError> {
+        self.list_branches(organization)
+            .await
+            .map_err(|_| ApplicationError::Storage)
+    }
+}
+
 impl SqliteOrganizationBranchStore {
     /// Construye el adaptador sobre un pool ya migrado por [`crate::migrate`].
     pub fn new(pool: SqlitePool) -> Self {

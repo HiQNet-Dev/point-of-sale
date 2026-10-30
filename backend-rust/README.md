@@ -2,6 +2,14 @@
 
 **Estado: PARCIAL. Solo desarrollo y datos sintéticos. No sustituye Java.**
 
+**Primera ventana React → Rust (1X):** desde `frontend/`, ejecutar
+`pnpm desktop:lab` (Windows + MSVC + WebView2). Abre el catálogo de laboratorio
+sobre SQLite temporal mediante Tauri/IPC real, sin Java ni servidor HTTP.
+`pnpm test:desktop-lab` ejecuta su E2E gráfico. Ver
+[contratos y límites](../docs/03-api/rust-desktop-ipc.md). El workspace gráfico
+`tools/desktop-lab` tiene lockfile propio y no forma parte de los checks headless
+ni del runtime comercial `pos-local`.
+
 Esta foundation materializa el comienzo de F4–21, no Free Local completo. El
 laboratorio integrado ejecuta **41 comprobaciones técnicas reales** (SQLite,
 PostgreSQL 17 nativo, auth sintético y origen Flyway V1–V25) y conserva **1/30

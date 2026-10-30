@@ -1,0 +1,6 @@
+{
+  "identifier": "lab-main-readonly",
+  "description": "Solo consultas locales del laboratorio; sin bootstrap, archivos ni shell.",
+  "windows": ["main"],
+  "permissions": ["allow-lab-list-branches", "allow-lab-list-categories", "allow-lab-list-products"]
+}
