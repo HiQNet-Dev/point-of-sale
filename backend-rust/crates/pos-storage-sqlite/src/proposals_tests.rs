@@ -1052,3 +1052,48 @@ async fn audit_occurred_at_accepts_optional_fraction_and_rejects_junk()
     }
     Ok(())
 }
+
+/// `pos-local::migrate()` solo descubre `migrations/local`: las propuestas
+/// candidatas viven fuera y no pueden ejecutarse por accidente.
+#[tokio::test]
+async fn productive_migrator_does_not_discover_candidate_proposals()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open(
+        &temp.path().join("activation.sqlite"),
+        Duration::from_millis(75),
+    )
+    .await?;
+    migrate(&pool).await?;
+
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM _sqlx_migrations")
+            .fetch_one(&pool)
+            .await?,
+        1,
+        "solo 0001 está aplicada en el directorio productivo"
+    );
+    for table in [
+        "pos_user",
+        "local_session",
+        "local_credential",
+        "role",
+        "permission",
+        "branch_membership",
+        "audit_event",
+        "bootstrap_record",
+        "installation_identity",
+    ] {
+        let present = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+        )
+        .bind(table)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(
+            present, 0,
+            "la tabla candidata {table} no existe en producto"
+        );
+    }
+    Ok(())
+}

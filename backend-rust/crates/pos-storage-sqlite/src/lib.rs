@@ -4,6 +4,8 @@ use std::{path::Path, time::Duration};
 
 /// Escritor de auditoría sobre la tabla candidata `audit_event`. No productivo.
 pub mod audit_writer;
+/// Provisioning inicial sobre el esquema candidato. No productivo.
+pub mod bootstrap_candidate;
 /// Transición de credenciales de laboratorio (BCrypt → Argon2id) sobre la UoW.
 pub mod credential_lab;
 /// Adaptador de identidad y permisos exclusivo de laboratorio (tablas `*_lab`).
@@ -1018,6 +1020,8 @@ fn storage_error(error: OrganizationBranchStorageError) -> ApplicationError {
 
 #[cfg(test)]
 mod audit_writer_tests;
+#[cfg(test)]
+mod candidate_flow_tests;
 #[cfg(test)]
 mod credential_lab_tests;
 #[cfg(test)]

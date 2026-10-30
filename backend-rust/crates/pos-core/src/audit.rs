@@ -51,6 +51,8 @@ pub enum AuditError {
     InvalidOccurredAt,
     /// La versión del contrato del evento debe ser positiva.
     InvalidEventVersion,
+    /// La atribución del evento es incoherente (SYSTEM con sesión o USER sin actor).
+    InvalidAttribution,
 }
 
 impl fmt::Display for AuditError {
@@ -66,6 +68,7 @@ impl fmt::Display for AuditError {
             Self::InvalidReason => "la razón de auditoría no es válida",
             Self::InvalidOccurredAt => "la fecha de auditoría no es UTC RFC 3339 válida",
             Self::InvalidEventVersion => "la versión del evento de auditoría debe ser positiva",
+            Self::InvalidAttribution => "la atribución del evento es incoherente",
         })
     }
 }
@@ -373,32 +376,24 @@ impl AuditEventVersion {
 }
 
 /// Hecho de auditoría completo, inmutable y aún independiente del esquema Local.
+///
+/// Los campos son privados a propósito: identidad, atribución, scope y semántica
+/// solo se fijan en los constructores autorizados. Tras construido, un evento no
+/// puede cambiar de actor, organización, sucursal, sesión ni acción.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AuditEventRecord {
-    /// UUID estable del evento.
-    pub id: AuditEventId,
-    /// Owner obligatorio del evento.
-    pub organization_id: EntityId,
-    /// Sucursal opcional; el futuro DDL debe aplicar FK compuesta same-org.
-    pub branch_id: Option<EntityId>,
-    /// Actor previamente atribuido por la frontera de autenticación o un flujo interno.
-    pub actor: AuditActor,
-    /// Acción estable.
-    pub action: AuditAction,
-    /// Tipo estable de entidad.
-    pub entity_type: AuditEntityType,
-    /// Identidad opcional de la entidad principal afectada.
-    pub entity_id: Option<EntityId>,
-    /// Razón opcional.
-    pub reason: Option<AuditReason>,
-    /// Sesión Local opcional; reemplaza conceptualmente el `token_jti` Java.
-    pub session_id: Option<EntityId>,
-    /// Contexto JSON canónico seguro; vacía equivale a ausencia persistida.
-    pub metadata_json: AuditMetadata,
-    /// Instante UTC entregado por un reloj inyectado.
-    pub occurred_at: AuditOccurredAt,
-    /// Versión del contrato de este hecho; inicia en `1`.
-    pub event_version: AuditEventVersion,
+    id: AuditEventId,
+    organization_id: EntityId,
+    branch_id: Option<EntityId>,
+    actor: AuditActor,
+    action: AuditAction,
+    entity_type: AuditEntityType,
+    entity_id: Option<EntityId>,
+    reason: Option<AuditReason>,
+    session_id: Option<EntityId>,
+    metadata_json: AuditMetadata,
+    occurred_at: AuditOccurredAt,
+    event_version: AuditEventVersion,
 }
 
 impl AuditEventRecord {
@@ -407,7 +402,6 @@ impl AuditEventRecord {
     /// Es la vía autorizada para la aplicación: la organización, la sucursal, el
     /// actor y la sesión proceden del principal, nunca de la petición. Un
     /// transporte no puede elegir `actor_user_id`, `SYSTEM` ni el scope.
-    #[allow(clippy::too_many_arguments)]
     pub fn from_verified_principal(
         id: AuditEventId,
         principal: &crate::identity::VerifiedPrincipal,
@@ -435,21 +429,21 @@ impl AuditEventRecord {
 
     /// Construye el hecho canónico de bootstrap completado.
     ///
-    /// Es la única vía pública para obtener un actor `SYSTEM`: se limita a la
-    /// procedencia [`SystemProvenance::SecureBootstrap`] y a esta acción, de modo
-    /// que ningún transporte puede fabricar un actor SYSTEM arbitrario. Un
-    /// bootstrap no tiene sesión de usuario.
+    /// Exige la capacidad emitida por [`authorize_bootstrap`]: ocultar campos no
+    /// basta, porque cualquier módulo podría fabricar un evento SYSTEM. Este es
+    /// el único hecho SYSTEM construible y carece de sesión por diseño.
     ///
     /// # Errors
     /// Devuelve [`AuditError`] si la acción, el tipo o el instante no cumplen el
     /// contrato de auditoría.
     pub fn bootstrap_completed(
+        _capability: &BootstrapProvisioning,
         id: AuditEventId,
         organization_id: EntityId,
         entity_id: EntityId,
         occurred_at: AuditOccurredAt,
     ) -> Result<Self, AuditError> {
-        Ok(Self {
+        let event = Self {
             id,
             organization_id,
             branch_id: None,
@@ -462,8 +456,174 @@ impl AuditEventRecord {
             metadata_json: AuditMetadata::empty(),
             occurred_at,
             event_version: AuditEventVersion::INITIAL,
+        };
+        event.validate()?;
+        Ok(event)
+    }
+
+    /// UUID estable del evento.
+    pub fn id(&self) -> &AuditEventId {
+        &self.id
+    }
+    /// Organización propietaria.
+    pub fn organization_id(&self) -> &EntityId {
+        &self.organization_id
+    }
+    /// Sucursal opcional.
+    pub fn branch_id(&self) -> Option<&EntityId> {
+        self.branch_id.as_ref()
+    }
+    /// Actor atribuido.
+    pub fn actor(&self) -> &AuditActor {
+        &self.actor
+    }
+    /// Acción estable.
+    pub fn action(&self) -> &AuditAction {
+        &self.action
+    }
+    /// Tipo estable de entidad.
+    pub fn entity_type(&self) -> &AuditEntityType {
+        &self.entity_type
+    }
+    /// Entidad principal afectada.
+    pub fn entity_id(&self) -> Option<&EntityId> {
+        self.entity_id.as_ref()
+    }
+    /// Razón opcional.
+    pub fn reason(&self) -> Option<&AuditReason> {
+        self.reason.as_ref()
+    }
+    /// Sesión Local del actor, si aplica.
+    pub fn session_id(&self) -> Option<&EntityId> {
+        self.session_id.as_ref()
+    }
+    /// Metadata canónica validada.
+    pub fn metadata_json(&self) -> &AuditMetadata {
+        &self.metadata_json
+    }
+    /// Instante UTC del hecho.
+    pub fn occurred_at(&self) -> &AuditOccurredAt {
+        &self.occurred_at
+    }
+    /// Versión del contrato del evento.
+    pub fn event_version(&self) -> AuditEventVersion {
+        self.event_version
+    }
+
+    /// Comprueba que la atribución persistible sea coherente.
+    ///
+    /// # Errors
+    /// Devuelve [`AuditError::InvalidAttribution`] si un actor SYSTEM lleva sesión
+    /// o si un actor USER carece de usuario.
+    pub fn validate(&self) -> Result<(), AuditError> {
+        if self.actor.actor_type() == "USER" {
+            if self.actor.user_id().is_none() {
+                return Err(AuditError::InvalidAttribution);
+            }
+        } else if self.actor.user_id().is_some() || self.session_id.is_some() {
+            return Err(AuditError::InvalidAttribution);
+        }
+        Ok(())
+    }
+
+    /// Ensambla un evento completo para pruebas internas del crate.
+    ///
+    /// No existe en producción: fuera de `cfg(test)` los únicos caminos son
+    /// [`Self::from_verified_principal`] y [`Self::bootstrap_completed`].
+    ///
+    /// # Errors
+    /// Devuelve [`AuditError::InvalidAttribution`] si la combinación es incoherente.
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn assemble_for_tests(
+        id: AuditEventId,
+        organization_id: EntityId,
+        branch_id: Option<EntityId>,
+        actor: AuditActor,
+        action: AuditAction,
+        entity_type: AuditEntityType,
+        entity_id: Option<EntityId>,
+        reason: Option<AuditReason>,
+        session_id: Option<EntityId>,
+        metadata_json: AuditMetadata,
+        occurred_at: AuditOccurredAt,
+        event_version: AuditEventVersion,
+    ) -> Result<Self, AuditError> {
+        let event = Self {
+            id,
+            organization_id,
+            branch_id,
+            actor,
+            action,
+            entity_type,
+            entity_id,
+            reason,
+            session_id,
+            metadata_json,
+            occurred_at,
+            event_version,
+        };
+        event.validate()?;
+        Ok(event)
+    }
+}
+
+/// Capacidad que acredita que el guard de bootstrap aceptó el secreto presentado.
+///
+/// Su campo es privado y no implementa `Clone`: solo [`authorize_bootstrap`] la
+/// emite. No se serializa ni se transporta; un DTO nunca la expone.
+#[derive(Debug)]
+pub struct BootstrapProvisioning(());
+
+impl BootstrapProvisioning {
+    fn issue() -> Self {
+        Self(())
+    }
+}
+
+/// Verificador del secreto de bootstrap aportado por el composition root.
+///
+/// La implementación real (comparación en tiempo constante contra el secreto de
+/// despliegue) vive en infraestructura; `pos-core` solo define la frontera.
+pub trait BootstrapSecretVerifier {
+    /// Acepta o rechaza el secreto presentado por el operador.
+    ///
+    /// # Errors
+    /// Devuelve el error que el composition root decida exponer.
+    fn verify(&self, presented: &[u8]) -> Result<(), BootstrapError>;
+}
+
+/// Fallos del guard de bootstrap.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BootstrapError {
+    /// El secreto presentado no corresponde al de despliegue.
+    Rejected,
+    /// La instalación ya fue provisionada; el bootstrap es one-shot.
+    AlreadyCompleted,
+}
+
+impl fmt::Display for BootstrapError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Rejected => "secreto de bootstrap rechazado",
+            Self::AlreadyCompleted => "el bootstrap ya fue completado",
         })
     }
+}
+
+impl std::error::Error for BootstrapError {}
+
+/// Emite la capacidad de provisioning solo si el verificador acepta el secreto.
+///
+/// # Errors
+/// Devuelve el error del verificador; sin capacidad no se puede construir el
+/// evento SYSTEM de bootstrap.
+pub fn authorize_bootstrap<V: BootstrapSecretVerifier>(
+    verifier: &V,
+    presented: &[u8],
+) -> Result<BootstrapProvisioning, BootstrapError> {
+    verifier.verify(presented)?;
+    Ok(BootstrapProvisioning::issue())
 }
 
 fn validate_metadata_value(value: &Value, depth: usize) -> Result<(), AuditError> {

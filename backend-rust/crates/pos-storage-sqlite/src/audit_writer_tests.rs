@@ -8,8 +8,9 @@ use std::{path::Path, time::Duration};
 
 use pos_core::{
     audit::{
-        AuditAction, AuditEntityType, AuditEventId, AuditEventRecord, AuditEventVersion,
-        AuditMetadata, AuditOccurredAt,
+        AuditAction, AuditEntityType, AuditEventId, AuditEventRecord, AuditMetadata,
+        AuditOccurredAt, BootstrapError, BootstrapProvisioning, BootstrapSecretVerifier,
+        authorize_bootstrap,
     },
     identity::{LocalPrincipalService, SessionHash, UtcSeconds, VerifiedPrincipal},
     organization_branch::{
@@ -54,6 +55,24 @@ fn moment(value: &str) -> AuditOccurredAt {
     AuditOccurredAt::new(value).unwrap_or_else(|error| panic!("fixture instante: {error}"))
 }
 
+/// Verificador estático de pruebas; en producto lo aporta el composition root.
+struct TestVerifier(bool);
+
+impl BootstrapSecretVerifier for TestVerifier {
+    fn verify(&self, _presented: &[u8]) -> Result<(), BootstrapError> {
+        if self.0 {
+            Ok(())
+        } else {
+            Err(BootstrapError::Rejected)
+        }
+    }
+}
+
+fn capability() -> BootstrapProvisioning {
+    authorize_bootstrap(&TestVerifier(true), b"secreto-de-prueba")
+        .unwrap_or_else(|error| panic!("capacidad: {error}"))
+}
+
 async fn open_candidate(path: &Path) -> Result<SqlitePool, Box<dyn std::error::Error>> {
     let pool = open(path, Duration::from_millis(75)).await?;
     migrate(&pool).await?;
@@ -88,11 +107,10 @@ async fn seed_org(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn seed_lab_principal(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
+async fn seed_principal(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
     ensure_lab_identity_schema(pool).await?;
     // Filas canónicas: la auditoría candidata exige FK contra `pos_user` y
-    // `local_session`, aunque el principal se construya con el adaptador de
-    // laboratorio mientras el productivo no esté habilitado.
+    // `local_session`.
     sqlx::query(
         "INSERT INTO pos_user (id, organization_id, display_name, email, status, version, created_at, updated_at) \
          VALUES (?, ?, 'Auditora', 'auditora@lab.test', 'ACTIVE', 0, ?, ?)",
@@ -145,12 +163,27 @@ async fn authenticate(pool: &SqlitePool) -> Result<VerifiedPrincipal, Box<dyn st
 
 fn bootstrap_event(value: &str) -> AuditEventRecord {
     AuditEventRecord::bootstrap_completed(
+        &capability(),
         AuditEventId::new(id(value)),
         id(ORG),
         id(INSTALLATION),
         moment(TIME),
     )
     .unwrap_or_else(|error| panic!("evento: {error}"))
+}
+
+#[tokio::test]
+async fn bootstrap_requires_an_authorized_capability() -> Result<(), Box<dyn std::error::Error>> {
+    assert!(matches!(
+        authorize_bootstrap(&TestVerifier(false), b"incorrecto"),
+        Err(BootstrapError::Rejected)
+    ));
+    let event = bootstrap_event(EVENT);
+    assert_eq!(event.actor().actor_type(), "SYSTEM");
+    assert_eq!(event.session_id(), None);
+    assert_eq!(event.organization_id(), &id(ORG));
+    assert_eq!(event.action().as_str(), "bootstrap.completed");
+    Ok(())
 }
 
 #[tokio::test]
@@ -264,46 +297,19 @@ async fn failed_transaction_leaves_no_audit_row() -> Result<(), Box<dyn std::err
 }
 
 #[tokio::test]
-async fn writer_rejects_a_system_event_carrying_a_session() -> Result<(), Box<dyn std::error::Error>>
-{
-    let temp = tempfile::tempdir()?;
-    let pool = open_candidate(&temp.path().join("audit-attribution.sqlite")).await?;
-    seed_org(&pool).await?;
-
-    let mut event = bootstrap_event(EVENT);
-    event.session_id = Some(id("00000000-0000-0000-0000-0000000000d9"));
-
-    let unit_of_work = SqliteUnitOfWork::new(pool.clone());
-    let mut transaction = unit_of_work.begin().await?;
-    assert!(
-        SqliteAuditWriter::append(&mut transaction, &event)
-            .await
-            .is_err(),
-        "un evento SYSTEM no puede llevar sesión"
-    );
-    transaction.rollback().await?;
-    assert_eq!(
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM audit_event")
-            .fetch_one(&pool)
-            .await?,
-        0
-    );
-    Ok(())
-}
-
-#[tokio::test]
 async fn user_event_from_a_verified_principal_records_actor_session_and_canonical_metadata()
 -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
     let pool = open_candidate(&temp.path().join("audit-user.sqlite")).await?;
     seed_org(&pool).await?;
-    seed_lab_principal(&pool).await?;
+    seed_principal(&pool).await?;
     let principal = authenticate(&pool).await?;
     assert_eq!(principal.user_id(), &id(USER));
 
     let metadata = AuditMetadata::new(json!({
         "z": ["status"],
-        "a": { "count": 2 }
+        "a": { "count": 2 },
+        "note": "x".repeat(1024)
     }))
     .unwrap_or_else(|error| panic!("metadata: {error}"));
     let event = AuditEventRecord::from_verified_principal(
@@ -312,25 +318,17 @@ async fn user_event_from_a_verified_principal_records_actor_session_and_canonica
         AuditAction::new("organization.updated").unwrap_or_else(|error| panic!("acción: {error}")),
         AuditEntityType::new("organization").unwrap_or_else(|error| panic!("tipo: {error}")),
         Some(id(ORG)),
-        metadata,
+        metadata.clone(),
         moment("2026-10-29T14:35:12.123Z"),
     );
+    assert_eq!(event.session_id(), Some(&id(SESSION)));
 
     let unit_of_work = SqliteUnitOfWork::new(pool.clone());
     let mut transaction = unit_of_work.begin().await?;
     SqliteAuditWriter::append(&mut transaction, &event).await?;
     transaction.commit().await?;
 
-    let row = sqlx::query_as::<
-        _,
-        (
-            String,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            String,
-        ),
-    >(
+    let row = sqlx::query_as::<_, (String, Option<String>, Option<String>, String, String)>(
         "SELECT actor_type, actor_user_id, session_id, metadata_json, occurred_at \
          FROM audit_event WHERE id = ?",
     )
@@ -345,42 +343,13 @@ async fn user_event_from_a_verified_principal_records_actor_session_and_canonica
         "la sesión pertenece al actor"
     );
     assert_eq!(
-        row.3.as_deref(),
-        Some(r#"{"a":{"count":2},"z":["status"]}"#),
-        "metadata canónica y determinista"
+        row.3,
+        metadata.canonical_json(),
+        "metadata canónica completa, sin truncamiento"
     );
     assert_eq!(
         row.4, "2026-10-29T14:35:12.123Z",
-        "la fracción de segundo se conserva; el CHECK candidato la admite"
+        "la fracción de segundo se conserva"
     );
-    Ok(())
-}
-
-#[tokio::test]
-async fn event_version_and_metadata_are_not_truncated() -> Result<(), Box<dyn std::error::Error>> {
-    let temp = tempfile::tempdir()?;
-    let pool = open_candidate(&temp.path().join("audit-metadata.sqlite")).await?;
-    seed_org(&pool).await?;
-
-    let mut event = bootstrap_event(EVENT);
-    event.metadata_json = AuditMetadata::new(json!({ "note": "x".repeat(1024) }))
-        .unwrap_or_else(|error| panic!("metadata: {error}"));
-    event.event_version =
-        AuditEventVersion::new(2).unwrap_or_else(|error| panic!("versión: {error}"));
-
-    let unit_of_work = SqliteUnitOfWork::new(pool.clone());
-    let mut transaction = unit_of_work.begin().await?;
-    SqliteAuditWriter::append(&mut transaction, &event).await?;
-    transaction.commit().await?;
-
-    let (stored, version) = sqlx::query_as::<_, (String, i64)>(
-        "SELECT metadata_json, event_version FROM audit_event WHERE id = ?",
-    )
-    .bind(EVENT)
-    .fetch_one(&pool)
-    .await?;
-    assert_eq!(stored.len(), event.metadata_json.canonical_json().len());
-    assert!(stored.contains("note"));
-    assert_eq!(version, 2);
     Ok(())
 }

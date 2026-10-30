@@ -88,35 +88,34 @@ fn metadata_owns_its_json_tree_and_preserves_empty_as_absent_candidate() {
 fn event_requires_explicit_actor_identifiers_and_utc_timestamp() {
     let organization_id = id("00000000-0000-0000-0000-000000000001");
     let user_id = id("00000000-0000-0000-0000-000000000002");
-    let event = AuditEventRecord {
-        id: AuditEventId::new(id("00000000-0000-0000-0000-000000000003")),
-        organization_id: organization_id.clone(),
-        branch_id: None,
-        actor: AuditActor::user(user_id.clone()),
-        action: AuditAction::new("organization.updated")
-            .unwrap_or_else(|error| panic!("action: {error}")),
-        entity_type: AuditEntityType::new("organization")
-            .unwrap_or_else(|error| panic!("type: {error}")),
-        entity_id: Some(organization_id),
-        reason: Some(
+    let event = AuditEventRecord::assemble_for_tests(
+        AuditEventId::new(id("00000000-0000-0000-0000-000000000003")),
+        organization_id.clone(),
+        None,
+        AuditActor::user(user_id.clone()),
+        AuditAction::new("organization.updated").unwrap_or_else(|error| panic!("action: {error}")),
+        AuditEntityType::new("organization").unwrap_or_else(|error| panic!("type: {error}")),
+        Some(organization_id),
+        Some(
             AuditReason::new("corrección validada")
                 .unwrap_or_else(|error| panic!("reason: {error}")),
         ),
-        session_id: Some(id("00000000-0000-0000-0000-000000000004")),
-        metadata_json: AuditMetadata::new(json!({ "changedFields": ["name"] }))
+        Some(id("00000000-0000-0000-0000-000000000004")),
+        AuditMetadata::new(json!({ "changedFields": ["name"] }))
             .unwrap_or_else(|error| panic!("metadata: {error}")),
-        occurred_at: AuditOccurredAt::new("2026-10-29T14:35:12.123Z")
+        AuditOccurredAt::new("2026-10-29T14:35:12.123Z")
             .unwrap_or_else(|error| panic!("timestamp: {error}")),
-        event_version: AuditEventVersion::INITIAL,
-    };
+        AuditEventVersion::INITIAL,
+    )
+    .unwrap_or_else(|error| panic!("evento: {error}"));
 
-    assert_eq!(event.actor.actor_type(), "USER");
-    assert_eq!(event.actor.user_id(), Some(&user_id));
+    assert_eq!(event.actor().actor_type(), "USER");
+    assert_eq!(event.actor().user_id(), Some(&user_id));
     assert_eq!(
         AuditActor::system(SystemProvenance::SecureBootstrap).user_id(),
         None
     );
-    assert_eq!(event.event_version.get(), 1);
+    assert_eq!(event.event_version().get(), 1);
     assert_eq!(
         AuditEventVersion::new(0),
         Err(AuditError::InvalidEventVersion)
