@@ -21,6 +21,8 @@ pub mod organization_branch;
 pub mod purchasing;
 /// Ventas, pagos y cotización de modificadores, sin persistencia.
 pub mod sales;
+/// Proveedores de compras, con snapshots compatibles con `purchasing`.
+pub mod supplier;
 
 /// Código de moneda de tres letras ASCII, normalizado a mayúsculas.
 ///
@@ -212,5 +214,7 @@ mod organization_branch_tests;
 mod purchasing_tests;
 #[cfg(test)]
 mod sales_tests;
+#[cfg(test)]
+mod supplier_tests;
 #[cfg(test)]
 mod tests;
