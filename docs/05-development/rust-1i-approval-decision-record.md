@@ -49,6 +49,24 @@ vacío, el estado sigue siendo PENDIENTE y ninguna migración se traslada a
 | D-INST-02 | Aprobar longitud y composición; diferir `UNIQUE` hasta decidir si la huella es global o por organización |
 | ADR-0022 | Aprobar como restauración contractual |
 
+### 2.2 Catálogo Local (incremento 1Q)
+
+El catálogo no depende de D-AUTH/D-INST: `0008_catalog.proposed.sql` solo
+referencia `organization`. Se registra aquí para que el titular decida en el
+mismo acto, pero puede aprobarse por separado.
+
+| ID | Decisión | Contrato vigente | Propuesta verificada | Diferencia | Riesgo | Bloquea |
+| --- | --- | --- | --- | --- | --- | --- |
+| D-CAT-01 | Representación de `unit_price` en Local | Flyway V9: `NUMERIC(19,4) >= 0` | `TEXT` canónico `0.0000`, `CHECK` de escala 4 y no negatividad | SQLite no tiene decimal exacto y el rango `NUMERIC(19,4)` excede `i64` | Bajo: el adaptador normaliza y el `CHECK` rechaza texto libre | `0008` |
+| D-CAT-02 | Nombres `category`/`product` | Flyway V9: `categories`/`products` | Singular, como `organization`/`branch` | Cambio solo de nombre | Bajo | `0008` |
+| D-CAT-03 | Independencia respecto de Auth/RBAC | — | Sin FKs hacia `pos_user`, `local_session` ni `audit_event` | Ninguna | Bajo | Nada |
+
+| ID | Recomendación |
+| --- | --- |
+| D-CAT-01 | Aprobar `TEXT` canónico: conserva exactitud y rango, y el `CHECK` físico complementa la validación de `Decimal4` |
+| D-CAT-02 | Aprobar por coherencia con `0001` |
+| D-CAT-03 | Aprobar: permite promocionar el catálogo sin esperar el paquete D-AUTH |
+
 ## 3. Bloqueos por migración
 
 | Migración | Decisiones indispensables | Puede seguir bloqueada sin impedir |
@@ -59,6 +77,7 @@ vacío, el estado sigue siendo PENDIENTE y ninguna migración se traslada a
 | `0005` memberships | D-AUTH-06 | `0006`, `0007` |
 | `0006` audit_event | D-AUTH-07, D-AUTH-08 | `0007` |
 | `0007` bootstrap_record | D-AUTH-10 | Nada posterior |
+| `0008` catalog | D-CAT-01, D-CAT-02 | `0002`–`0007` (no depende de ellas) |
 
 D-AUTH-09 no aparece en ninguna fila: es una decisión de **parámetros**
 criptográficos, no de esquema, y no impide promover el DDL. Sí impide declarar
@@ -73,6 +92,7 @@ Auth productivo con Argon2id comercial.
 | Append-only | Trigger SQLite, no criptografía | Documentar que un administrador del archivo puede desactivarlo; firma/encadenado queda como requisito separado |
 | Argon2id | Parámetros experimentales | No usar `LAB_*` como configuración comercial |
 | `unit_locked` | Debe persistirse con sentencia dedicada | El adaptador no puede incluirlo en el CAS del artículo |
+| Precio de catálogo | Texto canónico, no numérico nativo | Toda escritura pasa por `UnitPrice`/`Decimal4`; el `CHECK` y el índice de barcode cubren la vía SQL directa |
 
 ## 5. Orden de arranque verificado
 
@@ -141,8 +161,11 @@ expediente sigue siendo PENDIENTE.
 | D-AUTH-10 | | | | |
 | D-AUTH-11 | | | | |
 | D-INST-01 | | | | |
-| D-INST-02 | | | | |
-| ADR-0022 | | | | |
+| D-INST-02 | | | |
+| ADR-0022 | | | |
+| D-CAT-01 | | | |
+| D-CAT-02 | | | |
+| D-CAT-03 | | | |
 
 Autorización de promoción a `migrations/local`:
 
