@@ -106,6 +106,9 @@ const RECIPE: &str = "00000000-0000-0000-0000-0000000007e1";
 const COMPONENT: &str = "00000000-0000-0000-0000-0000000007e2";
 const SESSION_HASH: &str = "7e1e7e1e7e1e7e1e7e1e7e1e7e1e7e1e7e1e7e1e7e1e7e1e7e1e7e1e7e1e7e1e";
 const BOOTSTRAP_SECRET: &[u8] = b"secreto-sintetico-de-laboratorio";
+/// Instante sintético del escenario; lo reutiliza la escritura de laboratorio
+/// para que sesión y auditoría compartan la misma línea temporal.
+pub const LAB_OCCURRED_AT: &str = OPENED_AT;
 const OPENED_AT: &str = "2026-10-30T09:00:00Z";
 const CLOSED_AT: &str = "2026-10-30T11:00:00Z";
 /// Instante UTC del principal sintético (2026-10-30T09:00:00Z).
@@ -570,6 +573,85 @@ mod tests {
         for proposal in PROPOSALS {
             assert!(proposal.contains("CREATE TABLE") || proposal.contains("CREATE INDEX"));
         }
+    }
+
+    /// Matriz ejecutable de dependencias de las propuestas `0002`–`0015`.
+    ///
+    /// Aplica una migración a la vez sobre una base vacía y comprueba, tras cada
+    /// una, que la integridad referencial es válida y que toda FK apunta a una
+    /// tabla ya existente. El delta de `sqlite_master` identifica los objetos que
+    /// aporta cada migración, sin mantener una lista escrita a mano que pueda
+    /// desincronizarse del SQL.
+    #[tokio::test]
+    async fn migration_set_is_dependency_ordered_and_referential()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let temp = tempfile::tempdir()?;
+        let pool = open(
+            &temp.path().join("matrix.sqlite"),
+            Duration::from_millis(500),
+        )
+        .await?;
+        migrate(&pool).await?;
+
+        let mut previous = objects(&pool).await?;
+        for (index, statement) in PROPOSALS.iter().enumerate() {
+            sqlx::raw_sql(*statement).execute(&pool).await?;
+            let current = objects(&pool).await?;
+            let created: Vec<&String> = current
+                .iter()
+                .filter(|object| !previous.contains(object))
+                .collect();
+            assert!(
+                !created.is_empty(),
+                "la propuesta {} no creó ningún objeto",
+                index + 2
+            );
+            assert_referential_integrity(&pool).await?;
+            println!("migration={:04} objects={created:?}", index + 2);
+            previous = current;
+        }
+        pool.close().await;
+        Ok(())
+    }
+
+    /// Objetos de usuario (`table`, `index`, `trigger`, `view`) presentes hoy.
+    async fn objects(pool: &SqlitePool) -> Result<Vec<String>, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT type || ':' || name FROM sqlite_master \
+             WHERE name NOT LIKE 'sqlite_%' AND name <> '_sqlx_migrations' ORDER BY name",
+        )
+        .fetch_all(pool)
+        .await
+    }
+
+    /// Toda FK debe apuntar a una tabla existente y el chequeo debe estar limpio.
+    async fn assert_referential_integrity(
+        pool: &SqlitePool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let tables: Vec<String> = sqlx::query_scalar(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+        )
+        .fetch_all(pool)
+        .await?;
+        for table in &tables {
+            let rows: Vec<(String,)> =
+                sqlx::query_as("SELECT \"table\" FROM pragma_foreign_key_list(?)")
+                    .bind(table)
+                    .fetch_all(pool)
+                    .await?;
+            for (parent,) in rows {
+                assert!(
+                    tables.contains(&parent),
+                    "{table} referencia la tabla inexistente {parent}"
+                );
+            }
+        }
+        let violations: Vec<(String, i64, String)> =
+            sqlx::query_as("SELECT \"table\", rowid, parent FROM pragma_foreign_key_check")
+                .fetch_all(pool)
+                .await?;
+        assert!(violations.is_empty(), "FK inválidas: {violations:?}");
+        Ok(())
     }
 
     #[test]

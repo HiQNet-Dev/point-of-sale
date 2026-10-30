@@ -7,4 +7,6 @@ mod scenario;
 
 pub use contract::{LabErrorCode, ScenarioReport, bindings};
 pub use operations::catalog as operation_catalog;
-pub use scenario::{authenticate as authenticate_candidate_session, run, verify_reopen};
+pub use scenario::{
+    LAB_OCCURRED_AT, authenticate as authenticate_candidate_session, run, verify_reopen,
+};
