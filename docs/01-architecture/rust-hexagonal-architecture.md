@@ -143,7 +143,20 @@ Extracción incremental pendiente, en este orden:
    - `cash`, `sales`, `checkout`, `catalog`, `inventory` y `organization`
      (Organization/Branch) con puertos, DTOs y `use_cases`.
    - `pos-core` conserva únicamente dominio y puertos compartidos.
-6. Pendiente de mantenibilidad (no de capas): dividir cada `store.rs` en
-   `repository`/`mapper`/`queries`.
+6. División de mantenibilidad — **completada**:
+   - Cada contexto de `pos-storage-sqlite` separa `queries.rs` (SQL estático),
+     `mapper.rs` (filas `sqlx::FromRow` y rehidratación) y `repository.rs`
+     (`impl` de puertos sobre `SqliteTransaction`); `store.rs` conserva solo el
+     tipo de error del adaptador y el cableado de la UoW.
+   - `lib.rs` queda como facade de módulos y reexportaciones; la UoW vive en
+     `transaction.rs` y el adaptador Organization/Branch en
+     `organization_branch.rs`.
+   - `prelude.rs` centraliza imports y el traductor `transaction_error`, sin
+     duplicarlo en cada contexto.
+7. Pendiente normativo (no de capas): unificar la composición SQLite de
+   Organization/Branch con los casos de uso de `pos-application`. Requiere
+   decidir el actor SYSTEM del bootstrap (D-AUTH/ADR-0022); hoy conviven el
+   camino canónico basado en `VerifiedPrincipal` y la composición experimental
+   previa sobre `AuditEvent`.
 
 Cada paso conserva pruebas y no promueve DDL.

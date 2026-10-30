@@ -23,10 +23,13 @@
 //!   un administrador del archivo puede desactivarlo (registrado en 1M).
 
 use pos_application::audit::AuditAppender;
-use pos_core::{audit::AuditEventRecord, organization_branch::EntityId};
+use pos_core::{
+    audit::AuditEventRecord,
+    organization_branch::{ApplicationError, EntityId},
+};
 use sqlx::SqliteConnection;
 
-use crate::{ApplicationError, SqliteTransaction};
+use crate::SqliteTransaction;
 
 /// Sentencia única de inserción canónica.
 const INSERT_AUDIT_EVENT_SQL: &str = "INSERT INTO audit_event (\
