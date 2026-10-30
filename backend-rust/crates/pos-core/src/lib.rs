@@ -19,6 +19,8 @@ pub mod inventory;
 pub mod organization_branch;
 /// Compras: órdenes, partidas y reglas de recepción, sin persistencia.
 pub mod purchasing;
+/// Recetas de producto, efectos de modificador y resolución de consumo.
+pub mod recipe;
 /// Ventas, pagos y cotización de modificadores, sin persistencia.
 pub mod sales;
 /// Proveedores de compras, con snapshots compatibles con `purchasing`.
@@ -212,6 +214,8 @@ mod inventory_tests;
 mod organization_branch_tests;
 #[cfg(test)]
 mod purchasing_tests;
+#[cfg(test)]
+mod recipe_tests;
 #[cfg(test)]
 mod sales_tests;
 #[cfg(test)]
