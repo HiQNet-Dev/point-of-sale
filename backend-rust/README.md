@@ -239,6 +239,10 @@ No ejecutar down migrations sobre bases reales.
 - [Incremento 1X — vertical Tauri/React](../docs/05-development/rust-increment-1x.md).
 - [Incremento 1Y — instalación Local persistente](../docs/05-development/rust-increment-1y.md).
 - [Incremento 1Z — desbloqueo técnico](../docs/05-development/rust-increment-1z.md).
+- [Incremento 2A — desbloqueo y preparación de v0.4.0](../docs/05-development/rust-increment-2a.md).
+- [Evidencia criptográfica D-AUTH-09 (2A)](../docs/05-development/rust-auth-benchmark-2a.md).
+- [Resolución técnica ADR-0021 (2A)](../docs/05-development/rust-adr0021-resolution-2a.md).
+- [Paridad Purchasing (2A)](../docs/05-development/rust-purchasing-parity-2a.md).
 - [Evidencia criptográfica D-AUTH-09](../docs/05-development/rust-auth-benchmark-1z.md).
 - [Clasificación normativa 1Z](../docs/05-development/rust-increment-1z-normative.md).
 - [Paquete de decisión 1Y](../docs/05-development/rust-increment-1y-approval-package.md).

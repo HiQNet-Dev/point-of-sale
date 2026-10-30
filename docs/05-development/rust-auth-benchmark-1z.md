@@ -1,5 +1,9 @@
 # Evidencia criptográfica D-AUTH-09 — Incremento 1Z
 
+> **Superado en precisión por [`rust-auth-benchmark-2a.md`](rust-auth-benchmark-2a.md)**,
+> que añade percentiles, límites de CPU/RAM, ráfaga de intentos y perfil de
+> memoria. Este documento se conserva como histórico del primer instrumento.
+
 **Estado: evidencia técnica registrada. D-AUTH-09 continúa BLOQUEADA.** Este
 documento no aprueba parámetros: aporta las mediciones y la interoperabilidad que
 faltaban para que el titular pueda decidir.

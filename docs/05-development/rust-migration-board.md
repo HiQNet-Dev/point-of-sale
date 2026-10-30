@@ -1,6 +1,6 @@
 # Tablero maestro de migración Java → Rust
 
-**Actualizado en el Incremento 1Z.** Este tablero registra el estado real de la
+**Actualizado en el Incremento 2A.** Este tablero registra el estado real de la
 migración, no el deseado. Un estado solo avanza con evidencia publicada.
 
 Arquitectura: monolito modular hexagonal (`pos-core` ← `pos-application` ←
@@ -44,7 +44,7 @@ auditoría transaccional— sobre un esquema **candidato** que aún no vive en
 | Inventario (artículos, saldos, ledger) | `APPLICATION (candidate)` | `pos-core::inventory`, `0013` candidato, `SqliteInventoryApplication`, ledger append-only por trigger, apertura única, CAS y dos pools | Aprobación D-INV, promoción, API |
 | Ventas | `APPLICATION (candidate)` | `0011`/`0012` candidatos, `SqliteSalesApplication`, snapshots, CAS, auditoría, carreras venta/cierre y reapertura | Aprobación D-SALES, promoción, API |
 | Checkout y pagos | `APPLICATION (candidate)` | `0015` candidato, `SqliteCheckoutApplication`, pagos + consumo + `COMPLETED` + auditoría en una UoW, política de stock y rollback | Aprobación D-SALES-04/05, promoción, API |
-| Compras y recepciones | `DOMAIN` | `pos-core::purchasing`, ciclo de vida, snapshots, recepciones acumuladas y exceso | DDL, adaptador, API |
+| Compras y recepciones | `DOMAIN` | `pos-core::purchasing` (estados, emisión, cancelación, recepciones acumuladas, costo opcional con prueba «desconocido ≠ cero»), validación de sobre-recepción y unidad inmutable | DDL (decisión `unit_cost` NULL), adaptador, casos de uso, API |
 | Proveedores | `DOMAIN` | `pos-core::supplier`, slug inmutable, contacto acotado, email normalizado y snapshot | DDL, adaptador, API |
 | Recetas y efectos de modificador | `PERSISTENCE (fixture)` | `pos-core::recipe`, `0014` candidato, resolución de consumo y snapshots usados por checkout | Mantenimiento administrativo, aprobación D-INV, promoción, API |
 | API HTTP / OpenAPI | `NOT_STARTED` | — | Todo |

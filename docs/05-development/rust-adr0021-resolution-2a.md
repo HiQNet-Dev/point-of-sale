@@ -1,0 +1,106 @@
+# Resolución técnica de ADR-0021 — Incremento 2A
+
+**Estado: resolución técnica preparada, sin aprobación.** No modifica el contrato
+congelado, no crea fichas canónicas, no promueve DDL y no inventa datos
+históricos. Su objetivo es que, cuando el titular decida, la implementación no
+requiera rediseño.
+
+Relacionado: [ADR-0021](../01-architecture/adr/0021-frozen-physical-parity-conflicts.md),
+[CC-0021](rust-adr0021-change-control.md),
+[dependencias faltantes](rust-missing-physical-proposal.md).
+
+## 1. Los tres conflictos reales
+
+| Conflicto | Hecho Java | Destino congelado | Efecto |
+| --- | --- | --- | --- |
+| `unit_cost` | `null` permitido en `ORDERED`/`RECEIVED` | `NOT NULL` | Un importe no informado no es representable sin inventar un valor |
+| Fichas padre ausentes | FKs declaradas a `price_book`, `tax_profile`, `costing_policy`, `expense_category`, `plan` | Sin ficha física | Cinco FK sin padre aprobado; `DDL13-01..03` no puede cerrarse |
+| Roots | Un modelo lógico | Local / Central / Control | Los tres esquemas deben poder instalarse por separado con los mismos números |
+
+## 2. `unit_cost`: qué ya está resuelto en código
+
+El dominio Rust **ya representa la ausencia de costo pactado**:
+
+```rust
+pub struct PurchaseOrderLine { /* … */ unit_cost: Option<UnitPrice> }
+```
+
+- `None` significa «no informado por el operador».
+- `Some(0.0000)` es un costo cero explícito.
+- `restore` conserva el valor tal como se persistió, sin normalizarlo.
+
+Prueba añadida en 2A (`purchasing_tests::agreed_cost_distinguishes_unknown_from_zero`)
+que fija esa diferencia: una partida sin costo es válida y **no** equivale a cero.
+
+Conclusión: el conflicto **no está en el dominio**. Está en el DDL congelado, que
+declara la columna `NOT NULL`.
+
+## 3. Alternativas físicas para `unit_cost`
+
+| Opción | Representación | Ventajas | Coste / riesgo | Recomendación |
+| --- | --- | --- | --- | --- |
+| **A** | `unit_cost TEXT NULL` con `CHECK` de formato escala 4 y `>= 0` | Conserva el estado Java; no inventa hechos; el total se deriva explícitamente | Cambia un `NOT NULL` del destino congelado: requiere decisión del titular | **Recomendada** |
+| B | `NOT NULL` con centinela (`-1`) | Sin cambio de nulabilidad | Rompe `>= 0`, confunde semántica y envenena agregaciones | Rechazada |
+| C | `NOT NULL` con `0` | Sin cambio de nulabilidad | Convierte «desconocido» en «cero»: viola la condición de rechazo de CC-0021 | Rechazada |
+| D | `unit_cost_known BOOLEAN` + valor `NOT NULL` | Explícito | Dos columnas para un dato, estados imposibles (`known=false` con valor) | Rechazada |
+
+### Consecuencia de adoptar A
+
+1. El total de la orden **no puede ser `NOT NULL`**: si alguna partida desconoce
+   su costo, el total es `NULL` con motivo, no una suma parcial disfrazada.
+2. Los reportes deben mostrar «sin costo» de forma explícita; nunca `0.00`.
+3. La comparación de paridad acepta `NULL` frente a `NULL` y exige explicar
+   cualquier `NULL` frente a valor.
+4. Ningún dato histórico se reconstruye: las filas existentes conservan su valor
+   o su ausencia.
+
+## 4. Las cinco fichas ausentes
+
+Sin diccionario aprobado no se puede escribir DDL. Lo que falta, por entidad:
+
+| Destino | FK que lo exige | Falta decidir |
+| --- | --- | --- |
+| `price_book` | `price_version.price_book_id` | Campos, lifecycle, unicidad, scope por organización |
+| `tax_profile` | `tax_rule_version.tax_profile_id` | Catálogo inicial, selección, vigencia |
+| `costing_policy` | `valuation_entry.costing_policy_id` | Versionado, aplicación por artículo, relación con sucursal |
+| `expense_category` | `expense.category_id` | Jerarquía, estado, política contable |
+| `plan` | `plan_version.plan_id` | Alcance (cliente/tenant), tarifas, independencia de Free |
+
+La propuesta existente (`rust-missing-physical-proposal.md`) describe campos y
+reglas comunes, pero está **NO APROBADA**. 2A no la modifica.
+
+## 5. Roots Local / Central / Control
+
+- Cada root tiene su propio `0001` y su propio historial SQLx.
+- `DDL13-11` exige que los tres esquemas se instalen de forma aislada con los
+  mismos números de migración.
+- Hoy solo Local `0001` está aprobado y en `migrations/local`; Central y Control
+  siguen siendo subconjuntos experimentales del Migration Lab.
+
+Resolución técnica: mantener tres roots independientes, sin migraciones
+compartidas por nombre y sin que Local dependa de Central/Control. Un `plan`
+remoto no puede ser requisito para operar Free Local.
+
+## 6. Qué puede ejecutarse sin aprobación nueva
+
+| Acción | Estado |
+| --- | --- |
+| Dominio con costo opcional y prueba de «desconocido ≠ cero» | **Hecho (2A)** |
+| Validación de cantidades, sobre-recepción y snapshots de partida | Ya existente en `pos-core` |
+| Matriz de dependencias de migraciones candidatas | Hecho en 1Z |
+| DDL de `unit_cost NULL` | **Bloqueado** por decisión |
+| Fichas de los cinco padres | **Bloqueado** por decisión |
+| Import sintético versionado | **Bloqueado** por DDL aprobado |
+
+## 7. Decisión que se solicita
+
+Una sola pregunta al titular, con sus límites:
+
+> ¿Se acepta que el destino físico represente el costo pactado como `NULL`
+> (opción A), que el total de orden sea `NULL` cuando falte algún costo y que los
+> reportes muestren «sin costo» en lugar de cero?
+
+Aceptarla habilita `CC21-03` y desbloquea parcialmente `DDL13-01`. No habilita las
+fichas ausentes, el import ni la paridad completa.
+
+Registro: este documento **no** modifica ADR-0021, que permanece `PROPOSED`.
