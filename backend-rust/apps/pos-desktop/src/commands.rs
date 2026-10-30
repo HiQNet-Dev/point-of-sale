@@ -1,7 +1,10 @@
 //! Handlers IPC: solo traducen entradas y delegan, sin SQL ni reglas empresariales.
 use crate::{
     composition::LocalState,
-    dto::{BranchDto, CategoryDto, InstallationStatusDto, IpcError, PageRequest, ProductDto},
+    dto::{
+        BranchDto, CategoryDto, CreateProductRequest, CreatedProductDto, InstallationStatusDto,
+        IpcError, PageRequest, ProductDto,
+    },
 };
 use tauri::State;
 
@@ -32,6 +35,16 @@ pub async fn lab_list_products(
     state.products(request).await
 }
 
+/// Primera escritura auditada: requiere `product.create` y actor verificado.
+#[tauri::command]
+#[specta::specta]
+pub async fn lab_create_product(
+    state: State<'_, LocalState>,
+    request: CreateProductRequest,
+) -> Result<CreatedProductDto, IpcError> {
+    state.create_product(request).await
+}
+
 /// Estado de la instalación persistente; no expone datos de negocio ni identidad.
 #[tauri::command]
 #[specta::specta]
@@ -47,6 +60,7 @@ pub fn registry<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         lab_list_branches,
         lab_list_categories,
         lab_list_products,
+        lab_create_product,
         installation_status,
     ])
 }

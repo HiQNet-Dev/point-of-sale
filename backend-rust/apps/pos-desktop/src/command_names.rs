@@ -6,6 +6,7 @@ pub const COMMAND_NAMES: &[&str] = &[
     "lab_list_branches",
     "lab_list_categories",
     "lab_list_products",
+    "lab_create_product",
     "installation_status",
 ];
 
@@ -15,4 +16,5 @@ pub const LAB_COMMAND_NAMES: &[&str] = &[
     "lab_list_branches",
     "lab_list_categories",
     "lab_list_products",
+    "lab_create_product",
 ];

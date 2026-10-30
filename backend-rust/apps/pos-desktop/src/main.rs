@@ -12,6 +12,7 @@ mod command_names;
 mod commands;
 mod composition;
 mod dto;
+mod installation_dir;
 #[cfg(test)]
 mod ipc_tests;
 
@@ -38,7 +39,7 @@ fn execute() -> Result<(), Box<dyn Error>> {
         Invocation::SyntheticLab => {
             let state = tauri::async_runtime::block_on(LocalState::synthetic())?;
             eprintln!(
-                "Laboratorio sintético: {} comandos de solo lectura",
+                "Laboratorio sintético: {} comandos locales",
                 command_names::COMMAND_NAMES.len()
             );
             run_desktop(state)

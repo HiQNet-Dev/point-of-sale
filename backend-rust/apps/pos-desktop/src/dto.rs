@@ -58,6 +58,42 @@ pub struct ProductDto {
     pub version: String,
 }
 
+/// Petición de creación de producto; nunca incluye organización ni actor.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateProductRequest {
+    /// SKU canónico de la organización.
+    pub sku: String,
+    /// Nombre visible.
+    pub name: String,
+    /// Precio exacto como texto decimal de escala 4.
+    pub unit_price: String,
+    /// Categoría existente de la misma organización.
+    pub category_id: Option<String>,
+    /// Código de barras opcional.
+    pub barcode: Option<String>,
+    /// Descripción opcional.
+    pub description: Option<String>,
+}
+
+/// Producto recién creado, con su revisión inicial.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedProductDto {
+    /// UUID canónico asignado por la aplicación.
+    pub id: String,
+    /// SKU canónico.
+    pub sku: String,
+    /// Nombre visible.
+    pub name: String,
+    /// Importe exacto de escala 4.
+    pub unit_price: String,
+    /// Categoría asociada, si existe.
+    pub category_id: Option<String>,
+    /// Versión inicial del agregado.
+    pub version: String,
+}
+
 /// Estado de la instalación persistente al abrir la aplicación.
 #[derive(Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -80,6 +116,10 @@ pub enum IpcError {
     Forbidden,
     /// Página fuera del contrato.
     ValidationError,
+    /// La entidad ya existe en el scope del principal.
+    Conflict,
+    /// La entidad referenciada no existe en el scope del principal.
+    NotFound,
     /// La operación no existe en el modo actual de la aplicación.
     OperationNotAvailable,
     /// Fallo interno, sin detalles del adaptador.
@@ -100,6 +140,12 @@ impl From<pos_core::organization_branch::ApplicationError> for IpcError {
         match error {
             ApplicationError::Forbidden => Self::Forbidden,
             ApplicationError::InvalidCatalogInput => Self::ValidationError,
+            ApplicationError::CategoryNotFound | ApplicationError::ProductNotFound => {
+                Self::NotFound
+            }
+            ApplicationError::CategoryCodeAlreadyExists
+            | ApplicationError::ProductSkuAlreadyExists
+            | ApplicationError::ProductBarcodeAlreadyExists => Self::Conflict,
             _ => Self::InternalError,
         }
     }

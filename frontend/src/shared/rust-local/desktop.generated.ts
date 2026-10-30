@@ -10,6 +10,8 @@ export const commands = {
 	labListCategories: (request: PageRequest) => typedError<CategoryDto[], IpcError>(__TAURI_INVOKE("lab_list_categories", { request })),
 	/**  Consulta productos: product.read; el precio se serializa como texto exacto. */
 	labListProducts: (request: PageRequest) => typedError<ProductDto_Serialize[], IpcError>(__TAURI_INVOKE("lab_list_products", { request })),
+	/**  Primera escritura auditada: requiere `product.create` y actor verificado. */
+	labCreateProduct: (request: CreateProductRequest_Deserialize) => typedError<CreatedProductDto_Serialize, IpcError>(__TAURI_INVOKE("lab_create_product", { request })),
 	/**  Estado de la instalación persistente; no expone datos de negocio ni identidad. */
 	installationStatus: () => typedError<InstallationStatusDto, IpcError>(__TAURI_INVOKE("installation_status")),
 };
@@ -39,6 +41,76 @@ export type CategoryDto = {
 	version: string,
 };
 
+/**  Petición de creación de producto; nunca incluye organización ni actor. */
+export type CreateProductRequest = CreateProductRequest_Serialize | CreateProductRequest_Deserialize;
+
+/**  Petición de creación de producto; nunca incluye organización ni actor. */
+export type CreateProductRequest_Deserialize = {
+	/**  SKU canónico de la organización. */
+	sku: string,
+	/**  Nombre visible. */
+	name: string,
+	/**  Precio exacto como texto decimal de escala 4. */
+	unitPrice: string,
+	/**  Categoría existente de la misma organización. */
+	categoryId?: string | null,
+	/**  Código de barras opcional. */
+	barcode?: string | null,
+	/**  Descripción opcional. */
+	description?: string | null,
+};
+
+/**  Petición de creación de producto; nunca incluye organización ni actor. */
+export type CreateProductRequest_Serialize = {
+	/**  SKU canónico de la organización. */
+	sku: string,
+	/**  Nombre visible. */
+	name: string,
+	/**  Precio exacto como texto decimal de escala 4. */
+	unitPrice: string,
+	/**  Categoría existente de la misma organización. */
+	categoryId: string | null,
+	/**  Código de barras opcional. */
+	barcode: string | null,
+	/**  Descripción opcional. */
+	description: string | null,
+};
+
+/**  Producto recién creado, con su revisión inicial. */
+export type CreatedProductDto = CreatedProductDto_Serialize | CreatedProductDto_Deserialize;
+
+/**  Producto recién creado, con su revisión inicial. */
+export type CreatedProductDto_Deserialize = {
+	/**  UUID canónico asignado por la aplicación. */
+	id: string,
+	/**  SKU canónico. */
+	sku: string,
+	/**  Nombre visible. */
+	name: string,
+	/**  Importe exacto de escala 4. */
+	unitPrice: string,
+	/**  Categoría asociada, si existe. */
+	categoryId?: string | null,
+	/**  Versión inicial del agregado. */
+	version: string,
+};
+
+/**  Producto recién creado, con su revisión inicial. */
+export type CreatedProductDto_Serialize = {
+	/**  UUID canónico asignado por la aplicación. */
+	id: string,
+	/**  SKU canónico. */
+	sku: string,
+	/**  Nombre visible. */
+	name: string,
+	/**  Importe exacto de escala 4. */
+	unitPrice: string,
+	/**  Categoría asociada, si existe. */
+	categoryId: string | null,
+	/**  Versión inicial del agregado. */
+	version: string,
+};
+
 /**  Estado de la instalación persistente al abrir la aplicación. */
 export type InstallationStatusDto = {
 	/**  `FIRST_INSTALL` si este arranque creó el esquema; `REOPENED` si ya existía. */
@@ -57,6 +129,10 @@ export type IpcError =
 { code: "FORBIDDEN" } |
 /**  Página fuera del contrato. */
 { code: "VALIDATION_ERROR" } |
+/**  La entidad ya existe en el scope del principal. */
+{ code: "CONFLICT" } |
+/**  La entidad referenciada no existe en el scope del principal. */
+{ code: "NOT_FOUND" } |
 /**  La operación no existe en el modo actual de la aplicación. */
 { code: "OPERATION_NOT_AVAILABLE" } |
 /**  Fallo interno, sin detalles del adaptador. */

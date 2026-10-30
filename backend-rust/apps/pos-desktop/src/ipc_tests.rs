@@ -28,6 +28,15 @@ fn call(
         .map_err(|_| serde_json::json!({"code":"DESERIALIZATION_FAILED"}))
 }
 
+/// Cuerpo válido por comando; el dispatcher deserializa antes de ejecutar.
+fn body_for(command: &str) -> serde_json::Value {
+    if command == "lab_create_product" {
+        serde_json::json!({"request":{"sku":"CAFE-9","name":"Café de prueba","unitPrice":"7.2500"}})
+    } else {
+        serde_json::json!({"request":{"limit":20,"offset":0}})
+    }
+}
+
 #[test]
 fn registered_handlers_use_application_and_reject_invalid_pages() -> Result<(), Box<dyn Error>> {
     let state = tauri::async_runtime::block_on(crate::composition::LocalState::synthetic())?;
@@ -38,19 +47,33 @@ fn registered_handlers_use_application_and_reject_invalid_pages() -> Result<(), 
     let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build()?;
     let url: tauri::Url = "http://tauri.localhost/rust-lab.html".parse()?;
     for command in crate::command_names::LAB_COMMAND_NAMES {
-        let response = call(
-            &window,
-            &url,
-            command,
-            serde_json::json!({"request": {"limit":20,"offset":0}}),
-        )
-        .map_err(|_| "handler rechazado")?;
+        let response =
+            call(&window, &url, command, body_for(command)).map_err(|_| "handler rechazado")?;
+        if *command == "lab_create_product" {
+            assert_eq!(response["sku"], "CAFE-9");
+            assert_eq!(response["unitPrice"], "7.2500");
+            continue;
+        }
         assert_eq!(response.as_array().map(Vec::len), Some(1));
         if *command == "lab_list_products" {
             assert_eq!(response[0]["unitPrice"], "12.3456");
             assert!(response[0].get("unit_price").is_none());
         }
     }
+    // La escritura anterior ya está persistida y se lee en la siguiente consulta.
+    let after_create = call(
+        &window,
+        &url,
+        "lab_list_products",
+        serde_json::json!({"request":{"limit":20,"offset":0}}),
+    )
+    .map_err(|_| "consulta posterior rechazada")?;
+    assert_eq!(after_create.as_array().map(Vec::len), Some(2));
+    assert!(
+        after_create
+            .as_array()
+            .is_some_and(|items| { items.iter().any(|item| item["sku"] == "CAFE-9") })
+    );
     assert_eq!(
         call(
             &window,
@@ -125,13 +148,7 @@ fn installation_mode_exposes_only_its_status() -> Result<(), Box<dyn Error>> {
 
     for command in crate::command_names::LAB_COMMAND_NAMES {
         assert_eq!(
-            call(
-                &window,
-                &url,
-                command,
-                serde_json::json!({"request":{"limit":20,"offset":0}})
-            )
-            .err(),
+            call(&window, &url, command, body_for(command)).err(),
             Some(serde_json::json!({"code":"OPERATION_NOT_AVAILABLE"}))
         );
     }

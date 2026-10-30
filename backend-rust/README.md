@@ -2,6 +2,12 @@
 
 **Estado: PARCIAL. Solo desarrollo y datos sintéticos. No sustituye Java.**
 
+**Benchmark D-AUTH-09:** `cargo run -p pos-credentials --release --example argon2_bench --
+--rounds 5 --workers 1,2,4 --json target/argon2.json`; interoperabilidad real con
+Java: `node tools/credential-interop/run.mjs` (requiere JDK y los jars de Spring
+Security del repositorio Maven local). Ver
+[evidencia](../docs/05-development/rust-auth-benchmark-1z.md).
+
 **Aplicación de escritorio (1X–1Y):** desde `frontend/`, ejecutar
 `pnpm desktop:lab` (Windows + MSVC + WebView2) para el catálogo sintético, o
 `pnpm desktop:install -- <directorio>` para abrir una **instalación persistente**
@@ -232,6 +238,9 @@ No ejecutar down migrations sobre bases reales.
 - [Especificación real del lab y artefactos](tools/migration-lab/README.md).
 - [Incremento 1X — vertical Tauri/React](../docs/05-development/rust-increment-1x.md).
 - [Incremento 1Y — instalación Local persistente](../docs/05-development/rust-increment-1y.md).
+- [Incremento 1Z — desbloqueo técnico](../docs/05-development/rust-increment-1z.md).
+- [Evidencia criptográfica D-AUTH-09](../docs/05-development/rust-auth-benchmark-1z.md).
+- [Clasificación normativa 1Z](../docs/05-development/rust-increment-1z-normative.md).
 - [Paquete de decisión 1Y](../docs/05-development/rust-increment-1y-approval-package.md).
 - [ADR-0020](../docs/01-architecture/adr/0020-rust-foundation-sqlx-migration-boundary.md).
 - [CI y gate normativo obligatorio](../docs/05-development/ci.md).

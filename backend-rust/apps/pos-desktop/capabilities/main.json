@@ -6,6 +6,7 @@
     "allow-lab-list-branches",
     "allow-lab-list-categories",
     "allow-lab-list-products",
+    "allow-lab-create-product",
     "allow-installation-status"
   ]
 }

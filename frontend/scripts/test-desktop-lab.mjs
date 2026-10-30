@@ -18,6 +18,23 @@ try {
   await expect(page.getByRole('cell', { name: '12.3456', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Actualizar' }).click()
   await expect(page.getByRole('cell', { name: 'CAFE-1', exact: true })).toBeVisible()
+
+  // Escritura real: React → binding → comando Tauri → aplicación → SQLite → auditoría.
+  await page.getByLabel('SKU').fill('CAFE-2')
+  await page.getByLabel('Nombre').fill('Café doble')
+  await page.getByLabel('Precio (escala 4)').fill('9.9900')
+  await page.getByRole('button', { name: 'Crear producto' }).click()
+  await expect(page.getByText('Producto creado: CAFE-2')).toBeVisible()
+  await expect(page.getByRole('cell', { name: 'CAFE-2', exact: true })).toBeVisible()
+  await expect(page.getByRole('cell', { name: '9.9900', exact: true })).toBeVisible()
+
+  // El mismo SKU devuelve conflicto tipado, sin duplicar la fila.
+  await page.getByLabel('SKU').fill('CAFE-2')
+  await page.getByLabel('Nombre').fill('Café doble')
+  await page.getByLabel('Precio (escala 4)').fill('9.9900')
+  await page.getByRole('button', { name: 'Crear producto' }).click()
+  await expect(page.getByText('No se pudo crear el producto: CONFLICT')).toBeVisible()
+
   const invalidPage = await page.evaluate(async () => {
     try {
       await window.__TAURI_INTERNALS__.invoke('lab_list_products', { request: { limit: 0, offset: 0 } })
@@ -44,4 +61,4 @@ try {
   await cleanup(profile)
   if (forcedClose) throw new Error('La aplicación no respondió al cierre normal de ventana')
 }
-console.log(JSON.stringify({ status: 'PASS', mode: 'synthetic_lab', transport: 'tauri_webview2_ipc', consumer: 'React', commands: 3, exactUnitPrice: '12.3456', cleanShutdown: true, productive: false }))
+console.log(JSON.stringify({ status: 'PASS', mode: 'synthetic_lab', transport: 'tauri_webview2_ipc', consumer: 'React', commands: 5, exactUnitPrice: '12.3456', writeVertical: 'create_product', conflictCode: 'CONFLICT', cleanShutdown: true, productive: false }))

@@ -1,4 +1,4 @@
-import { commands, type IpcError } from './desktop.generated'
+import { commands, type CreateProductRequest_Deserialize, type IpcError } from './desktop.generated'
 
 /** Errores públicos del adaptador IPC, sin diagnósticos de almacenamiento. */
 export class DesktopCommandError extends Error {
@@ -26,4 +26,6 @@ export const desktopService = {
   listBranches: () => unwrap(commands.labListBranches()),
   listCategories: (offset = 0) => unwrap(commands.labListCategories({ limit: 20, offset })),
   listProducts: (offset = 0) => unwrap(commands.labListProducts({ limit: 20, offset })),
+  /** Primera escritura auditada; solo disponible en el laboratorio sintético. */
+  createProduct: (request: CreateProductRequest_Deserialize) => unwrap(commands.labCreateProduct(request)),
 }

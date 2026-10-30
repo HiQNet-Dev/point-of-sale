@@ -12,17 +12,27 @@
 //! Ningún modo abre HTTP, lee secretos del entorno ni acepta rutas, organización
 //! o actor desde JavaScript.
 
-use std::{error::Error, fmt, path::Path, time::Duration};
+use std::{
+    error::Error,
+    fmt,
+    path::Path,
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
+};
 
 use pos_application::{
-    catalog::CatalogPage,
+    catalog::{CatalogPage, NewProductRequest},
     installation::{
         ApprovedSchema, InstallationError, InstallationReport, InstallationState,
         prepare_installation,
     },
     organization::list_authorized_branches,
 };
-use pos_core::identity::VerifiedPrincipal;
+use pos_core::{
+    audit::AuditOccurredAt,
+    identity::VerifiedPrincipal,
+    organization_branch::{ApplicationError, EntityId, IdentityGenerator},
+};
 use pos_storage_sqlite::{
     SqliteOrganizationBranchStore, SqliteUnitOfWork, approved_schema_version,
     catalog::SqliteCatalogApplication, checkpoint, installation::SqliteInstallationSchema,
@@ -30,12 +40,17 @@ use pos_storage_sqlite::{
 use sqlx::SqlitePool;
 use tempfile::TempDir;
 
-use crate::dto::{
-    BranchDto, CategoryDto, InstallationStatusDto, IpcError, PageRequest, ProductDto,
+use crate::{
+    dto::{
+        BranchDto, CategoryDto, CreateProductRequest, CreatedProductDto, InstallationStatusDto,
+        IpcError, PageRequest, ProductDto,
+    },
+    installation_dir::InstallationDirectory,
 };
 
-/// Nombre fijo del archivo dentro del directorio de instalación.
-pub const DATABASE_FILE_NAME: &str = "hiqnet-pos.sqlite";
+/// Nombre del archivo, expuesto solo a las pruebas de composición.
+#[cfg(test)]
+pub use crate::installation_dir::DATABASE_FILE_NAME;
 
 /// Espera ante bloqueos mientras la política de producto no esté aprobada.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -52,6 +67,8 @@ enum Mode {
 
 struct LabInstallation {
     pool: SqlitePool,
+    /// Contador de identidades del proceso; evita reutilizar UUID entre escrituras.
+    next_identity: AtomicU64,
     _directory: TempDir,
 }
 
@@ -91,6 +108,25 @@ impl From<InstallationError> for StartupError {
     }
 }
 
+impl From<crate::installation_dir::DirectoryError> for StartupError {
+    fn from(_error: crate::installation_dir::DirectoryError) -> Self {
+        Self::InvalidInstallationDirectory
+    }
+}
+
+/// Generador de identidades del laboratorio, ligado al estado del proceso.
+struct DesktopIdentities<'a> {
+    counter: &'a AtomicU64,
+}
+
+impl IdentityGenerator for DesktopIdentities<'_> {
+    fn next_id(&mut self) -> Result<EntityId, ApplicationError> {
+        let value = self.counter.fetch_add(1, Ordering::Relaxed) + 1;
+        EntityId::parse(&format!("00000000-0000-0000-0000-{value:012x}"))
+            .map_err(|_| ApplicationError::Storage)
+    }
+}
+
 impl LocalState {
     /// Instalación sintética efímera con los adaptadores existentes.
     ///
@@ -108,6 +144,7 @@ impl LocalState {
         Ok(Self {
             mode: Mode::Lab(LabInstallation {
                 pool,
+                next_identity: AtomicU64::new(0x9000_0000),
                 _directory: directory,
             }),
         })
@@ -123,18 +160,10 @@ impl LocalState {
     /// Devuelve [`StartupError`] si el directorio es inválido, si el archivo no
     /// puede abrirse o si el esquema pertenece a un binario más reciente.
     pub async fn open_installation(directory: &Path) -> Result<Self, StartupError> {
-        if directory.as_os_str().is_empty() {
-            return Err(StartupError::InvalidInstallationDirectory);
-        }
-        if directory.exists() && !directory.is_dir() {
-            return Err(StartupError::InvalidInstallationDirectory);
-        }
-        std::fs::create_dir_all(directory)
-            .map_err(|_| StartupError::InvalidInstallationDirectory)?;
-        let database = directory.join(DATABASE_FILE_NAME);
-        if database.is_dir() {
-            return Err(StartupError::InvalidInstallationDirectory);
-        }
+        // El directorio se valida antes de abrir SQLite: enlaces y permisos
+        // compartidos se rechazan en el entrypoint, no en la capa de datos.
+        let directory = InstallationDirectory::resolve(directory)?;
+        let database = directory.database_file();
         let existed = database.exists();
         let pool = pos_storage_sqlite::open(&database, BUSY_TIMEOUT)
             .await
@@ -268,6 +297,61 @@ impl LocalState {
                 version: product.revision().to_string(),
             })
             .collect())
+    }
+
+    /// Crea un producto con el permiso `product.create` del principal verificado.
+    ///
+    /// # Solo laboratorio
+    ///
+    /// Es la primera escritura auditada del transporte. Se expone únicamente en
+    /// el modo sintético mientras el esquema de catálogo, la identidad comercial
+    /// y la auditoría productiva sigan pendientes de aprobación. El actor y la
+    /// organización se derivan del principal; el request no puede suministrarlos.
+    ///
+    /// # Errors
+    /// Devuelve [`IpcError::OperationNotAvailable`] fuera del laboratorio,
+    /// [`IpcError::Forbidden`] sin permiso, [`IpcError::ValidationError`] si el
+    /// SKU, el nombre o el precio no cumplen el contrato, y
+    /// [`IpcError::Conflict`] si el SKU o el código de barras ya existen.
+    pub async fn create_product(
+        &self,
+        request: CreateProductRequest,
+    ) -> Result<CreatedProductDto, IpcError> {
+        let lab = self.lab()?;
+        let principal = self.principal().await?;
+        let occurred_at =
+            AuditOccurredAt::new(pos_lab::LAB_OCCURRED_AT).map_err(|_| IpcError::InternalError)?;
+        let catalog = SqliteCatalogApplication::new(SqliteUnitOfWork::new(lab.pool.clone()));
+        let mut identities = DesktopIdentities {
+            counter: &lab.next_identity,
+        };
+        let product = catalog
+            .create_product(
+                &principal,
+                &mut identities,
+                NewProductRequest {
+                    sku: request.sku,
+                    name: request.name,
+                    unit_price: request.unit_price,
+                    barcode: request.barcode,
+                    description: request.description,
+                    category_id: request
+                        .category_id
+                        .map(|value| EntityId::parse(&value))
+                        .transpose()
+                        .map_err(|_| IpcError::ValidationError)?,
+                },
+                &occurred_at,
+            )
+            .await?;
+        Ok(CreatedProductDto {
+            id: product.id().as_str().into(),
+            sku: product.sku().as_str().into(),
+            name: product.name().as_str().into(),
+            unit_price: product.unit_price().to_string(),
+            category_id: product.category_id().map(|id| id.as_str().into()),
+            version: product.revision().to_string(),
+        })
     }
 
     fn pool(&self) -> Result<&SqlitePool, IpcError> {

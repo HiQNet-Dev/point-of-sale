@@ -2,12 +2,23 @@
 use std::error::Error;
 
 use super::*;
-use crate::dto::PageRequest;
+use crate::dto::{CreateProductRequest, PageRequest};
 
 fn page() -> PageRequest {
     PageRequest {
         limit: 10,
         offset: 0,
+    }
+}
+
+fn new_product(sku: &str, price: &str) -> CreateProductRequest {
+    CreateProductRequest {
+        sku: sku.to_owned(),
+        name: "Producto de prueba".to_owned(),
+        unit_price: price.to_owned(),
+        category_id: None,
+        barcode: None,
+        description: None,
     }
 }
 
@@ -156,6 +167,82 @@ fn newer_schema_is_rejected_at_startup() -> Result<(), Box<dyn Error>> {
                 approved: 1
             }))
         ));
+        Ok(())
+    })
+}
+
+#[test]
+fn product_mode_rejects_every_lab_command() -> Result<(), Box<dyn Error>> {
+    tauri::async_runtime::block_on(async {
+        let directory = tempfile::tempdir()?;
+        let state = LocalState::open_installation(directory.path()).await?;
+        assert_eq!(
+            state
+                .create_product(new_product("CAFE-2", "9.9900"))
+                .await
+                .err(),
+            Some(IpcError::OperationNotAvailable)
+        );
+        assert_eq!(
+            state.products(page()).await.err(),
+            Some(IpcError::OperationNotAvailable)
+        );
+        state.shutdown().await;
+        Ok(())
+    })
+}
+
+#[test]
+fn create_product_persists_with_exact_price_and_audit() -> Result<(), Box<dyn Error>> {
+    tauri::async_runtime::block_on(async {
+        let state = LocalState::synthetic().await?;
+        let created = state
+            .create_product(new_product("CAFE-2", "9.9900"))
+            .await?;
+        assert_eq!(created.sku, "CAFE-2");
+        assert_eq!(created.unit_price, "9.9900");
+        assert_eq!(created.version, "0");
+
+        let products = state.products(page()).await?;
+        assert_eq!(products.len(), 2);
+        assert!(products.iter().any(|product| product.sku == "CAFE-2"));
+
+        // La auditoría de la nueva escritura comparte transacción con la fila.
+        let audits: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM audit_event WHERE action = 'product.created' AND entity_id = ?",
+        )
+        .bind(&created.id)
+        .fetch_one(state.pool()?)
+        .await?;
+        assert_eq!(audits, 1);
+        state.shutdown().await;
+        Ok(())
+    })
+}
+
+#[test]
+fn duplicate_sku_is_a_conflict_and_invalid_price_is_rejected() -> Result<(), Box<dyn Error>> {
+    tauri::async_runtime::block_on(async {
+        let state = LocalState::synthetic().await?;
+        assert_eq!(
+            state
+                .create_product(new_product("CAFE-1", "9.9900"))
+                .await
+                .err(),
+            Some(IpcError::Conflict)
+        );
+        assert_eq!(
+            state
+                .create_product(new_product("CAFE-3", "9.99999"))
+                .await
+                .err(),
+            Some(IpcError::ValidationError)
+        );
+        assert_eq!(
+            state.create_product(new_product("", "1.0000")).await.err(),
+            Some(IpcError::ValidationError)
+        );
+        state.shutdown().await;
         Ok(())
     })
 }
