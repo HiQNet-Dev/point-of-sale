@@ -780,6 +780,18 @@ pub enum Permission {
     ProductUpdate,
     /// Descubrimiento del catálogo operativo desde una sucursal.
     PosCatalogRead,
+    /// Lectura de cajas de una sucursal.
+    CashRegisterRead,
+    /// Alta de cajas de una sucursal.
+    CashRegisterCreate,
+    /// Actualización de nombre o estado de una caja.
+    CashRegisterUpdate,
+    /// Lectura de turnos de una caja.
+    CashShiftRead,
+    /// Apertura de un turno en una caja activa.
+    CashShiftOpen,
+    /// Cierre de un turno abierto, incluido el camino de recuperación autorizado.
+    CashShiftClose,
 }
 
 impl Permission {
@@ -804,6 +816,12 @@ impl Permission {
             Self::ProductRead => Some("product.read"),
             Self::ProductUpdate => Some("product.update"),
             Self::PosCatalogRead => Some("pos.catalog.read"),
+            Self::CashRegisterRead => Some("cash-register.read"),
+            Self::CashRegisterCreate => Some("cash-register.create"),
+            Self::CashRegisterUpdate => Some("cash-register.update"),
+            Self::CashShiftRead => Some("cash-shift.read"),
+            Self::CashShiftOpen => Some("cash-shift.open"),
+            Self::CashShiftClose => Some("cash-shift.close"),
         }
     }
 }
@@ -904,6 +922,24 @@ pub enum ApplicationError {
     ProductBarcodeAlreadyExists,
     /// La categoría destino está inactiva.
     CategoryInactive,
+    /// Caja inexistente en el scope solicitado.
+    CashRegisterNotFound,
+    /// Turno inexistente en el scope solicitado.
+    CashShiftNotFound,
+    /// Código de caja duplicado dentro de la sucursal.
+    CashRegisterCodeAlreadyExists,
+    /// La caja está inactiva y no admite aperturas.
+    CashRegisterInactive,
+    /// La sucursal está inactiva y no admite aperturas.
+    BranchInactive,
+    /// La caja ya tiene un turno abierto.
+    CashRegisterAlreadyHasOpenShift,
+    /// El turno ya fue cerrado y no es idempotente.
+    CashShiftAlreadyClosed,
+    /// El turno no puede cerrarse mientras haya ventas abiertas.
+    CashShiftHasOpenSales,
+    /// Entrada de caja o turno que no cumple el contrato.
+    InvalidCashInput,
     /// La entidad referenciada pertenece a otra organización.
     OwnershipMismatch,
     /// Una entrada de catálogo incumple el contrato de dominio.
@@ -934,6 +970,17 @@ impl fmt::Display for ApplicationError {
             Self::ProductSkuAlreadyExists => formatter.write_str("SKU duplicado"),
             Self::ProductBarcodeAlreadyExists => formatter.write_str("código de barras duplicado"),
             Self::CategoryInactive => formatter.write_str("la categoría está inactiva"),
+            Self::CashRegisterNotFound => formatter.write_str("caja inexistente"),
+            Self::CashShiftNotFound => formatter.write_str("turno inexistente"),
+            Self::CashRegisterCodeAlreadyExists => formatter.write_str("código de caja duplicado"),
+            Self::CashRegisterInactive => formatter.write_str("la caja está inactiva"),
+            Self::BranchInactive => formatter.write_str("la sucursal está inactiva"),
+            Self::CashRegisterAlreadyHasOpenShift => {
+                formatter.write_str("la caja ya tiene un turno abierto")
+            }
+            Self::CashShiftAlreadyClosed => formatter.write_str("el turno ya está cerrado"),
+            Self::CashShiftHasOpenSales => formatter.write_str("el turno tiene ventas abiertas"),
+            Self::InvalidCashInput => formatter.write_str("entrada de caja o turno no válida"),
             Self::OwnershipMismatch => {
                 formatter.write_str("la entidad pertenece a otra organización")
             }

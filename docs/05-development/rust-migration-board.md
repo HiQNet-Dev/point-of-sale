@@ -1,6 +1,6 @@
 # Tablero maestro de migración Java → Rust
 
-**Actualizado en el Incremento 1Q.** Este tablero registra el estado real de la
+**Actualizado en el Incremento 1R.** Este tablero registra el estado real de la
 migración, no el deseado. Un estado solo avanza con evidencia publicada.
 
 ## 1. Escala de estados
@@ -34,8 +34,8 @@ auditoría transaccional— sobre un esquema **candidato** que aún no vive en
 | Bootstrap | `PERSISTENCE (fixture)` | Pruebas de one-shot, ownership compuesto y rollback; tramo Organization en Rust | Secreto pre-body, DDL aprobado, endpoint/servicio de producto |
 | Catálogo (categorías, productos) | `APPLICATION (candidate)` | `pos-core::catalog`, `proposals/local-catalog/0008`, `SqliteCatalogApplication`, `SqliteCatalogTransaction`, 9 pruebas de integración (CAS, tenant, rollback por auditoría, reapertura) | Aprobación D-CAT, promoción a `migrations/local`, API |
 | Modificadores | `DOMAIN` | `pos-core::catalog`, semánticos derivados y plan de reemplazo | DDL, adaptador, casos de uso, API |
-| Cajas | `DOMAIN` | `pos-core::cash`, scope de sucursal y patch CAS | DDL, adaptador, casos de uso, API |
-| Turnos | `DOMAIN` | `pos-core::cash`, apertura/cierre, recuperación y no idempotencia | DDL, índice único parcial, port de ventas abiertas, API |
+| Cajas | `APPLICATION (candidate)` | `pos-core::cash`, `0009` candidato, `SqliteCashApplication`, SQLite real: scope, CAS, auditoría, reapertura | Aprobación D-CASH, promoción, API |
+| Turnos | `APPLICATION (candidate)` | `pos-core::cash`, `0010` candidato, índice parcial OPEN, guard de ventas/UoW, dos pools y recuperación | Aprobación D-CASH, puerto real de ventas, promoción, API |
 | Inventario (artículos, saldos, ledger) | `DOMAIN` | `pos-core::inventory`, cantidades exactas, unidad bloqueable, CAS y ledger tipado | DDL, trigger append-only, adaptador, API |
 | Ventas | `DOMAIN` | `pos-core::sales`, ciclo de vida, snapshots, totales exactos y modificadores | DDL, consumo de inventario, adaptador, API |
 | Checkout y pagos | `DOMAIN` | `pos-core::sales`, cobertura exacta, efectivo/tarjeta y cambio | DDL, composición transaccional con inventario y turno, API |
@@ -66,6 +66,7 @@ auditoría transaccional— sobre un esquema **candidato** que aún no vive en
 | D-AUTH-09 | Argon2id comercial | Impide fijar parámetros productivos |
 | D-INST-01, D-INST-02, ADR-0022 | Instalación y reconciliación física | Impide cerrar `installation_identity` |
 | Representación física del catálogo | Importes, nombres de tabla | Impide promover `0008` (D-CAT-01, D-CAT-02) |
+| Cajas y turnos candidatos | Nombres, importes, índice parcial y coordinación venta/cierre | Impide promover `0009`–`0010` (D-CASH-01..04) |
 
 Ningún bloqueo autoriza a debilitar FKs, `--require-complete` ni los gates
 DDL13/PAR/AS.

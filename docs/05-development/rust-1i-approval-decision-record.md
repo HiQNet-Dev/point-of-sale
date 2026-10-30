@@ -67,6 +67,25 @@ mismo acto, pero puede aprobarse por separado.
 | D-CAT-02 | Aprobar por coherencia con `0001` |
 | D-CAT-03 | Aprobar: permite promocionar el catálogo sin esperar el paquete D-AUTH |
 
+### 2.3 Cajas y turnos Local (incremento 1R)
+
+Las propuestas `0009` y `0010` no están cargadas por SQLx y restauran V11/V12
+sobre SQLite real en pruebas. No son una aprobación ni habilitan ventas.
+
+| ID | Decisión | Contrato vigente | Propuesta verificada | Riesgo | Bloquea |
+| --- | --- | --- | --- | --- | --- |
+| D-CASH-01 | Tabla y owner de caja | V11: caja de sucursal, código inmutable único por sucursal | `cash_register` singular, FK compuesta same-org hacia `branch` | Bajo: diferencia de nombre Local | `0009` |
+| D-CASH-02 | Turno y FKs de actores | V12: OPEN/CLOSED, caja scoped y usuario same-org | `cash_shift` con FKs compuestas a `cash_register` y `pos_user` | Bajo: depende de `0003` para actores | `0010` |
+| D-CASH-03 | Importe declarado Local | V12: `NUMERIC(19,4) >= 0` | `TEXT` canónico no negativo con escala 4 | Bajo: el adaptador y CHECK deben conservar la forma canónica | `0010` |
+| D-CASH-04 | Un OPEN y coordinación venta/cierre | V12 + `CashShiftService` comparte lock con `SaleService.create` | Índice parcial único y `BEGIN IMMEDIATE`; puerto de ventas con misma UoW | Medio hasta que ventas use el puerto real | `0010`, ventas candidatas |
+
+| ID | Recomendación |
+| --- | --- |
+| D-CASH-01 | Aprobar como adaptación Local coherente con `organization`/`branch` |
+| D-CASH-02 | Aprobar como restauración de V12 y sus barreras de tenant |
+| D-CASH-03 | Aprobar `TEXT` canónico para no perder exactitud/rango mediante `REAL` o `i64` |
+| D-CASH-04 | Aprobar: el índice parcial y la UoW compartida son obligatorios, no optimizaciones |
+
 ## 3. Bloqueos por migración
 
 | Migración | Decisiones indispensables | Puede seguir bloqueada sin impedir |
@@ -78,6 +97,8 @@ mismo acto, pero puede aprobarse por separado.
 | `0006` audit_event | D-AUTH-07, D-AUTH-08 | `0007` |
 | `0007` bootstrap_record | D-AUTH-10 | Nada posterior |
 | `0008` catalog | D-CAT-01, D-CAT-02 | `0002`–`0007` (no depende de ellas) |
+| `0009` cash_register | D-CASH-01 | `0002`–`0008` salvo que una promoción agrupada decida el orden |
+| `0010` cash_shift | D-CASH-02, D-CASH-03, D-CASH-04 y `0003` | ventas, checkout e inventario |
 
 D-AUTH-09 no aparece en ninguna fila: es una decisión de **parámetros**
 criptográficos, no de esquema, y no impide promover el DDL. Sí impide declarar
@@ -93,6 +114,7 @@ Auth productivo con Argon2id comercial.
 | Argon2id | Parámetros experimentales | No usar `LAB_*` como configuración comercial |
 | `unit_locked` | Debe persistirse con sentencia dedicada | El adaptador no puede incluirlo en el CAS del artículo |
 | Precio de catálogo | Texto canónico, no numérico nativo | Toda escritura pasa por `UnitPrice`/`Decimal4`; el `CHECK` y el índice de barcode cubren la vía SQL directa |
+| Turno OPEN concurrente | Un precheck aislado es racy | Índice parcial único en `0010`; la venta y el cierre deben entrar en la misma UoW `BEGIN IMMEDIATE` |
 
 ## 5. Orden de arranque verificado
 
@@ -166,6 +188,10 @@ expediente sigue siendo PENDIENTE.
 | D-CAT-01 | | | |
 | D-CAT-02 | | | |
 | D-CAT-03 | | | |
+| D-CASH-01 | | | |
+| D-CASH-02 | | | |
+| D-CASH-03 | | | |
+| D-CASH-04 | | | |
 
 Autorización de promoción a `migrations/local`:
 
