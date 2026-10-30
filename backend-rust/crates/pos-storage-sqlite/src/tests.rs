@@ -63,6 +63,23 @@ async fn validates_file_and_timeout_before_opening() -> Result<(), Box<dyn std::
 }
 
 #[tokio::test]
+async fn health_requires_integrity_and_applied_migrations() -> Result<(), Box<dyn std::error::Error>>
+{
+    let temp = tempfile::tempdir()?;
+    let pool = open(
+        &temp.path().join("health.sqlite"),
+        Duration::from_millis(75),
+    )
+    .await?;
+    // Sin migraciones aplicadas el healthcheck debe fallar, no asumir salud.
+    assert!(verify_health(&pool).await.is_err());
+    migrate(&pool).await?;
+    verify_health(&pool).await?;
+    pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn configures_and_verifies_every_new_connection() -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
     let pool = open(&temp.path().join("local.sqlite"), Duration::from_millis(75)).await?;
