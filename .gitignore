@@ -37,3 +37,8 @@ Thumbs.db
 # --- Temporary files ---
 *.tmp
 *~
+
+# --- Artefactos SQLite locales (laboratorio y arneses) ---
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
