@@ -7,6 +7,7 @@
 //! # Reglas
 //!
 //! - Debe ser un directorio real, nunca un archivo ni un enlace simbólico.
+//! - En Windows también se rechazan *junctions* y otros puntos de reanálisis.
 //! - Se crea si falta, con permisos de propietario en Unix.
 //! - Se rechaza un directorio escribible por todos: otro usuario local podría
 //!   sustituir el archivo de la instalación.
@@ -14,9 +15,10 @@
 //!
 //! # Límites conocidos
 //!
-//! En Windows los *junctions* no se distinguen de un directorio con la API
-//! estándar; la comprobación de enlace cubre enlaces simbólicos. La ruta por
-//! plataforma (`app_data_dir`) depende de D-INST y no se resuelve aquí.
+//! El bloqueo entre procesos lo aporta SQLite (un pool por proceso y
+//! `BEGIN IMMEDIATE` para escrituras críticas); este módulo no implementa un
+//! candado de instancia única. La ruta por plataforma (`app_data_dir`) depende de
+//! D-INST y no se resuelve aquí.
 
 use std::{
     fs, io,
@@ -72,7 +74,7 @@ impl InstallationDirectory {
         }
         match fs::symlink_metadata(path) {
             Ok(metadata) => {
-                if metadata.file_type().is_symlink() {
+                if is_redirect(&metadata) {
                     return Err(DirectoryError::Symlink);
                 }
                 if !metadata.is_dir() {
@@ -103,7 +105,7 @@ impl InstallationDirectory {
         let database = self.database_file();
         match fs::symlink_metadata(&database) {
             Ok(metadata) => {
-                if metadata.file_type().is_symlink() {
+                if is_redirect(&metadata) {
                     return Err(DirectoryError::Symlink);
                 }
                 if metadata.is_dir() {
@@ -114,6 +116,25 @@ impl InstallationDirectory {
             Err(_) => return Err(DirectoryError::Unavailable),
         }
         Ok(())
+    }
+}
+
+/// Un enlace simbólico o, en Windows, cualquier punto de reanálisis (junction).
+fn is_redirect(metadata: &fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        // FILE_ATTRIBUTE_REPARSE_POINT: cubre junctions y mount points, que
+        // `is_symlink()` no reporta.
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+        metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    }
+    #[cfg(not(windows))]
+    {
+        false
     }
 }
 
@@ -192,6 +213,30 @@ mod tests {
         }
         assert!(matches!(
             InstallationDirectory::resolve(parent.path().join("instalacion").as_path()),
+            Err(DirectoryError::Symlink)
+        ));
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn rejects_a_windows_junction() -> Result<(), Box<dyn std::error::Error>> {
+        let parent = tempfile::tempdir()?;
+        let target = parent.path().join("real");
+        std::fs::create_dir(&target)?;
+        let junction = parent.path().join("enlace");
+        // Los junctions no requieren privilegios de administrador; si el entorno
+        // no los permite, la regla de atributos sigue aplicándose al código.
+        let created = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&junction)
+            .arg(&target)
+            .output();
+        if created.is_err() || !created.is_ok_and(|output| output.status.success()) {
+            return Ok(());
+        }
+        assert!(matches!(
+            InstallationDirectory::resolve(&junction),
             Err(DirectoryError::Symlink)
         ));
         Ok(())

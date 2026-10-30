@@ -260,6 +260,50 @@ fn lines_validate_number_and_quantity() {
 }
 
 #[test]
+fn agreed_cost_distinguishes_unknown_from_zero() {
+    // ADR-0021 CC21-03: el costo pactado es opcional. `None` significa "no
+    // informado" y nunca debe confundirse con un costo cero, que es un valor
+    // explícito del operador.
+    let unknown = NewPurchaseOrderLine {
+        id: id("00000000-0000-0000-0000-0000000005a1"),
+        organization_id: org(),
+        purchase_order_id: order().id().clone(),
+        inventory_item_id: id("00000000-0000-0000-0000-0000000005a2"),
+        line_number: 1,
+        item_code_snapshot: code("leche-entera"),
+        item_name_snapshot: name("Leche entera"),
+        unit_snapshot: InventoryBaseUnit::Milliliter,
+        quantity: qty("1"),
+        unit_cost: None,
+    };
+    let created = PurchaseOrderLine::create(unknown);
+    assert!(created.is_ok(), "una partida sin costo pactado es válida");
+    let Ok(created) = created else { return };
+    assert_eq!(created.unit_cost(), None);
+
+    let zero = PurchaseOrderLine::restore(
+        id("00000000-0000-0000-0000-0000000005a3"),
+        org(),
+        order().id().clone(),
+        id("00000000-0000-0000-0000-0000000005a4"),
+        1,
+        code("leche-entera"),
+        name("Leche entera"),
+        InventoryBaseUnit::Milliliter,
+        qty("1"),
+        Some(amount("0.0000")),
+    );
+    assert!(zero.is_ok(), "un costo cero explícito es representable");
+    let Ok(zero) = zero else { return };
+    assert_eq!(zero.unit_cost(), Some(amount("0.0000")));
+    assert_ne!(
+        zero.unit_cost(),
+        created.unit_cost(),
+        "desconocido y cero no son el mismo hecho económico"
+    );
+}
+
+#[test]
 fn receipt_lines_reject_duplicates_and_non_positive_quantities() {
     let repeated = vec![
         ReceiptLineRequest {
