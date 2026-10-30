@@ -22,6 +22,13 @@ Los nombres son candidatos: SQLx versiona por prefijo numérico y descripción; 
 aprobarse se moverán a `migrations/local/` conservando el orden. `0001` no se
 modifica.
 
+### Corrección 1N en `0006`
+
+`audit_event.occurred_at` exigía `YYYY-MM-DDTHH:MM:SSZ` sin fracción, mientras el
+contrato de dominio `AuditOccurredAt` admite `YYYY-MM-DDTHH:MM:SS[.fracción]Z`.
+El `CHECK` se amplió para aceptar las dos formas sin habilitar texto libre;
+prueba: `audit_occurred_at_accepts_optional_fraction_and_rejects_junk`.
+
 ## `installation_identity` (F1–10 §16.3)
 
 Campos: `id` UUID PK, `organization_id` FK, `generation` (default 1, `>= 1`),
