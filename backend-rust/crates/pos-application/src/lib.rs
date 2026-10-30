@@ -26,8 +26,21 @@
 pub mod audit;
 /// Comprobaciones de scope y permiso previas a cualquier caso de uso.
 pub mod authorization;
+/// Casos de uso, DTOs y puertos de cajas y turnos.
+pub mod cash;
 /// Contexto operativo de una venta (sucursal, caja y turno vigentes).
 pub mod sales_context;
+
+/// Resultado de una actualización condicional por revisión (CAS).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CasOutcome {
+    /// La fila se actualizó y la versión ya avanzó en el dominio.
+    Updated,
+    /// La fila no existe en el scope solicitado.
+    Missing,
+    /// La fila existe pero la revisión previa ya no coincide.
+    Conflict,
+}
 
 #[cfg(test)]
 mod architecture_tests;

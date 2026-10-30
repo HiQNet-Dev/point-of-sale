@@ -12,24 +12,13 @@
 
 use std::future::Future;
 
-use pos_application::{
-    audit::{append_audit, append_audit_with_id},
-    authorization::require_branch_scope,
-};
 use pos_core::{
     audit::AuditOccurredAt,
-    cash::{
-        CashError, CashRegister, CashRegisterPatch, CashShift, CashShiftStatus, CloseCashShift,
-        NewCashRegister, NewCashShift, cash_register_changed_fields, ensure_close_allowed,
-        ensure_open_allowed,
-    },
+    cash::{CashRegister, CashShift, CashShiftStatus},
     catalog::{CatalogCode, UnitPrice},
-    identity::{ScopeMode, UtcSeconds, VerifiedPrincipal},
-    organization_branch::{
-        ApplicationError, DisplayName, EntityId, IdentityGenerator, Permission, Status,
-    },
+    identity::UtcSeconds,
+    organization_branch::{ApplicationError, Branch, DisplayName, EntityId, Status},
 };
-use serde_json::json;
 
 use crate::{CasOutcome, SqliteTransaction, SqliteUnitOfWork};
 
@@ -77,9 +66,6 @@ const UPDATE_SHIFT_CAS: &str = "UPDATE cash_shift SET closed_by_user_id = ?, sta
     AND status = 'OPEN'";
 const SELECT_SHIFT_VERSION: &str = "SELECT version FROM cash_shift \
     WHERE organization_id = ? AND branch_id = ? AND cash_register_id = ? AND id = ?";
-
-/// Límite local de lecturas paginadas de cajas y turnos.
-pub const MAX_CASH_PAGE_SIZE: u32 = 100;
 
 /// Error de persistencia candidato sin exponer SQL ni valores de entrada.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -491,496 +477,6 @@ impl SqliteTransaction {
     }
 }
 
-/// Puerto de ventas para el guard de cierre de turno.
-///
-/// La implementación debe consultar la misma conexión transaccional recibida y
-/// no puede abrir un pool ni responder por defecto `false`. Cuando exista la
-/// persistencia de ventas, su creación debe entrar por la misma UoW/serialización
-/// antes de insertar una venta OPEN.
-pub trait OpenSalesForCashShift {
-    /// Indica si el turno posee ventas abiertas dentro de esta transacción.
-    fn has_open_sales(
-        &self,
-        transaction: &mut SqliteTransaction,
-        cash_shift_id: &EntityId,
-    ) -> impl Future<Output = Result<bool, CashStorageError>> + Send;
-}
-
-/// Datos de creación de una caja recibidos desde la frontera de aplicación.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NewCashRegisterRequest {
-    /// Código que se normaliza como slug Java.
-    pub code: String,
-    /// Nombre visible que se recorta y valida.
-    pub name: String,
-}
-
-/// Patch CAS de caja. El código y los owners son inmutables.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CashRegisterUpdateRequest {
-    /// Revisión leída por el cliente.
-    pub expected_version: u64,
-    /// Nombre opcional.
-    pub name: Option<String>,
-    /// Estado operativo opcional.
-    pub status: Option<Status>,
-}
-
-/// Apertura de turno; el actor y el scope se derivan del principal verificado.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OpenCashShiftRequest {
-    /// Caja dentro de la sucursal scoped.
-    pub cash_register_id: EntityId,
-    /// Declaración inicial con escala decimal máxima cuatro.
-    pub opening_amount: String,
-}
-
-/// Cierre no idempotente de turno; el actor se deriva del principal verificado.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CloseCashShiftRequest {
-    /// Revisión leída antes de intentar el cierre.
-    pub expected_version: u64,
-    /// Declaración final con escala decimal máxima cuatro.
-    pub closing_declared_amount: String,
-}
-
-/// Página determinista de cajas o turnos.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CashPage {
-    /// Tamaño de página, de 1 a [`MAX_CASH_PAGE_SIZE`].
-    pub limit: u32,
-    /// Desplazamiento desde el inicio.
-    pub offset: u32,
-}
-
-/// Casos de uso candidatos de cajas y turnos sobre SQLite real.
-pub struct SqliteCashApplication<S> {
-    unit_of_work: SqliteUnitOfWork,
-    open_sales: S,
-}
-
-impl<S: OpenSalesForCashShift> SqliteCashApplication<S> {
-    /// Ensambla los casos de uso con un guard de ventas explícito.
-    pub fn new(unit_of_work: SqliteUnitOfWork, open_sales: S) -> Self {
-        Self {
-            unit_of_work,
-            open_sales,
-        }
-    }
-
-    /// Crea una caja activa y audita `cash-register.created` dentro del commit.
-    pub async fn create_cash_register<I: IdentityGenerator>(
-        &self,
-        principal: &VerifiedPrincipal,
-        identities: &mut I,
-        request: NewCashRegisterRequest,
-        occurred_at: &AuditOccurredAt,
-    ) -> Result<CashRegister, ApplicationError> {
-        let (organization_id, branch_id) =
-            require_branch_scope(principal, Permission::CashRegisterCreate, false)?;
-        let code =
-            CatalogCode::new(&request.code).map_err(|_| ApplicationError::InvalidCashInput)?;
-        let name =
-            DisplayName::new(&request.name).map_err(|_| ApplicationError::InvalidCashInput)?;
-        let register_id = identities.next_id()?;
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let operation = async {
-            let branch = transaction
-                .get_branch(&organization_id, &branch_id)
-                .await
-                .map_err(transaction_error)?
-                .ok_or(ApplicationError::BranchNotFound)?;
-            if transaction
-                .cash_register_code_exists(&organization_id, &branch_id, &code)
-                .await
-                .map_err(cash_storage_error)?
-            {
-                return Err(ApplicationError::CashRegisterCodeAlreadyExists);
-            }
-            let register = CashRegister::create(NewCashRegister {
-                id: register_id,
-                organization_id: organization_id.clone(),
-                branch_id: branch.id().clone(),
-                code,
-                name,
-            });
-            transaction
-                .insert_cash_register(&register, occurred_at.as_str())
-                .await
-                .map_err(cash_storage_error)?;
-            append_audit(
-                &mut transaction,
-                identities,
-                principal,
-                "cash-register.created",
-                "cash_register",
-                register.id().clone(),
-                json!({"branchId": branch_id.as_str(), "code": register.code().as_str()}),
-                occurred_at,
-            )
-            .await?;
-            Ok(register)
-        }
-        .await;
-        finish(transaction, operation).await
-    }
-
-    /// Lee una caja scoped por organización y sucursal.
-    pub async fn get_cash_register(
-        &self,
-        principal: &VerifiedPrincipal,
-        cash_register_id: &EntityId,
-    ) -> Result<CashRegister, ApplicationError> {
-        let (organization_id, branch_id) =
-            require_branch_scope(principal, Permission::CashRegisterRead, false)?;
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let result = transaction
-            .get_cash_register(&organization_id, &branch_id, cash_register_id)
-            .await
-            .map_err(cash_storage_error)?
-            .ok_or(ApplicationError::CashRegisterNotFound);
-        finish(transaction, result).await
-    }
-
-    /// Lista cajas de la sucursal del principal con límites explícitos.
-    pub async fn list_cash_registers(
-        &self,
-        principal: &VerifiedPrincipal,
-        status: Option<Status>,
-        page: CashPage,
-    ) -> Result<Vec<CashRegister>, ApplicationError> {
-        let (organization_id, branch_id) =
-            require_branch_scope(principal, Permission::CashRegisterRead, false)?;
-        if page.limit == 0 || page.limit > MAX_CASH_PAGE_SIZE {
-            return Err(ApplicationError::InvalidCashInput);
-        }
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let result = transaction
-            .list_cash_registers(
-                &organization_id,
-                &branch_id,
-                status,
-                i64::from(page.limit),
-                i64::from(page.offset),
-            )
-            .await
-            .map_err(cash_storage_error);
-        finish(transaction, result).await
-    }
-
-    /// Actualiza nombre o estado por CAS, sin auditar no-ops.
-    pub async fn update_cash_register<I: IdentityGenerator>(
-        &self,
-        principal: &VerifiedPrincipal,
-        identities: &mut I,
-        cash_register_id: &EntityId,
-        request: CashRegisterUpdateRequest,
-        occurred_at: &AuditOccurredAt,
-    ) -> Result<CashRegister, ApplicationError> {
-        let (organization_id, branch_id) =
-            require_branch_scope(principal, Permission::CashRegisterUpdate, false)?;
-        let event_id = identities.next_id()?;
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let operation = async {
-            let mut register = transaction
-                .get_cash_register(&organization_id, &branch_id, cash_register_id)
-                .await
-                .map_err(cash_storage_error)?
-                .ok_or(ApplicationError::CashRegisterNotFound)?;
-            let before = register.clone();
-            let previous_revision = register.revision();
-            let name = request
-                .name
-                .as_deref()
-                .map(DisplayName::new)
-                .transpose()
-                .map_err(|_| ApplicationError::InvalidCashInput)?;
-            if !register
-                .patch(CashRegisterPatch {
-                    expected_version: request.expected_version,
-                    name,
-                    status: request.status,
-                })
-                .map_err(cash_domain_error)?
-            {
-                return Ok(register);
-            }
-            if transaction
-                .update_cash_register_cas(previous_revision, &register, occurred_at.as_str())
-                .await
-                .map_err(cash_storage_error)?
-                != CasOutcome::Updated
-            {
-                return Err(ApplicationError::ConcurrentModification);
-            }
-            append_audit_with_id(
-                &mut transaction,
-                event_id,
-                principal,
-                "cash-register.updated",
-                "cash_register",
-                register.id().clone(),
-                json!({"changedFields": cash_register_changed_fields(&before, &register)}),
-                occurred_at,
-            )
-            .await?;
-            Ok(register)
-        }
-        .await;
-        finish(transaction, operation).await
-    }
-
-    /// Abre un turno tras comprobar branch/caja activas; el índice parcial decide carreras.
-    pub async fn open_cash_shift<I: IdentityGenerator>(
-        &self,
-        principal: &VerifiedPrincipal,
-        identities: &mut I,
-        request: OpenCashShiftRequest,
-        occurred_at: &AuditOccurredAt,
-    ) -> Result<CashShift, ApplicationError> {
-        let (organization_id, branch_id) =
-            require_branch_scope(principal, Permission::CashShiftOpen, false)?;
-        let opening_amount = UnitPrice::parse(&request.opening_amount)
-            .map_err(|_| ApplicationError::InvalidCashInput)?;
-        let shift_id = identities.next_id()?;
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let operation = async {
-            let branch = transaction
-                .get_branch(&organization_id, &branch_id)
-                .await
-                .map_err(transaction_error)?
-                .ok_or(ApplicationError::BranchNotFound)?;
-            let register = transaction
-                .get_cash_register(&organization_id, &branch_id, &request.cash_register_id)
-                .await
-                .map_err(cash_storage_error)?
-                .ok_or(ApplicationError::CashRegisterNotFound)?;
-            let has_open_shift = transaction
-                .cash_register_has_open_shift(
-                    &organization_id,
-                    &branch_id,
-                    &request.cash_register_id,
-                )
-                .await
-                .map_err(cash_storage_error)?;
-            ensure_open_allowed(branch.status() == Status::Active, &register, has_open_shift)
-                .map_err(cash_domain_error)?;
-            let opened_at = transaction
-                .candidate_utc_seconds(occurred_at)
-                .await
-                .map_err(cash_storage_error)?;
-            let shift = CashShift::open(NewCashShift {
-                id: shift_id,
-                register,
-                opened_by_user_id: principal.user_id().clone(),
-                opening_amount,
-                opened_at,
-            })
-            .map_err(cash_domain_error)?;
-            transaction
-                .insert_cash_shift(&shift, occurred_at.as_str())
-                .await
-                .map_err(cash_storage_error)?;
-            append_audit(
-                &mut transaction,
-                identities,
-                principal,
-                "cash-shift.opened",
-                "cash_shift",
-                shift.id().clone(),
-                json!({
-                    "branchId": branch_id.as_str(),
-                    "cashRegisterId": request.cash_register_id.as_str(),
-                    "openingAmount": shift.opening_amount().to_string()
-                }),
-                occurred_at,
-            )
-            .await?;
-            Ok(shift)
-        }
-        .await;
-        finish(transaction, operation).await
-    }
-
-    /// Lee el turno abierto de una caja scoped.
-    pub async fn get_open_cash_shift(
-        &self,
-        principal: &VerifiedPrincipal,
-        cash_register_id: &EntityId,
-    ) -> Result<Option<CashShift>, ApplicationError> {
-        let (organization_id, branch_id) =
-            require_branch_scope(principal, Permission::CashShiftRead, false)?;
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let result = transaction
-            .get_open_cash_shift(&organization_id, &branch_id, cash_register_id)
-            .await
-            .map_err(cash_storage_error);
-        finish(transaction, result).await
-    }
-
-    /// Lee un turno histórico scoped.
-    pub async fn get_cash_shift(
-        &self,
-        principal: &VerifiedPrincipal,
-        cash_register_id: &EntityId,
-        cash_shift_id: &EntityId,
-    ) -> Result<CashShift, ApplicationError> {
-        let (organization_id, branch_id) =
-            require_branch_scope(principal, Permission::CashShiftRead, false)?;
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let result = transaction
-            .get_cash_shift(
-                &organization_id,
-                &branch_id,
-                cash_register_id,
-                cash_shift_id,
-            )
-            .await
-            .map_err(cash_storage_error)?
-            .ok_or(ApplicationError::CashShiftNotFound);
-        finish(transaction, result).await
-    }
-
-    /// Lista el historial de turnos scoped.
-    pub async fn list_cash_shifts(
-        &self,
-        principal: &VerifiedPrincipal,
-        cash_register_id: &EntityId,
-        status: Option<CashShiftStatus>,
-        page: CashPage,
-    ) -> Result<Vec<CashShift>, ApplicationError> {
-        let (organization_id, branch_id) =
-            require_branch_scope(principal, Permission::CashShiftRead, false)?;
-        if page.limit == 0 || page.limit > MAX_CASH_PAGE_SIZE {
-            return Err(ApplicationError::InvalidCashInput);
-        }
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let result = transaction
-            .list_cash_shifts(
-                &organization_id,
-                &branch_id,
-                cash_register_id,
-                status,
-                i64::from(page.limit),
-                i64::from(page.offset),
-            )
-            .await
-            .map_err(cash_storage_error);
-        finish(transaction, result).await
-    }
-
-    /// Cierra un turno OPEN con CAS y guard de ventas dentro de la misma UoW.
-    ///
-    /// El scope de recuperación es admisible solo aquí: es obligatorio si la
-    /// sucursal o caja ya está inactiva y permite finalizar el turno histórico,
-    /// pero no abrir ni administrar recursos.
-    pub async fn close_cash_shift<I: IdentityGenerator>(
-        &self,
-        principal: &VerifiedPrincipal,
-        identities: &mut I,
-        cash_register_id: &EntityId,
-        cash_shift_id: &EntityId,
-        request: CloseCashShiftRequest,
-        occurred_at: &AuditOccurredAt,
-    ) -> Result<CashShift, ApplicationError> {
-        let (organization_id, branch_id) =
-            require_branch_scope(principal, Permission::CashShiftClose, true)?;
-        let declared_amount = UnitPrice::parse(&request.closing_declared_amount)
-            .map_err(|_| ApplicationError::InvalidCashInput)?;
-        let event_id = identities.next_id()?;
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let operation = async {
-            // El cierre normal opera sobre recursos activos. Si caja o sucursal
-            // se desactivaron después de abrir el turno, solo una capacidad de
-            // recuperación explícita puede finalizar el hecho histórico.
-            let branch = transaction
-                .get_branch(&organization_id, &branch_id)
-                .await
-                .map_err(transaction_error)?
-                .ok_or(ApplicationError::BranchNotFound)?;
-            let register = transaction
-                .get_cash_register(&organization_id, &branch_id, cash_register_id)
-                .await
-                .map_err(cash_storage_error)?
-                .ok_or(ApplicationError::CashRegisterNotFound)?;
-            if (branch.status() != Status::Active || !register.is_active())
-                && principal.scope().mode() != ScopeMode::Recovery
-            {
-                return Err(ApplicationError::Forbidden);
-            }
-            let mut shift = transaction
-                .get_cash_shift(
-                    &organization_id,
-                    &branch_id,
-                    cash_register_id,
-                    cash_shift_id,
-                )
-                .await
-                .map_err(cash_storage_error)?
-                .ok_or(ApplicationError::CashShiftNotFound)?;
-            let has_open_sales = self
-                .open_sales
-                .has_open_sales(&mut transaction, cash_shift_id)
-                .await
-                .map_err(cash_storage_error)?;
-            ensure_close_allowed(&shift, has_open_sales).map_err(cash_domain_error)?;
-            let previous_revision = shift.revision();
-            let closed_at = transaction
-                .candidate_utc_seconds(occurred_at)
-                .await
-                .map_err(cash_storage_error)?;
-            shift
-                .close(CloseCashShift {
-                    expected_version: request.expected_version,
-                    declared_amount,
-                    closed_by_user_id: principal.user_id().clone(),
-                    closed_at,
-                })
-                .map_err(cash_domain_error)?;
-            if transaction
-                .close_cash_shift_cas(previous_revision, &shift, occurred_at.as_str())
-                .await
-                .map_err(cash_storage_error)?
-                != CasOutcome::Updated
-            {
-                return Err(ApplicationError::ConcurrentModification);
-            }
-            append_audit_with_id(
-                &mut transaction,
-                event_id,
-                principal,
-                "cash-shift.closed",
-                "cash_shift",
-                shift.id().clone(),
-                json!({
-                    "cashRegisterId": cash_register_id.as_str(),
-                    "declaredCashAmount": declared_amount.to_string()
-                }),
-                occurred_at,
-            )
-            .await?;
-            Ok(shift)
-        }
-        .await;
-        finish(transaction, operation).await
-    }
-}
-
-fn cash_domain_error(error: CashError) -> ApplicationError {
-    match error {
-        CashError::RegisterInactive => ApplicationError::CashRegisterInactive,
-        CashError::BranchInactive => ApplicationError::BranchInactive,
-        CashError::RegisterAlreadyHasOpenShift => ApplicationError::CashRegisterAlreadyHasOpenShift,
-        CashError::ShiftAlreadyClosed => ApplicationError::CashShiftAlreadyClosed,
-        CashError::ShiftHasOpenSales => ApplicationError::CashShiftHasOpenSales,
-        CashError::ConcurrentModification => ApplicationError::ConcurrentModification,
-        CashError::OwnershipMismatch => ApplicationError::OwnershipMismatch,
-        CashError::InvalidAmount
-        | CashError::RevisionOverflow
-        | CashError::InvalidPersistedValue => ApplicationError::InvalidCashInput,
-    }
-}
-
 fn cash_storage_error(error: CashStorageError) -> ApplicationError {
     match error {
         CashStorageError::DuplicateRegisterCode => ApplicationError::CashRegisterCodeAlreadyExists,
@@ -994,20 +490,251 @@ fn transaction_error(_: crate::OrganizationBranchStorageError) -> ApplicationErr
     ApplicationError::Storage
 }
 
-async fn finish<T>(
-    transaction: SqliteTransaction,
-    operation: Result<T, ApplicationError>,
-) -> Result<T, ApplicationError> {
-    match operation {
-        Ok(value) => {
-            transaction.commit().await.map_err(transaction_error)?;
-            Ok(value)
+pub use pos_application::cash::{
+    CashApplication, CashPage, CashRegisterUpdateRequest, CashTransaction, CashUnitOfWork,
+    CloseCashShiftRequest, MAX_CASH_PAGE_SIZE, NewCashRegisterRequest, OpenCashShiftRequest,
+    OpenSalesForCashShift,
+};
+
+/// Alias de compatibilidad: el caso de uso vive ahora en `pos-application`.
+pub type SqliteCashApplication<S> = CashApplication<SqliteUnitOfWork, S>;
+
+impl CashUnitOfWork for SqliteUnitOfWork {
+    type Transaction = SqliteTransaction;
+
+    async fn begin_transaction(&self) -> Result<SqliteTransaction, ApplicationError> {
+        SqliteUnitOfWork::begin(self)
+            .await
+            .map_err(transaction_error)
+    }
+
+    async fn commit_transaction(
+        &self,
+        transaction: SqliteTransaction,
+    ) -> Result<(), ApplicationError> {
+        transaction.commit().await.map_err(transaction_error)
+    }
+
+    async fn rollback_transaction(
+        &self,
+        transaction: SqliteTransaction,
+    ) -> Result<(), ApplicationError> {
+        transaction.rollback().await.map_err(transaction_error)
+    }
+}
+
+impl CashTransaction for SqliteTransaction {
+    fn get_branch(
+        &mut self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+    ) -> impl Future<Output = Result<Option<Branch>, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let branch_id = branch_id.clone();
+        async move {
+            self.get_branch(&organization_id, &branch_id)
+                .await
+                .map_err(transaction_error)
         }
-        Err(error) => {
-            if transaction.rollback().await.is_err() {
-                return Err(ApplicationError::Storage);
-            }
-            Err(error)
+    }
+
+    fn get_cash_register(
+        &mut self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+        cash_register_id: &EntityId,
+    ) -> impl Future<Output = Result<Option<CashRegister>, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let branch_id = branch_id.clone();
+        let cash_register_id = cash_register_id.clone();
+        async move {
+            self.get_cash_register(&organization_id, &branch_id, &cash_register_id)
+                .await
+                .map_err(cash_storage_error)
+        }
+    }
+
+    fn list_cash_registers(
+        &mut self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+        status: Option<Status>,
+        limit: i64,
+        offset: i64,
+    ) -> impl Future<Output = Result<Vec<CashRegister>, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let branch_id = branch_id.clone();
+        async move {
+            self.list_cash_registers(&organization_id, &branch_id, status, limit, offset)
+                .await
+                .map_err(cash_storage_error)
+        }
+    }
+
+    fn cash_register_code_exists(
+        &mut self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+        code: &CatalogCode,
+    ) -> impl Future<Output = Result<bool, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let branch_id = branch_id.clone();
+        let code = code.clone();
+        async move {
+            self.cash_register_code_exists(&organization_id, &branch_id, &code)
+                .await
+                .map_err(cash_storage_error)
+        }
+    }
+
+    fn insert_cash_register(
+        &mut self,
+        register: &CashRegister,
+        occurred_at: &str,
+    ) -> impl Future<Output = Result<(), ApplicationError>> + Send {
+        let register = register.clone();
+        let occurred_at = occurred_at.to_owned();
+        async move {
+            self.insert_cash_register(&register, &occurred_at)
+                .await
+                .map_err(cash_storage_error)
+        }
+    }
+
+    fn update_cash_register_cas(
+        &mut self,
+        previous_revision: u64,
+        register: &CashRegister,
+        occurred_at: &str,
+    ) -> impl Future<Output = Result<CasOutcome, ApplicationError>> + Send {
+        let register = register.clone();
+        let occurred_at = occurred_at.to_owned();
+        async move {
+            self.update_cash_register_cas(previous_revision, &register, &occurred_at)
+                .await
+                .map_err(cash_storage_error)
+        }
+    }
+
+    fn get_open_cash_shift(
+        &mut self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+        cash_register_id: &EntityId,
+    ) -> impl Future<Output = Result<Option<CashShift>, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let branch_id = branch_id.clone();
+        let cash_register_id = cash_register_id.clone();
+        async move {
+            self.get_open_cash_shift(&organization_id, &branch_id, &cash_register_id)
+                .await
+                .map_err(cash_storage_error)
+        }
+    }
+
+    fn get_cash_shift(
+        &mut self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+        cash_register_id: &EntityId,
+        cash_shift_id: &EntityId,
+    ) -> impl Future<Output = Result<Option<CashShift>, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let branch_id = branch_id.clone();
+        let cash_register_id = cash_register_id.clone();
+        let cash_shift_id = cash_shift_id.clone();
+        async move {
+            self.get_cash_shift(
+                &organization_id,
+                &branch_id,
+                &cash_register_id,
+                &cash_shift_id,
+            )
+            .await
+            .map_err(cash_storage_error)
+        }
+    }
+
+    fn list_cash_shifts(
+        &mut self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+        cash_register_id: &EntityId,
+        status: Option<CashShiftStatus>,
+        limit: i64,
+        offset: i64,
+    ) -> impl Future<Output = Result<Vec<CashShift>, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let branch_id = branch_id.clone();
+        let cash_register_id = cash_register_id.clone();
+        async move {
+            self.list_cash_shifts(
+                &organization_id,
+                &branch_id,
+                &cash_register_id,
+                status,
+                limit,
+                offset,
+            )
+            .await
+            .map_err(cash_storage_error)
+        }
+    }
+
+    fn cash_register_has_open_shift(
+        &mut self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+        cash_register_id: &EntityId,
+    ) -> impl Future<Output = Result<bool, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let branch_id = branch_id.clone();
+        let cash_register_id = cash_register_id.clone();
+        async move {
+            self.cash_register_has_open_shift(&organization_id, &branch_id, &cash_register_id)
+                .await
+                .map_err(cash_storage_error)
+        }
+    }
+
+    fn candidate_utc_seconds(
+        &mut self,
+        occurred_at: &AuditOccurredAt,
+    ) -> impl Future<Output = Result<UtcSeconds, ApplicationError>> + Send {
+        let occurred_at = occurred_at.clone();
+        async move {
+            self.candidate_utc_seconds(&occurred_at)
+                .await
+                .map_err(cash_storage_error)
+        }
+    }
+
+    fn insert_cash_shift(
+        &mut self,
+        shift: &CashShift,
+        opened_at: &str,
+    ) -> impl Future<Output = Result<(), ApplicationError>> + Send {
+        let shift = shift.clone();
+        let opened_at = opened_at.to_owned();
+        async move {
+            self.insert_cash_shift(&shift, &opened_at)
+                .await
+                .map_err(cash_storage_error)
+        }
+    }
+
+    fn close_cash_shift_cas(
+        &mut self,
+        previous_revision: u64,
+        shift: &CashShift,
+        occurred_at: &str,
+    ) -> impl Future<Output = Result<CasOutcome, ApplicationError>> + Send {
+        let shift = shift.clone();
+        let occurred_at = occurred_at.to_owned();
+        async move {
+            self.close_cash_shift_cas(previous_revision, &shift, &occurred_at)
+                .await
+                .map_err(cash_storage_error)
         }
     }
 }

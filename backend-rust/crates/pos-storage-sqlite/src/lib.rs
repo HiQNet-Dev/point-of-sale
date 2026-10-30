@@ -52,16 +52,8 @@ use pos_core::organization_branch::{
 };
 use sqlx::{SqlStr, Sqlite, SqliteConnection, SqlitePool, Transaction};
 
-/// Resultado de una actualización CAS scoped.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CasOutcome {
-    /// La fila fue actualizada y su versión ya fue incrementada por el dominio.
-    Updated,
-    /// No existe una fila en el scope solicitado.
-    Missing,
-    /// Existe una fila en el scope, pero su versión ya no coincide.
-    Conflict,
-}
+/// Resultado de una actualización condicional por revisión (CAS).
+pub use pos_application::CasOutcome;
 
 /// Error tipado del adaptador experimental Organization/Branch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]

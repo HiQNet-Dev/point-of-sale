@@ -29,10 +29,7 @@ use pos_core::{
 };
 use serde_json::json;
 
-use crate::{
-    CasOutcome, SqliteTransaction, SqliteUnitOfWork,
-    cash_store::{CashStorageError, OpenSalesForCashShift},
-};
+use crate::{CasOutcome, SqliteTransaction, SqliteUnitOfWork, cash_store::OpenSalesForCashShift};
 
 const SELECT_SALE: &str = "SELECT id, organization_id, branch_id, cash_register_id, cash_shift_id, \
     created_by_user_id, cancelled_by_user_id, completed_by_user_id, status, total_amount, version, \
@@ -655,19 +652,19 @@ impl SqliteTransaction {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SqliteOpenSalesForCashShift;
 
-impl OpenSalesForCashShift for SqliteOpenSalesForCashShift {
+impl OpenSalesForCashShift<SqliteTransaction> for SqliteOpenSalesForCashShift {
     fn has_open_sales(
         &self,
         transaction: &mut SqliteTransaction,
         cash_shift_id: &EntityId,
-    ) -> impl Future<Output = Result<bool, CashStorageError>> + Send {
+    ) -> impl Future<Output = Result<bool, ApplicationError>> + Send {
         let cash_shift_id = cash_shift_id.clone();
         async move {
             let exists: i64 = sqlx::query_scalar(OPEN_SALE_EXISTS)
                 .bind(cash_shift_id.as_str())
                 .fetch_one(transaction.connection())
                 .await
-                .map_err(|_| CashStorageError::Database)?;
+                .map_err(|_| ApplicationError::Storage)?;
             Ok(exists != 0)
         }
     }
