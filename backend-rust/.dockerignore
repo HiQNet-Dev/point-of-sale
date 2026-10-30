@@ -1,5 +1,8 @@
 target/
-proposals/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+
+# `proposals/` NO se excluye: el stage de build de `pos-lab` las embebe con
+# `include_str!`. La imagen final solo copia binarios y el script de healthcheck,
+# por lo que el DDL candidato no se distribuye en runtime.

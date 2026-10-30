@@ -15,6 +15,9 @@ COPY crates ./crates
 COPY apps ./apps
 COPY tools ./tools
 COPY migrations ./migrations
+# Las propuestas candidatas se embeben en `pos-lab` con `include_str!`; no se
+# cargan en el migrador productivo.
+COPY proposals ./proposals
 
 RUN cargo build --locked --release -p pos-local -p pos-lab
 

@@ -1,7 +1,12 @@
 # Tablero maestro de migración Java → Rust
 
-**Actualizado en el Incremento 1T.** Este tablero registra el estado real de la
+**Actualizado en el Incremento 1V.** Este tablero registra el estado real de la
 migración, no el deseado. Un estado solo avanza con evidencia publicada.
+
+Arquitectura: monolito modular hexagonal (`pos-core` ← `pos-application` ←
+`pos-storage-sqlite` ← `pos-local`), documentada en
+`docs/01-architecture/rust-hexagonal-architecture.md` y obligatoria en
+`AGENTS.md`.
 
 ## 1. Escala de estados
 
@@ -43,8 +48,10 @@ auditoría transaccional— sobre un esquema **candidato** que aún no vive en
 | Proveedores | `DOMAIN` | `pos-core::supplier`, slug inmutable, contacto acotado, email normalizado y snapshot | DDL, adaptador, API |
 | Recetas y efectos de modificador | `PERSISTENCE (fixture)` | `pos-core::recipe`, `0014` candidato, resolución de consumo y snapshots usados por checkout | Mantenimiento administrativo, aprobación D-INV, promoción, API |
 | API HTTP / OpenAPI | `NOT_STARTED` | — | Todo |
+| Transporte Local | `NOT_DECIDED` | Sin Tauri/IPC ni socket HTTP. No se introduce red por inercia | ADR de transporte y contrato de invocación |
 | Integración React | `NOT_STARTED` | — | Todo |
-| Arnés Docker Local | `DEV HARNESS (validated)` | `backend-rust/Dockerfile` multi-stage, runtime no-root, volumen, healthcheck y reinicio con checksum idéntico (Windows/Linux Docker) | No es distribución Free Local ni expone red |
+| Arnés Docker Local | `DEV HARNESS (validated)` | `backend-rust/Dockerfile` multi-stage, runtime no-root, volumen, healthcheck funcional (`verify_health`: integridad + migraciones), reinicio y `down`/`up` con checksum idéntico | No es distribución Free Local ni expone red |
+| Arnés sintético extremo a extremo | `E2E (synthetic)` | `tools/pos-lab`: bootstrap → admin → sesión → RBAC → sucursal → categoría → producto → inventario → receta → caja → turno → venta → checkout → consumo → `COMPLETED` → auditoría → cierre → reapertura. Ejecutado en local y en Docker | Sigue sobre esquema **candidato**; no es producto |
 
 ## 3. Dinero y cantidades
 
