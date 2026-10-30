@@ -992,3 +992,63 @@ async fn permission_grammar_matches_rust_validation() -> Result<(), Box<dyn std:
     );
     Ok(())
 }
+
+/// El contrato de `AuditOccurredAt` admite fracción opcional de segundo.
+/// El CHECK candidato debe aceptar ambas formas sin habilitar texto libre.
+#[tokio::test]
+async fn audit_occurred_at_accepts_optional_fraction_and_rejects_junk()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let pool = open_proposed(&temp.path().join("audit-timestamp.sqlite")).await?;
+    seed(&pool).await?;
+
+    let mut accepted = 0_u16;
+    for stamp in [
+        "2026-10-29T14:35:12Z",
+        "2026-10-29T14:35:12.1Z",
+        "2026-10-29T14:35:12.123Z",
+        "2026-10-29T14:35:12.123456789Z",
+    ] {
+        accepted += 1;
+        let id = format!("00000000-0000-0000-0000-0000000000c{accepted}");
+        sqlx::query(
+            "INSERT INTO audit_event (id, organization_id, actor_type, action, entity_type, occurred_at, event_version) \
+             VALUES (?, ?, 'SYSTEM', 'timestamp.test', 'audit_event', ?, 1)",
+        )
+        .bind(id)
+        .bind(ORG)
+        .bind(stamp)
+        .execute(&pool)
+        .await
+        .unwrap_or_else(|error| panic!("instante aceptado indebidamente rechazado ({stamp}): {error}"));
+    }
+    assert_eq!(accepted, 4);
+
+    for (index, stamp) in [
+        "2026-10-29T14:35:12",
+        "2026-10-29T14:35:12.Z",
+        "2026-10-29T14:35:12.12aZ",
+        "2026-10-29 14:35:12Z",
+        "2026-10-29T14:35:12+00:00",
+        "2026-10-29T14:35:12.123",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let id = format!("00000000-0000-0000-0000-0000000001{index:02x}");
+        assert!(
+            sqlx::query(
+                "INSERT INTO audit_event (id, organization_id, actor_type, action, entity_type, occurred_at, event_version) \
+                 VALUES (?, ?, 'SYSTEM', 'timestamp.test', 'audit_event', ?, 1)",
+            )
+            .bind(id)
+            .bind(ORG)
+            .bind(stamp)
+            .execute(&pool)
+            .await
+            .is_err(),
+            "instante aceptado indebidamente: {stamp}"
+        );
+    }
+    Ok(())
+}

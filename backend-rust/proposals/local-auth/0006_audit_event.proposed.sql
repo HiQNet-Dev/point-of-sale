@@ -22,7 +22,19 @@ CREATE TABLE audit_event (
         metadata_json IS NULL
         OR (json_valid(metadata_json) AND length(CAST(metadata_json AS BLOB)) <= 16384)
     ),
-    occurred_at TEXT NOT NULL CHECK (occurred_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'),
+    occurred_at TEXT NOT NULL CHECK (
+        -- El dominio `AuditOccurredAt` admite fracción opcional de segundo
+        -- (RFC 3339). El CHECK acepta ambas formas sin habilitar texto libre.
+        occurred_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+        OR (
+            length(occurred_at) BETWEEN 22 AND 30
+            AND substr(occurred_at, 20, 1) = '.'
+            AND substr(occurred_at, -1, 1) = 'Z'
+            AND substr(occurred_at, 1, 19)
+                GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]'
+            AND substr(occurred_at, 21, length(occurred_at) - 21) NOT GLOB '*[^0-9]*'
+        )
+    ),
     event_version INTEGER NOT NULL DEFAULT 1 CHECK (event_version >= 1),
     CHECK (
         (actor_type = 'USER' AND actor_user_id IS NOT NULL)

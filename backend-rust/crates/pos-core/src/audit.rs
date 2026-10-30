@@ -401,6 +401,71 @@ pub struct AuditEventRecord {
     pub event_version: AuditEventVersion,
 }
 
+impl AuditEventRecord {
+    /// Construye un hecho USER a partir de un principal ya verificado.
+    ///
+    /// Es la vía autorizada para la aplicación: la organización, la sucursal, el
+    /// actor y la sesión proceden del principal, nunca de la petición. Un
+    /// transporte no puede elegir `actor_user_id`, `SYSTEM` ni el scope.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_verified_principal(
+        id: AuditEventId,
+        principal: &crate::identity::VerifiedPrincipal,
+        action: AuditAction,
+        entity_type: AuditEntityType,
+        entity_id: Option<EntityId>,
+        metadata_json: AuditMetadata,
+        occurred_at: AuditOccurredAt,
+    ) -> Self {
+        Self {
+            id,
+            organization_id: principal.scope().organization_id().clone(),
+            branch_id: principal.scope().branch_id().cloned(),
+            actor: principal.audit_actor(),
+            action,
+            entity_type,
+            entity_id,
+            reason: None,
+            session_id: Some(principal.session_id().clone()),
+            metadata_json,
+            occurred_at,
+            event_version: AuditEventVersion::INITIAL,
+        }
+    }
+
+    /// Construye el hecho canónico de bootstrap completado.
+    ///
+    /// Es la única vía pública para obtener un actor `SYSTEM`: se limita a la
+    /// procedencia [`SystemProvenance::SecureBootstrap`] y a esta acción, de modo
+    /// que ningún transporte puede fabricar un actor SYSTEM arbitrario. Un
+    /// bootstrap no tiene sesión de usuario.
+    ///
+    /// # Errors
+    /// Devuelve [`AuditError`] si la acción, el tipo o el instante no cumplen el
+    /// contrato de auditoría.
+    pub fn bootstrap_completed(
+        id: AuditEventId,
+        organization_id: EntityId,
+        entity_id: EntityId,
+        occurred_at: AuditOccurredAt,
+    ) -> Result<Self, AuditError> {
+        Ok(Self {
+            id,
+            organization_id,
+            branch_id: None,
+            actor: AuditActor::system(SystemProvenance::SecureBootstrap),
+            action: AuditAction::new("bootstrap.completed")?,
+            entity_type: AuditEntityType::new("bootstrap_record")?,
+            entity_id: Some(entity_id),
+            reason: None,
+            session_id: None,
+            metadata_json: AuditMetadata::empty(),
+            occurred_at,
+            event_version: AuditEventVersion::INITIAL,
+        })
+    }
+}
+
 fn validate_metadata_value(value: &Value, depth: usize) -> Result<(), AuditError> {
     if depth > MAX_METADATA_DEPTH {
         return Err(AuditError::MetadataTooDeep);
