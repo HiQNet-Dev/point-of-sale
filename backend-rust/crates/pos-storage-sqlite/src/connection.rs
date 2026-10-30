@@ -122,6 +122,18 @@ pub async fn migrate(pool: &SqlitePool) -> Result<(), StorageError> {
         .map_err(|_| StorageError::Migration)
 }
 
+/// Última versión aprobada, derivada del mismo migrador que se ejecuta.
+///
+/// El composition root usa este valor para clasificar una instalación sin
+/// duplicar el número de versión en el código de aplicación.
+pub fn approved_schema_version() -> i64 {
+    sqlx::migrate!("../../migrations/local")
+        .iter()
+        .map(|migration| migration.version)
+        .max()
+        .unwrap_or(0)
+}
+
 /// Comprueba integridad y migraciones aplicadas para el healthcheck del proceso.
 ///
 /// Es una lectura: no crea el archivo, no migra y no escribe. Un volumen vacío

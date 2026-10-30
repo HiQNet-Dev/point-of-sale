@@ -1,11 +1,19 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "HiQNet Rust Lab - NOT PRODUCTIVE",
+  "productName": "HiQNet POS Local - PREVIEW",
   "version": "0.1.0",
   "identifier": "local.hiqnet.rustlab",
   "build": { "frontendDist": "../../../frontend/dist-rust-lab" },
   "app": {
-    "windows": [{ "label": "main", "title": "HiQNet Rust Lab — SQLite sintético, no productivo", "url": "rust-lab.html", "width": 1100, "height": 760 }],
+    "windows": [
+      {
+        "label": "main",
+        "title": "HiQNet POS — Local (sin activación comercial)",
+        "url": "rust-lab.html",
+        "width": 1100,
+        "height": 760
+      }
+    ],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost; img-src 'self' data:"
     }

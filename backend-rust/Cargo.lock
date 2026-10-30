@@ -860,6 +860,7 @@ version = "0.1.0"
 dependencies = [
  "pos-core",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -902,6 +903,7 @@ dependencies = [
 name = "pos-local"
 version = "0.1.0"
 dependencies = [
+ "pos-application",
  "pos-storage-sqlite",
  "sqlx",
  "tempfile",

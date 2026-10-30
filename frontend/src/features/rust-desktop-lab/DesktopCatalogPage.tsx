@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Alert, Box, Button, Container, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material'
-import { desktopCatalogService } from '../../shared/rust-local/desktop-client'
+import { desktopService } from '../../shared/rust-local/desktop-client'
 
 /** Pantalla aislada: no sustituye login ni administración del backend Java. */
 export function DesktopCatalogPage() {
   const [offset, setOffset] = useState(0)
-  const branches = useQuery({ queryKey: ['rust-lab', 'branches'], queryFn: desktopCatalogService.listBranches, retry: false })
-  const categories = useQuery({ queryKey: ['rust-lab', 'categories', offset], queryFn: () => desktopCatalogService.listCategories(offset), retry: false })
-  const products = useQuery({ queryKey: ['rust-lab', 'products', offset], queryFn: () => desktopCatalogService.listProducts(offset), retry: false })
+  const branches = useQuery({ queryKey: ['rust-lab', 'branches'], queryFn: desktopService.listBranches, retry: false })
+  const categories = useQuery({ queryKey: ['rust-lab', 'categories', offset], queryFn: () => desktopService.listCategories(offset), retry: false })
+  const products = useQuery({ queryKey: ['rust-lab', 'products', offset], queryFn: () => desktopService.listProducts(offset), retry: false })
   const error = branches.error ?? categories.error ?? products.error
   return <Container component="main" maxWidth="lg" sx={{ py: 4 }}>
     <Stack spacing={3}>

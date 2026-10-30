@@ -1,11 +1,14 @@
 //! Handlers IPC: solo traducen entradas y delegan, sin SQL ni reglas empresariales.
-use crate::{composition::DesktopState, dto::*};
+use crate::{
+    composition::LocalState,
+    dto::{BranchDto, CategoryDto, InstallationStatusDto, IpcError, PageRequest, ProductDto},
+};
 use tauri::State;
 
 /// Consulta sucursales: branch.read, scope organización del principal.
 #[tauri::command]
 #[specta::specta]
-pub async fn lab_list_branches(state: State<'_, DesktopState>) -> Result<Vec<BranchDto>, IpcError> {
+pub async fn lab_list_branches(state: State<'_, LocalState>) -> Result<Vec<BranchDto>, IpcError> {
     state.branches().await
 }
 
@@ -13,7 +16,7 @@ pub async fn lab_list_branches(state: State<'_, DesktopState>) -> Result<Vec<Bra
 #[tauri::command]
 #[specta::specta]
 pub async fn lab_list_categories(
-    state: State<'_, DesktopState>,
+    state: State<'_, LocalState>,
     request: PageRequest,
 ) -> Result<Vec<CategoryDto>, IpcError> {
     state.categories(request).await
@@ -23,10 +26,19 @@ pub async fn lab_list_categories(
 #[tauri::command]
 #[specta::specta]
 pub async fn lab_list_products(
-    state: State<'_, DesktopState>,
+    state: State<'_, LocalState>,
     request: PageRequest,
 ) -> Result<Vec<ProductDto>, IpcError> {
     state.products(request).await
+}
+
+/// Estado de la instalación persistente; no expone datos de negocio ni identidad.
+#[tauri::command]
+#[specta::specta]
+pub fn installation_status(
+    state: State<'_, LocalState>,
+) -> Result<InstallationStatusDto, IpcError> {
+    state.installation_status()
 }
 
 /// Registro único utilizado para el dispatcher real y la generación TypeScript.
@@ -35,5 +47,6 @@ pub fn registry<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         lab_list_branches,
         lab_list_categories,
         lab_list_products,
+        installation_status,
     ])
 }

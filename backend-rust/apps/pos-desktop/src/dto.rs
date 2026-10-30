@@ -58,8 +58,20 @@ pub struct ProductDto {
     pub version: String,
 }
 
-/// Error seguro; nunca contiene SQL ni material de sesión.
+/// Estado de la instalación persistente al abrir la aplicación.
 #[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallationStatusDto {
+    /// `FIRST_INSTALL` si este arranque creó el esquema; `REOPENED` si ya existía.
+    pub state: String,
+    /// Versión de esquema aplicada, acotada al migrador aprobado del build.
+    pub schema_version: u32,
+    /// Migraciones aplicadas con éxito.
+    pub applied_migrations: u32,
+}
+
+/// Error seguro; nunca contiene SQL ni material de sesión.
+#[derive(Debug, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "code", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum IpcError {
     /// Sesión inexistente, vencida, revocada o scope no válido.
@@ -68,6 +80,8 @@ pub enum IpcError {
     Forbidden,
     /// Página fuera del contrato.
     ValidationError,
+    /// La operación no existe en el modo actual de la aplicación.
+    OperationNotAvailable,
     /// Fallo interno, sin detalles del adaptador.
     InternalError,
 }

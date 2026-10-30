@@ -2643,7 +2643,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pos-desktop-lab"
+name = "pos-desktop"
 version = "0.1.0"
 dependencies = [
  "pos-application",

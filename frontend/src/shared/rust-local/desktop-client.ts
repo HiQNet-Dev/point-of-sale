@@ -19,8 +19,10 @@ async function unwrap<T>(operation: Promise<{ status: 'ok'; data: T } | { status
   return result.data
 }
 
-/** Única frontera de la pantalla; los componentes no invocan Tauri directamente. */
-export const desktopCatalogService = {
+/** Única frontera de la ventana; los componentes no invocan Tauri directamente. */
+export const desktopService = {
+  /** Estado de la instalación persistente; el laboratorio responde OPERATION_NOT_AVAILABLE. */
+  installationStatus: () => unwrap(commands.installationStatus()),
   listBranches: () => unwrap(commands.labListBranches()),
   listCategories: (offset = 0) => unwrap(commands.labListCategories({ limit: 20, offset })),
   listProducts: (offset = 0) => unwrap(commands.labListProducts({ limit: 20, offset })),

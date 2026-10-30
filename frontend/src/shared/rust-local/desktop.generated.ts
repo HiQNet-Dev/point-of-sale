@@ -10,6 +10,8 @@ export const commands = {
 	labListCategories: (request: PageRequest) => typedError<CategoryDto[], IpcError>(__TAURI_INVOKE("lab_list_categories", { request })),
 	/**  Consulta productos: product.read; el precio se serializa como texto exacto. */
 	labListProducts: (request: PageRequest) => typedError<ProductDto_Serialize[], IpcError>(__TAURI_INVOKE("lab_list_products", { request })),
+	/**  Estado de la instalación persistente; no expone datos de negocio ni identidad. */
+	installationStatus: () => typedError<InstallationStatusDto, IpcError>(__TAURI_INVOKE("installation_status")),
 };
 
 /* Types */
@@ -37,6 +39,16 @@ export type CategoryDto = {
 	version: string,
 };
 
+/**  Estado de la instalación persistente al abrir la aplicación. */
+export type InstallationStatusDto = {
+	/**  `FIRST_INSTALL` si este arranque creó el esquema; `REOPENED` si ya existía. */
+	state: string,
+	/**  Versión de esquema aplicada, acotada al migrador aprobado del build. */
+	schemaVersion: number,
+	/**  Migraciones aplicadas con éxito. */
+	appliedMigrations: number,
+};
+
 /**  Error seguro; nunca contiene SQL ni material de sesión. */
 export type IpcError =
 /**  Sesión inexistente, vencida, revocada o scope no válido. */
@@ -45,6 +57,8 @@ export type IpcError =
 { code: "FORBIDDEN" } |
 /**  Página fuera del contrato. */
 { code: "VALIDATION_ERROR" } |
+/**  La operación no existe en el modo actual de la aplicación. */
+{ code: "OPERATION_NOT_AVAILABLE" } |
 /**  Fallo interno, sin detalles del adaptador. */
 { code: "INTERNAL_ERROR" };
 

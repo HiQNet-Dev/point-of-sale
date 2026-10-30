@@ -3,8 +3,12 @@
 mod signals;
 mod telemetry;
 
+use pos_application::installation::{ApprovedSchema, InstallationReport, prepare_installation};
 use pos_local::{config::Config, shutdown::checkpoint_and_close};
-use pos_storage_sqlite::{checkpoint, migrate, open, verify_health};
+use pos_storage_sqlite::{
+    approved_schema_version, checkpoint, installation::SqliteInstallationSchema, open,
+    verify_health,
+};
 use signals::ShutdownSignals;
 use std::process::ExitCode;
 use telemetry::{Event, emit};
@@ -43,6 +47,16 @@ async fn health() -> ExitCode {
     }
 }
 
+/// Prepara la instalación traduciendo el fallo a un evento propio.
+async fn prepare(
+    schema: &SqliteInstallationSchema,
+    approved: ApprovedSchema,
+) -> Result<InstallationReport, Event> {
+    prepare_installation(schema, schema, approved)
+        .await
+        .map_err(Event::InstallationRejected)
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     if std::env::args().any(|argument| argument == "--health") {
@@ -67,6 +81,7 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let existed = config.db_path().exists();
     let pool = match open(config.db_path(), config.busy_timeout()).await {
         Ok(pool) => pool,
         Err(_) => {
@@ -74,10 +89,23 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let schema = SqliteInstallationSchema::new(pool.clone(), existed);
+    let approved = match ApprovedSchema::new(approved_schema_version()) {
+        Ok(approved) => approved,
+        // Deriva del migrador embebido: un valor inválido es un defecto de build.
+        Err(error) => {
+            emit(Event::InstallationRejected(error));
+            pool.close().await;
+            return ExitCode::FAILURE;
+        }
+    };
 
     // Después de open no hay retornos tempranos que omitan la liberación del pool.
     let operation = async {
-        migrate(&pool).await.map_err(|_| Event::MigrationFailed)?;
+        // Clasifica antes de migrar para distinguir primera instalación de reapertura
+        // y rechazar bases creadas por un binario más reciente.
+        let report = prepare(&schema, approved).await?;
+        emit(Event::InstallationResolved(report));
         emit(Event::Ready);
         signals.wait().await.map_err(|()| Event::SignalWaitFailed)?;
         emit(Event::ShutdownRequested);

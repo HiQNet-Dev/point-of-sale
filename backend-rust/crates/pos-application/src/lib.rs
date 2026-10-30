@@ -32,6 +32,8 @@ pub mod cash;
 pub mod catalog;
 /// Caso de uso de checkout atómico.
 pub mod checkout;
+/// Ciclo de vida de la instalación Local: primera instalación y reapertura.
+pub mod installation;
 /// Casos de uso de Organization y Branch.
 pub mod organization;
 

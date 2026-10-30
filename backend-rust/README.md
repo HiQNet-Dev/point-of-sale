@@ -2,13 +2,15 @@
 
 **Estado: PARCIAL. Solo desarrollo y datos sintéticos. No sustituye Java.**
 
-**Primera ventana React → Rust (1X):** desde `frontend/`, ejecutar
-`pnpm desktop:lab` (Windows + MSVC + WebView2). Abre el catálogo de laboratorio
-sobre SQLite temporal mediante Tauri/IPC real, sin Java ni servidor HTTP.
-`pnpm test:desktop-lab` ejecuta su E2E gráfico. Ver
-[contratos y límites](../docs/03-api/rust-desktop-ipc.md). El workspace gráfico
-`tools/desktop-lab` tiene lockfile propio y no forma parte de los checks headless
-ni del runtime comercial `pos-local`.
+**Aplicación de escritorio (1X–1Y):** desde `frontend/`, ejecutar
+`pnpm desktop:lab` (Windows + MSVC + WebView2) para el catálogo sintético, o
+`pnpm desktop:install -- <directorio>` para abrir una **instalación persistente**
+con las migraciones aprobadas. Ambos usan Tauri/IPC real, sin Java ni servidor
+HTTP. `pnpm test:desktop-lab` y `pnpm test:desktop-installation` ejecutan sus E2E
+gráficos. Ver [contratos y límites](../docs/03-api/rust-desktop-ipc.md) y
+[ADR-0024](../docs/01-architecture/adr/0024-local-persistent-installation.md).
+El workspace gráfico `apps/pos-desktop` tiene lockfile propio y no forma parte de
+los checks headless ni del runtime comercial `pos-local`.
 
 Esta foundation materializa el comienzo de F4–21, no Free Local completo. El
 laboratorio integrado ejecuta **41 comprobaciones técnicas reales** (SQLite,
@@ -47,6 +49,8 @@ backend-rust/
   crates/pos-core/             # Sin dependencias externas ni SQLx
   crates/pos-storage-sqlite/   # Open, migración Local embebida, checkpoint
   apps/pos-local/              # Proceso de prueba, sin HTTP, IPC, auth ni UI
+  apps/pos-desktop/            # Tauri/IPC: laboratorio y instalación persistente
+                               # (workspace y lockfile propios)
   migrations/local/           # 0001: organization / branch (parcial)
   migrations/central/         # 0001: operational_tenant (ejecutado, parcial)
   migrations/control/         # 0001: customer (ejecutado, parcial)
@@ -120,9 +124,11 @@ POS_LOCAL_DB_PATH=target/local-synthetic.sqlite POS_LOCAL_BUSY_TIMEOUT_MS=250 ca
 `250` ms es un ejemplo explícito de laboratorio, **no una política de producto
 medida**. Ambas variables son obligatorias; rango técnico `1..=60000` ms. No hay
 `.env` automático ni secretos de ejemplo. Interrumpir con Ctrl+C; SIGTERM también
-solicita cierre. El proceso migra el subconjunto, espera la señal, ejecuta un
-checkpoint y cierra el pool incluso ante error; errores de cierre causan salida
-no cero. Un checkpoint **no es un backup**.
+solicita cierre. El proceso clasifica la instalación (`first_install` o
+`reopened`), migra sólo el subconjunto aprobado, espera la señal, ejecuta un
+checkpoint y cierra el pool incluso ante error; una base creada por un binario
+más reciente se rechaza antes de operar. Errores de cierre causan salida no cero.
+Un checkpoint **no es un backup**.
 
 ## Persistencia y límites
 
@@ -224,6 +230,9 @@ No ejecutar down migrations sobre bases reales.
 - [Tablero maestro de migración](../docs/05-development/rust-migration-board.md).
 - [Expediente de aprobación 1I](../docs/05-development/rust-1i-approval-decision-record.md).
 - [Especificación real del lab y artefactos](tools/migration-lab/README.md).
+- [Incremento 1X — vertical Tauri/React](../docs/05-development/rust-increment-1x.md).
+- [Incremento 1Y — instalación Local persistente](../docs/05-development/rust-increment-1y.md).
+- [Paquete de decisión 1Y](../docs/05-development/rust-increment-1y-approval-package.md).
 - [ADR-0020](../docs/01-architecture/adr/0020-rust-foundation-sqlx-migration-boundary.md).
 - [CI y gate normativo obligatorio](../docs/05-development/ci.md).
 

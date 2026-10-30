@@ -23,6 +23,8 @@ pub mod connection;
 pub mod credential;
 /// Adaptador de identidad y permisos exclusivo de laboratorio (tablas `*_lab`).
 pub mod identity;
+/// Observación del historial de migraciones para el ciclo de vida de instalación.
+pub mod installation;
 /// Inventario persistente candidato: artículos, saldos, ledger y recetas.
 pub mod inventory;
 mod organization_branch;
@@ -31,7 +33,9 @@ mod prelude;
 pub mod sales;
 mod transaction;
 
-pub use connection::{StorageError, checkpoint, migrate, open, verify_health};
+pub use connection::{
+    StorageError, approved_schema_version, checkpoint, migrate, open, verify_health,
+};
 pub use organization_branch::{
     OrganizationBranchStorageError, SqliteBranchApplication, SqliteOrganizationApplication,
     SqliteOrganizationBranchStore,

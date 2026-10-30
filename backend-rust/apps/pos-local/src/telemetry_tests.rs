@@ -1,4 +1,5 @@
 use super::{Event, emit, subscriber};
+use pos_application::installation::{InstallationError, InstallationReport, InstallationState};
 use pos_local::config::ConfigError;
 use std::{
     io,
@@ -61,5 +62,36 @@ fn json_events_exclude_dependency_sql_paths_and_raw_errors()
     assert!(output.contains("\"event\":\"configuration_rejected\""));
     assert!(output.contains("\"reason\":\"invalid_db_path\""));
     assert!(!output.contains("sensitive"));
+    Ok(())
+}
+
+#[test]
+fn installation_events_use_a_closed_vocabulary() -> Result<(), Box<dyn std::error::Error>> {
+    let captured = Captured::default();
+    tracing::subscriber::with_default(subscriber(captured.clone()), || {
+        emit(Event::InstallationResolved(InstallationReport {
+            state: InstallationState::FirstInstall,
+            schema_version: 1,
+            applied_migrations: 1,
+            database_existed: false,
+        }));
+        emit(Event::InstallationRejected(
+            InstallationError::SchemaAhead {
+                found: 2,
+                approved: 1,
+            },
+        ));
+    });
+    let output = captured
+        .0
+        .lock()
+        .map_err(|_| io::Error::other("captura bloqueada"))?
+        .clone();
+    let output = String::from_utf8(output)?;
+    assert!(output.contains("\"event\":\"installation_ready\""));
+    assert!(output.contains("\"state\":\"first_install\""));
+    assert!(output.contains("\"schema_version\":1"));
+    assert!(output.contains("\"event\":\"installation_rejected\""));
+    assert!(output.contains("\"reason\":\"schema_ahead\""));
     Ok(())
 }
