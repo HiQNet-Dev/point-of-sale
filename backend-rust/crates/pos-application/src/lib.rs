@@ -32,6 +32,8 @@ pub mod cash;
 pub mod catalog;
 /// Caso de uso de checkout atómico.
 pub mod checkout;
+/// Casos de uso, DTOs y puertos de inventario.
+pub mod inventory;
 /// Contexto operativo de una venta (sucursal, caja y turno vigentes).
 pub mod sales;
 pub mod sales_context;

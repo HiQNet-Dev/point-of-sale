@@ -16,30 +16,19 @@
 //! - El ledger es append-only por trigger; el saldo se materializa por CAS.
 //! - La sucursal siempre procede del principal verificado, nunca del cliente.
 
-use pos_application::{
-    audit::append_audit,
-    authorization::{require_operational_branch, require_organization_scope},
-};
 use pos_core::{
     audit::AuditOccurredAt,
     catalog::{CatalogCode, Description},
-    identity::{UtcSeconds, VerifiedPrincipal}, /*  */
+    identity::UtcSeconds,
     inventory::{
-        InventoryBaseUnit, InventoryError, InventoryItem, InventoryMovement, InventoryMovementType,
-        MovementReason, NewInventoryItem, NewMovement, Quantity, StockBalance,
-        ensure_opening_allowed,
+        InventoryBaseUnit, InventoryItem, InventoryMovement, InventoryMovementType, MovementReason,
+        Quantity, StockBalance,
     },
-    organization_branch::{
-        ApplicationError, DisplayName, EntityId, IdentityGenerator, Permission, Status,
-    },
+    organization_branch::{ApplicationError, DisplayName, EntityId, Status},
     recipe::{ResolvedComponent, ResolvedEffect},
 };
-use serde_json::json;
 
-use crate::{CasOutcome, SqliteTransaction, SqliteUnitOfWork, sales_store::finish};
-
-/// Tamaño máximo de página para listados de inventario.
-pub const MAX_INVENTORY_PAGE_SIZE: u32 = 100;
+use crate::{CasOutcome, SqliteTransaction, SqliteUnitOfWork};
 
 const SELECT_ITEM: &str = "SELECT id, organization_id, code, name, description, base_unit, \
     fractional_unit_allowed, unit_locked, status, version \
@@ -99,45 +88,12 @@ const SELECT_ITEM_EFFECTS: &str = "SELECT e.inventory_item_id AS inventory_item_
     WHERE sim.organization_id = ? AND sim.sale_item_id = ? \
     ORDER BY e.inventory_item_id";
 
-fn storage() -> ApplicationError {
-    ApplicationError::Storage
-}
-
-fn invalid() -> ApplicationError {
-    ApplicationError::InvalidInventoryInput
-}
-
 fn transaction_error(_: crate::OrganizationBranchStorageError) -> ApplicationError {
     ApplicationError::Storage
 }
 
 fn revision_to_i64(value: u64) -> Result<i64, ApplicationError> {
     i64::try_from(value).map_err(|_| storage())
-}
-
-/// Traduce un fallo de dominio sin perder el tipado público.
-fn inventory_error(error: InventoryError) -> ApplicationError {
-    match error {
-        InventoryError::InsufficientInventory => ApplicationError::InsufficientInventory,
-        InventoryError::OpeningAlreadyExists => ApplicationError::InventoryOpeningAlreadyExists,
-        InventoryError::ConcurrentModification => ApplicationError::ConcurrentModification,
-        InventoryError::OwnershipMismatch => ApplicationError::OwnershipMismatch,
-        InventoryError::InvalidQuantity
-        | InventoryError::QuantityOverflow
-        | InventoryError::UnitLocked
-        | InventoryError::FractionalQuantityNotAllowed
-        | InventoryError::ReasonRequired
-        | InventoryError::ReasonTooLong
-        | InventoryError::HistoryAlreadyExists
-        | InventoryError::OpeningMustBeNonNegative
-        | InventoryError::AdjustmentMustNotBeZero
-        | InventoryError::SaleConsumptionMustBeNegative
-        | InventoryError::SaleConsumptionRequiresSale
-        | InventoryError::PurchaseReceiptMustBePositive
-        | InventoryError::PurchaseReceiptRequiresLine
-        | InventoryError::UnexpectedMovementReference => ApplicationError::InvalidInventoryInput,
-        InventoryError::RevisionOverflow | InventoryError::InvalidPersistedValue => storage(),
-    }
 }
 
 fn map_inventory_write(error: &sqlx::Error) -> ApplicationError {
@@ -576,393 +532,220 @@ impl SqliteTransaction {
     }
 }
 
-/// Entrada para crear un artículo de inventario.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NewInventoryItemRequest {
-    /// Código canónico; se normaliza igual que en Java.
-    pub code: String,
-    /// Nombre visible.
-    pub name: String,
-    /// Descripción opcional.
-    pub description: Option<String>,
-    /// Unidad base de todas las cantidades del artículo.
-    pub base_unit: InventoryBaseUnit,
-    /// Si el artículo admite cantidades fraccionarias.
-    pub fractional_unit_allowed: bool,
-}
+pub use pos_application::inventory::{
+    AdjustStockRequest, InventoryApplication, InventoryPage, InventoryTransaction,
+    InventoryUnitOfWork, MAX_INVENTORY_PAGE_SIZE, NewInventoryItemRequest, OpenStockRequest,
+};
 
-/// Entrada de apertura de existencias.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OpenStockRequest {
-    /// Artículo de la organización del principal.
-    pub inventory_item_id: EntityId,
-    /// Cantidad declarada como existencias iniciales.
-    pub quantity: String,
-}
+/// Alias de compatibilidad: el caso de uso vive ahora en `pos-application`.
+pub type SqliteInventoryApplication = InventoryApplication<SqliteUnitOfWork>;
 
-/// Entrada de ajuste manual con motivo obligatorio.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AdjustStockRequest {
-    /// Artículo de la organización del principal.
-    pub inventory_item_id: EntityId,
-    /// Delta firmado y distinto de cero.
-    pub quantity_delta: String,
-    /// Motivo normalizado del ajuste.
-    pub reason: String,
-}
+impl InventoryUnitOfWork for SqliteUnitOfWork {
+    type Transaction = SqliteTransaction;
 
-/// Página determinista de artículos de inventario.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct InventoryPage {
-    /// Máximo de filas, entre uno y [`MAX_INVENTORY_PAGE_SIZE`].
-    pub limit: u32,
-    /// Desplazamiento en el orden por código e identidad.
-    pub offset: u32,
-}
-
-/// Casos de uso candidatos de inventario. No forma parte del composition root
-/// productivo mientras no exista DDL aprobado.
-#[derive(Clone)]
-pub struct SqliteInventoryApplication {
-    unit_of_work: SqliteUnitOfWork,
-}
-
-impl SqliteInventoryApplication {
-    /// Ensambla inventario candidato sobre una UoW SQLite configurada.
-    pub fn new(unit_of_work: SqliteUnitOfWork) -> Self {
-        Self { unit_of_work }
+    async fn begin_transaction(&self) -> Result<SqliteTransaction, ApplicationError> {
+        SqliteUnitOfWork::begin(self)
+            .await
+            .map_err(transaction_error)
     }
 
-    /// Crea un artículo activo; el código es único por organización.
-    pub async fn create_item<I: IdentityGenerator>(
+    async fn commit_transaction(
         &self,
-        principal: &VerifiedPrincipal,
-        identities: &mut I,
-        request: NewInventoryItemRequest,
-        occurred_at: &AuditOccurredAt,
-    ) -> Result<InventoryItem, ApplicationError> {
-        let organization_id =
-            require_organization_scope(principal, Permission::InventoryItemWrite)?;
-        let code = CatalogCode::new(&request.code).map_err(|_| invalid())?;
-        let name = DisplayName::new(&request.name).map_err(|_| invalid())?;
-        let description = match request.description.as_deref() {
-            Some(value) => Description::new(value).map_err(|_| invalid())?,
-            None => None,
-        };
-        let item = InventoryItem::create(NewInventoryItem {
-            id: identities.next_id()?,
-            organization_id: organization_id.clone(),
-            code,
-            name,
-            description,
-            base_unit: request.base_unit,
-            fractional_unit_allowed: request.fractional_unit_allowed,
-        });
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let operation = async {
-            if transaction
-                .inventory_item_code_exists(item.organization_id(), item.code())
-                .await?
-            {
-                return Err(ApplicationError::InventoryItemCodeAlreadyExists);
-            }
-            transaction
-                .insert_inventory_item(&item, occurred_at.as_str())
-                .await?;
-            append_audit(
-                &mut transaction,
-                identities,
-                principal,
-                "inventory.item.created",
-                "inventory-item",
-                item.id().clone(),
-                json!({"code": item.code().as_str(), "baseUnit": item.base_unit().as_str()}),
-                occurred_at,
-            )
-            .await?;
-            Ok(item)
-        }
-        .await;
-        finish(transaction, operation).await
+        transaction: SqliteTransaction,
+    ) -> Result<(), ApplicationError> {
+        transaction.commit().await.map_err(transaction_error)
     }
 
-    /// Lee un artículo dentro de la organización del principal.
-    pub async fn get_item(
+    async fn rollback_transaction(
         &self,
-        principal: &VerifiedPrincipal,
+        transaction: SqliteTransaction,
+    ) -> Result<(), ApplicationError> {
+        transaction.rollback().await.map_err(transaction_error)
+    }
+}
+
+impl InventoryTransaction for SqliteTransaction {
+    fn get_inventory_item(
+        &mut self,
+        organization_id: &EntityId,
         inventory_item_id: &EntityId,
-    ) -> Result<InventoryItem, ApplicationError> {
-        let organization_id = require_organization_scope(principal, Permission::InventoryItemRead)?;
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let operation = async {
-            transaction
-                .get_inventory_item(&organization_id, inventory_item_id)
-                .await?
-                .ok_or(ApplicationError::InventoryItemNotFound)
+    ) -> impl Future<Output = Result<Option<InventoryItem>, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let inventory_item_id = inventory_item_id.clone();
+        async move {
+            self.get_inventory_item(&organization_id, &inventory_item_id)
+                .await
         }
-        .await;
-        finish(transaction, operation).await
     }
 
-    /// Lista artículos de la organización en orden estable.
-    pub async fn list_items(
-        &self,
-        principal: &VerifiedPrincipal,
-        page: InventoryPage,
+    fn inventory_item_code_exists(
+        &mut self,
+        organization_id: &EntityId,
+        code: &CatalogCode,
+    ) -> impl Future<Output = Result<bool, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let code = code.clone();
+        async move {
+            self.inventory_item_code_exists(&organization_id, &code)
+                .await
+        }
+    }
+
+    fn insert_inventory_item(
+        &mut self,
+        item: &InventoryItem,
+        occurred_at: &str,
+    ) -> impl Future<Output = Result<(), ApplicationError>> + Send {
+        let item = item.clone();
+        let occurred_at = occurred_at.to_owned();
+        async move { self.insert_inventory_item(&item, &occurred_at).await }
+    }
+
+    fn lock_inventory_unit(
+        &mut self,
+        organization_id: &EntityId,
+        inventory_item_id: &EntityId,
+        occurred_at: &str,
+    ) -> impl Future<Output = Result<(), ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let inventory_item_id = inventory_item_id.clone();
+        let occurred_at = occurred_at.to_owned();
+        async move {
+            self.lock_inventory_unit(&organization_id, &inventory_item_id, &occurred_at)
+                .await
+        }
+    }
+
+    fn get_stock_balance(
+        &mut self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+        inventory_item_id: &EntityId,
+    ) -> impl Future<Output = Result<Option<StockBalance>, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let branch_id = branch_id.clone();
+        let inventory_item_id = inventory_item_id.clone();
+        async move {
+            self.get_stock_balance(&organization_id, &branch_id, &inventory_item_id)
+                .await
+        }
+    }
+
+    fn insert_stock_balance(
+        &mut self,
+        balance: &StockBalance,
+        occurred_at: &str,
+    ) -> impl Future<Output = Result<(), ApplicationError>> + Send {
+        let balance = balance.clone();
+        let occurred_at = occurred_at.to_owned();
+        async move { self.insert_stock_balance(&balance, &occurred_at).await }
+    }
+
+    fn update_stock_balance_cas(
+        &mut self,
+        previous_revision: u64,
+        balance: &StockBalance,
+        occurred_at: &str,
+    ) -> impl Future<Output = Result<CasOutcome, ApplicationError>> + Send {
+        let balance = balance.clone();
+        let occurred_at = occurred_at.to_owned();
+        async move {
+            self.update_stock_balance_cas(previous_revision, &balance, &occurred_at)
+                .await
+        }
+    }
+
+    fn ledger_counts(
+        &mut self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+        inventory_item_id: &EntityId,
+    ) -> impl Future<Output = Result<(bool, bool), ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let branch_id = branch_id.clone();
+        let inventory_item_id = inventory_item_id.clone();
+        async move {
+            self.ledger_counts(&organization_id, &branch_id, &inventory_item_id)
+                .await
+        }
+    }
+
+    fn insert_inventory_movement(
+        &mut self,
+        movement: &InventoryMovement,
+    ) -> impl Future<Output = Result<(), ApplicationError>> + Send {
+        let movement = movement.clone();
+        async move { self.insert_inventory_movement(&movement).await }
+    }
+
+    fn list_inventory_movements(
+        &mut self,
+        organization_id: &EntityId,
+        branch_id: &EntityId,
+        inventory_item_id: &EntityId,
+        limit: i64,
+        offset: i64,
+    ) -> impl Future<Output = Result<Vec<InventoryMovement>, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        let branch_id = branch_id.clone();
+        let inventory_item_id = inventory_item_id.clone();
+        async move {
+            self.list_inventory_movements(
+                &organization_id,
+                &branch_id,
+                &inventory_item_id,
+                limit,
+                offset,
+            )
+            .await
+        }
+    }
+
+    fn candidate_utc_seconds(
+        &mut self,
+        occurred_at: &AuditOccurredAt,
+    ) -> impl Future<Output = Result<UtcSeconds, ApplicationError>> + Send {
+        let occurred_at = occurred_at.clone();
+        async move {
+            self.candidate_utc_seconds(&occurred_at)
+                .await
+                .map_err(|_| ApplicationError::Storage)
+        }
+    }
+    fn list_inventory_items(
+        &mut self,
+        organization_id: &EntityId,
+        limit: i64,
+        offset: i64,
+    ) -> impl Future<Output = Result<Vec<InventoryItem>, ApplicationError>> + Send {
+        let organization_id = organization_id.clone();
+        async move {
+            self.list_inventory_items(&organization_id, limit, offset)
+                .await
+        }
+    }
+}
+
+fn storage() -> ApplicationError {
+    ApplicationError::Storage
+}
+
+impl SqliteTransaction {
+    pub(crate) async fn list_inventory_items(
+        &mut self,
+        organization_id: &EntityId,
+        limit: i64,
+        offset: i64,
     ) -> Result<Vec<InventoryItem>, ApplicationError> {
-        let organization_id = require_organization_scope(principal, Permission::InventoryItemRead)?;
-        if page.limit == 0 || page.limit > MAX_INVENTORY_PAGE_SIZE {
-            return Err(invalid());
-        }
-        let limit = i64::from(page.limit);
-        let offset = i64::from(page.offset);
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let operation = async {
-            let rows = sqlx::query_as::<_, InventoryItemRow>(LIST_ITEMS)
-                .bind(organization_id.as_str())
-                .bind(limit)
-                .bind(offset)
-                .fetch_all(&mut *transaction.connection())
-                .await
-                .map_err(|_| storage())?;
-            rows.into_iter()
-                .map(InventoryItemRow::into_domain)
-                .collect::<Result<Vec<_>, _>>()
-        }
-        .await;
-        finish(transaction, operation).await
-    }
-
-    /// Registra la apertura única de existencias de un artículo en la sucursal
-    /// del principal verificado.
-    pub async fn open_stock<I: IdentityGenerator>(
-        &self,
-        principal: &VerifiedPrincipal,
-        identities: &mut I,
-        request: OpenStockRequest,
-        occurred_at: &AuditOccurredAt,
-    ) -> Result<(StockBalance, InventoryMovement), ApplicationError> {
-        let organization_id =
-            require_organization_scope(principal, Permission::InventoryStockAdjust)?;
-        let branch_id = require_operational_branch(principal)?;
-        let quantity = Quantity::parse(&request.quantity).map_err(|_| invalid())?;
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let operation = async {
-            let item = transaction
-                .get_inventory_item(&organization_id, &request.inventory_item_id)
-                .await?
-                .ok_or(ApplicationError::InventoryItemNotFound)?;
-            if !item.is_active() {
-                return Err(ApplicationError::InventoryItemInactive);
-            }
-            item.ensure_quantity_fits_unit(quantity)
-                .map_err(inventory_error)?;
-            let (has_opening, has_any) = transaction
-                .ledger_counts(&organization_id, &branch_id, item.id())
-                .await?;
-            ensure_opening_allowed(has_opening, has_any).map_err(inventory_error)?;
-
-            let existing = transaction
-                .get_stock_balance(&organization_id, &branch_id, item.id())
-                .await?;
-            let (mut balance, balance_was_missing) = match existing {
-                Some(balance) => (balance, false),
-                None => (
-                    StockBalance::empty(
-                        identities.next_id()?,
-                        organization_id.clone(),
-                        branch_id.clone(),
-                        item.id().clone(),
-                    ),
-                    true,
-                ),
-            };
-            let previous_revision = balance.revision();
-            let resulting = balance
-                .apply_delta(previous_revision, quantity)
-                .map_err(inventory_error)?;
-            if balance_was_missing {
-                transaction
-                    .insert_stock_balance(&balance, occurred_at.as_str())
-                    .await?;
-            } else {
-                match transaction
-                    .update_stock_balance_cas(previous_revision, &balance, occurred_at.as_str())
-                    .await?
-                {
-                    CasOutcome::Updated => {}
-                    CasOutcome::Missing | CasOutcome::Conflict => {
-                        return Err(ApplicationError::ConcurrentModification);
-                    }
-                }
-            }
-
-            let movement = InventoryMovement::opening(
-                NewMovement {
-                    id: identities.next_id()?,
-                    organization_id: organization_id.clone(),
-                    branch_id: branch_id.clone(),
-                    inventory_item_id: item.id().clone(),
-                    actor_user_id: principal.user_id().clone(),
-                    occurred_at: transaction
-                        .candidate_utc_seconds(occurred_at)
-                        .await
-                        .map_err(|_| storage())?,
-                },
-                quantity,
-                resulting,
-            )
-            .map_err(inventory_error)?;
-            transaction.insert_inventory_movement(&movement).await?;
-            transaction
-                .lock_inventory_unit(&organization_id, item.id(), occurred_at.as_str())
-                .await?;
-            append_audit(
-                &mut transaction,
-                identities,
-                principal,
-                "inventory.stock.opened",
-                "inventory-item",
-                item.id().clone(),
-                json!({
-                    "branchId": branch_id.as_str(),
-                    "quantity": quantity.to_string(),
-                    "resulting": resulting.to_string(),
-                }),
-                occurred_at,
-            )
-            .await?;
-            Ok((balance, movement))
-        }
-        .await;
-        finish(transaction, operation).await
-    }
-
-    /// Aplica un ajuste manual sobre un saldo previamente aperturado.
-    pub async fn adjust_stock<I: IdentityGenerator>(
-        &self,
-        principal: &VerifiedPrincipal,
-        identities: &mut I,
-        request: AdjustStockRequest,
-        occurred_at: &AuditOccurredAt,
-    ) -> Result<(StockBalance, InventoryMovement), ApplicationError> {
-        let organization_id =
-            require_organization_scope(principal, Permission::InventoryStockAdjust)?;
-        let branch_id = require_operational_branch(principal)?;
-        let delta = Quantity::parse(&request.quantity_delta).map_err(|_| invalid())?;
-        let reason = MovementReason::new(&request.reason).map_err(inventory_error)?;
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let operation = async {
-            let item = transaction
-                .get_inventory_item(&organization_id, &request.inventory_item_id)
-                .await?
-                .ok_or(ApplicationError::InventoryItemNotFound)?;
-            if !item.is_active() {
-                return Err(ApplicationError::InventoryItemInactive);
-            }
-            item.ensure_quantity_fits_unit(delta)
-                .map_err(inventory_error)?;
-            let mut balance = transaction
-                .get_stock_balance(&organization_id, &branch_id, item.id())
-                .await?
-                .ok_or(ApplicationError::InvalidInventoryInput)?;
-            let previous_revision = balance.revision();
-            let resulting = balance
-                .apply_delta(previous_revision, delta)
-                .map_err(inventory_error)?;
-            if transaction
-                .update_stock_balance_cas(previous_revision, &balance, occurred_at.as_str())
-                .await?
-                != CasOutcome::Updated
-            {
-                return Err(ApplicationError::ConcurrentModification);
-            }
-            let movement = InventoryMovement::adjustment(
-                NewMovement {
-                    id: identities.next_id()?,
-                    organization_id: organization_id.clone(),
-                    branch_id: branch_id.clone(),
-                    inventory_item_id: item.id().clone(),
-                    actor_user_id: principal.user_id().clone(),
-                    occurred_at: transaction
-                        .candidate_utc_seconds(occurred_at)
-                        .await
-                        .map_err(|_| storage())?,
-                },
-                delta,
-                resulting,
-                reason,
-            )
-            .map_err(inventory_error)?;
-            transaction.insert_inventory_movement(&movement).await?;
-            append_audit(
-                &mut transaction,
-                identities,
-                principal,
-                "inventory.stock.adjusted",
-                "inventory-item",
-                item.id().clone(),
-                json!({
-                    "branchId": branch_id.as_str(),
-                    "delta": delta.to_string(),
-                    "resulting": resulting.to_string(),
-                }),
-                occurred_at,
-            )
-            .await?;
-            Ok((balance, movement))
-        }
-        .await;
-        finish(transaction, operation).await
-    }
-
-    /// Lee el saldo de un artículo en la sucursal del principal.
-    pub async fn get_balance(
-        &self,
-        principal: &VerifiedPrincipal,
-        inventory_item_id: &EntityId,
-    ) -> Result<Option<StockBalance>, ApplicationError> {
-        let organization_id =
-            require_organization_scope(principal, Permission::InventoryStockRead)?;
-        let branch_id = require_operational_branch(principal)?;
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let operation = async {
-            transaction
-                .get_stock_balance(&organization_id, &branch_id, inventory_item_id)
-                .await
-        }
-        .await;
-        finish(transaction, operation).await
-    }
-
-    /// Lista el ledger de un artículo en orden histórico descendente.
-    pub async fn list_movements(
-        &self,
-        principal: &VerifiedPrincipal,
-        inventory_item_id: &EntityId,
-        page: InventoryPage,
-    ) -> Result<Vec<InventoryMovement>, ApplicationError> {
-        let organization_id =
-            require_organization_scope(principal, Permission::InventoryStockRead)?;
-        let branch_id = require_operational_branch(principal)?;
-        if page.limit == 0 || page.limit > MAX_INVENTORY_PAGE_SIZE {
-            return Err(invalid());
-        }
-        let limit = i64::from(page.limit);
-        let offset = i64::from(page.offset);
-        let mut transaction = self.unit_of_work.begin().await.map_err(transaction_error)?;
-        let operation = async {
-            transaction
-                .list_inventory_movements(
-                    &organization_id,
-                    &branch_id,
-                    inventory_item_id,
-                    limit,
-                    offset,
-                )
-                .await
-        }
-        .await;
-        finish(transaction, operation).await
+        let rows = sqlx::query_as::<_, InventoryItemRow>(LIST_ITEMS)
+            .bind(organization_id.as_str())
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(&mut *self.connection())
+            .await
+            .map_err(|_| storage())?;
+        rows.into_iter()
+            .map(InventoryItemRow::into_domain)
+            .collect::<Result<Vec<_>, _>>()
     }
 }

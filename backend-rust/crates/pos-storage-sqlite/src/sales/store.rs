@@ -956,19 +956,3 @@ impl SalesTransaction for SqliteTransaction {
         }
     }
 }
-
-pub(crate) async fn finish<T>(
-    transaction: SqliteTransaction,
-    operation: Result<T, ApplicationError>,
-) -> Result<T, ApplicationError> {
-    match operation {
-        Ok(value) => {
-            transaction.commit().await.map_err(transaction_error)?;
-            Ok(value)
-        }
-        Err(error) => {
-            transaction.rollback().await.map_err(transaction_error)?;
-            Err(error)
-        }
-    }
-}
