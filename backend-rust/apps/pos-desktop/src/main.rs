@@ -9,6 +9,7 @@
 //!   que el sistema operativo asigna a la aplicación.
 //! - `--export-bindings`: regenera los contratos TypeScript.
 mod arguments;
+mod auth;
 mod bindings;
 mod command_names;
 mod commands;

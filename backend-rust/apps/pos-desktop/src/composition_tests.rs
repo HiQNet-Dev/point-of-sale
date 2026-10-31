@@ -2,12 +2,18 @@
 use std::error::Error;
 
 use super::*;
-use crate::dto::{CreateProductRequest, PageRequest};
+use crate::dto::{CreateProductRequest, LoginRequestDto, PageRequest, SelectBranchRequestDto};
 
 fn page() -> PageRequest {
     PageRequest {
         limit: 10,
         offset: 0,
+    }
+}
+
+fn select_branch(value: &str) -> SelectBranchRequestDto {
+    SelectBranchRequestDto {
+        branch_id: value.to_owned(),
     }
 }
 
@@ -230,6 +236,51 @@ fn product_mode_rejects_every_lab_command() -> Result<(), Box<dyn Error>> {
             state.products(page()).await.err(),
             Some(IpcError::OperationNotAvailable)
         );
+        state.shutdown().await;
+        Ok(())
+    })
+}
+
+#[test]
+fn authentication_commands_are_gated_by_mode_and_session() -> Result<(), Box<dyn Error>> {
+    tauri::async_runtime::block_on(async {
+        // El laboratorio no tiene identidad de producto.
+        let lab = LocalState::synthetic().await?;
+        for result in [
+            lab.auth_me().await.err(),
+            lab.auth_logout().await.err(),
+            lab.auth_select_branch(select_branch("00000000-0000-0000-0000-000000000001"))
+                .await
+                .err(),
+            lab.auth_list_branches().await.err(),
+        ] {
+            assert_eq!(result, Some(IpcError::OperationNotAvailable));
+        }
+        lab.shutdown().await;
+
+        // Una instalación sin sesión no autoriza nada y el login llega al caso
+        // de uso real, que responde con el error genérico.
+        let directory = tempfile::tempdir()?;
+        let state = LocalState::open_installation(directory.path()).await?;
+        assert_eq!(state.auth_me().await.err(), Some(IpcError::Unauthorized));
+        assert_eq!(state.auth_logout().await, Ok(()));
+        assert_eq!(
+            state.auth_list_branches().await.err(),
+            Some(IpcError::Unauthorized)
+        );
+        let login = LoginRequestDto {
+            email: "nadie@hiqnet.test".to_owned(),
+            password: "no-importa".to_owned(),
+        };
+        assert_eq!(
+            state.auth_login(login).await.err(),
+            Some(IpcError::Unauthorized)
+        );
+        // Sin sesión no se crea ninguna fila.
+        let sessions: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM local_session")
+            .fetch_one(&state.product_installation()?.pool)
+            .await?;
+        assert_eq!(sessions, 0);
         state.shutdown().await;
         Ok(())
     })

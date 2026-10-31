@@ -147,6 +147,16 @@ pub enum ApplicationError {
     OwnershipMismatch,
     /// Una entrada de catálogo incumple el contrato de dominio.
     InvalidCatalogInput,
+    /// Credenciales rechazadas sin revelar si el usuario existe.
+    ///
+    /// Es el único error visible de autenticación: usuario inexistente,
+    /// credencial incorrecta, cuenta inactiva, credencial bloqueada o reset
+    /// pendiente colapsan aquí para impedir la enumeración de cuentas.
+    InvalidCredentials,
+    /// La sesión no existe, venció o fue revocada.
+    Unauthenticated,
+    /// Parámetros de sesión fuera de la política admitida.
+    InvalidSessionInput,
     /// CAS perdido después de haber validado el patch.
     ConcurrentModification,
     /// Fallo de dominio conservando su tipado.
@@ -228,6 +238,9 @@ impl fmt::Display for ApplicationError {
                 formatter.write_str("la entidad pertenece a otra organización")
             }
             Self::InvalidCatalogInput => formatter.write_str("entrada de catálogo no válida"),
+            Self::InvalidCredentials => formatter.write_str("credenciales no válidas"),
+            Self::Unauthenticated => formatter.write_str("sesión no válida"),
+            Self::InvalidSessionInput => formatter.write_str("parámetros de sesión no válidos"),
             Self::ConcurrentModification => formatter.write_str("modificación concurrente"),
             Self::Domain(error) => error.fmt(formatter),
             Self::Storage => formatter.write_str("operación de almacenamiento fallida"),

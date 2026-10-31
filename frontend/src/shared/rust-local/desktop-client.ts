@@ -28,4 +28,17 @@ export const desktopService = {
   listProducts: (offset = 0) => unwrap(commands.labListProducts({ limit: 20, offset })),
   /** Primera escritura auditada; solo disponible en el laboratorio sintético. */
   createProduct: (request: CreateProductRequest_Deserialize) => unwrap(commands.labCreateProduct(request)),
+
+  /**
+   * Autenticación sobre la instalación persistente.
+   *
+   * El handle de sesión no viaja al renderer: el proceso Rust lo custodia y los
+   * comandos posteriores lo usan sin que la UI pueda leerlo ni almacenarlo.
+   */
+  authLogin: (email: string, password: string) => unwrap(commands.authLogin({ email, password })),
+  authMe: () => unwrap(commands.authMe()),
+  authLogout: () => unwrap(commands.authLogout()),
+  authLogoutAll: () => unwrap(commands.authLogoutAll()),
+  authSelectBranch: (branchId: string) => unwrap(commands.authSelectBranch({ branchId })),
+  authListBranches: () => unwrap(commands.authListBranches()),
 }

@@ -2681,6 +2681,7 @@ version = "0.1.0"
 dependencies = [
  "pos-application",
  "pos-core",
+ "pos-credentials",
  "pos-lab",
  "pos-storage-sqlite",
  "serde",
@@ -2692,6 +2693,7 @@ dependencies = [
  "tauri-build",
  "tauri-specta",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]

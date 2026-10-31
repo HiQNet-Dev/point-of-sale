@@ -238,4 +238,12 @@ impl VerifiedPrincipal {
     pub fn audit_actor(&self) -> AuditActor {
         AuditActor::user(self.user_id.clone())
     }
+
+    /// Permisos efectivos resueltos para el scope exacto del principal.
+    ///
+    /// Es una lectura para DTOs y diagnóstico; la decisión de autorización sigue
+    /// pasando por [`Self::authorize`] contra un scope explícito.
+    pub fn permissions(&self) -> impl Iterator<Item = &PermissionCode> {
+        self.permissions.iter()
+    }
 }

@@ -65,17 +65,20 @@ enum Mode {
     Product(ProductInstallation),
 }
 
-struct LabInstallation {
-    pool: SqlitePool,
+pub(crate) struct LabInstallation {
+    pub(crate) pool: SqlitePool,
     /// Contador de identidades del proceso; evita reutilizar UUID entre escrituras.
-    next_identity: AtomicU64,
+    pub(crate) next_identity: AtomicU64,
     _directory: TempDir,
 }
 
-struct ProductInstallation {
-    pool: SqlitePool,
-    report: InstallationReport,
+pub(crate) struct ProductInstallation {
+    pub(crate) pool: SqlitePool,
+    pub(crate) report: InstallationReport,
     installation_lock: std::fs::File,
+    /// Handle de sesión en memoria nativa; nunca se persiste ni llega al
+    /// renderer. Se libera al cerrar la aplicación.
+    pub(crate) session: tokio::sync::Mutex<Option<String>>,
 }
 
 /// Fallos de arranque sin SQL, credenciales ni contenidos de fila.
@@ -190,6 +193,7 @@ impl LocalState {
                 pool,
                 report,
                 installation_lock,
+                session: tokio::sync::Mutex::new(None),
             }),
         })
     }
@@ -199,6 +203,8 @@ impl LocalState {
         match &self.mode {
             Mode::Lab(lab) => lab.pool.close().await,
             Mode::Product(product) => {
+                // El handle sale de memoria al cerrar: no se persiste en ningún sitio.
+                *product.session.lock().await = None;
                 // Un cierre limpio deja el WAL integrado en el archivo principal.
                 let _ = checkpoint(&product.pool).await;
                 product.pool.close().await;
@@ -371,6 +377,14 @@ impl LocalState {
 
     fn pool(&self) -> Result<&SqlitePool, IpcError> {
         Ok(&self.lab()?.pool)
+    }
+
+    /// Instalación persistente; el laboratorio no tiene identidad de producto.
+    pub(crate) fn product_installation(&self) -> Result<&ProductInstallation, IpcError> {
+        match &self.mode {
+            Mode::Product(product) => Ok(product),
+            Mode::Lab(_) => Err(IpcError::OperationNotAvailable),
+        }
     }
 }
 

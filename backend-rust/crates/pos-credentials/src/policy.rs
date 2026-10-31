@@ -52,6 +52,18 @@ impl Argon2Policy {
         lanes: 1,
     };
 
+    /// Política medida en hardware Windows objetivo (2026-10-31).
+    ///
+    /// 32 MiB, `t=3`, `p=1`: `verify` p95 ≈ 51 ms y `hash` p95 ≈ 50 ms en un
+    /// AMD64 de 12 CPU lógicas. Requiere ratificación del titular para
+    /// convertirse en la política comercial de nuevas credenciales.
+    pub const LOCAL_V2: Self = Self {
+        id: "local-argon2-v2",
+        memory_kib: 32_768,
+        iterations: 3,
+        lanes: 1,
+    };
+
     /// Identificador estable usado como `policy_id`.
     pub fn id(self) -> &'static str {
         self.id
@@ -71,7 +83,7 @@ impl Argon2Policy {
 
     /// Resuelve una política registrada por identificador.
     pub fn from_id(id: &str) -> Option<Self> {
-        [Self::LAB_V0, Self::LAB_V1]
+        [Self::LAB_V0, Self::LAB_V1, Self::LOCAL_V2]
             .into_iter()
             .find(|policy| policy.id == id)
     }

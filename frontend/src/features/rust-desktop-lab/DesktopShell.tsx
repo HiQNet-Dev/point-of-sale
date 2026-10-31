@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Alert, Container, Typography } from '@mui/material'
 import { DesktopCommandError, desktopService } from '../../shared/rust-local/desktop-client'
 import { DesktopCatalogPage } from './DesktopCatalogPage'
-import { InstallationPage } from './InstallationPage'
+import { SessionGate } from './SessionGate'
 
 /**
  * Única ventana con dos modos: instalación persistente o laboratorio sintético.
@@ -22,5 +22,5 @@ export function DesktopShell() {
       <Alert severity="error" role="alert">No se pudo abrir la instalación local: {status.error.message}</Alert>
     </Container>
   }
-  return <InstallationPage status={status.data} />
+  return <SessionGate status={status.data} />
 }

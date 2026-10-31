@@ -14,6 +14,18 @@ export const commands = {
 	labCreateProduct: (request: CreateProductRequest_Deserialize) => typedError<CreatedProductDto_Serialize, IpcError>(__TAURI_INVOKE("lab_create_product", { request })),
 	/**  Estado de la instalación persistente; no expone datos de negocio ni identidad. */
 	installationStatus: () => typedError<InstallationStatusDto, IpcError>(__TAURI_INVOKE("installation_status")),
+	/**  Autentica con email y contraseña; el handle queda en memoria nativa. */
+	authLogin: (request: LoginRequestDto) => typedError<SessionIdentityDto_Serialize, IpcError>(__TAURI_INVOKE("auth_login", { request })),
+	/**  Identidad y permisos de la sesión nativa vigente. */
+	authMe: () => typedError<SessionIdentityDto_Serialize, IpcError>(__TAURI_INVOKE("auth_me")),
+	/**  Revoca la sesión actual. */
+	authLogout: () => typedError<null, IpcError>(__TAURI_INVOKE("auth_logout")),
+	/**  Revoca todas las sesiones del usuario autenticado. */
+	authLogoutAll: () => typedError<LogoutAllDto, IpcError>(__TAURI_INVOKE("auth_logout_all")),
+	/**  Selecciona una sucursal activa del tenant y devuelve sus permisos. */
+	authSelectBranch: (request: SelectBranchRequestDto) => typedError<SessionIdentityDto_Serialize, IpcError>(__TAURI_INVOKE("auth_select_branch", { request })),
+	/**  Lista las sucursales descubribles por la sesión actual. */
+	authListBranches: () => typedError<BranchDto[], IpcError>(__TAURI_INVOKE("auth_list_branches")),
 };
 
 /* Types */
@@ -138,6 +150,26 @@ export type IpcError =
 /**  Fallo interno, sin detalles del adaptador. */
 { code: "INTERNAL_ERROR" };
 
+/**
+ *  Credenciales presentadas por la pantalla de login.
+ *
+ *  La contraseña solo existe durante la llamada; el renderer nunca recibe el
+ *  handle de sesión ni un token que pueda almacenar. El `Debug` redacta el
+ *  secreto para que un registro accidental no lo exponga.
+ */
+export type LoginRequestDto = {
+	/**  Email tal como lo escribe la persona; se normaliza en backend. */
+	email: string,
+	/**  Contraseña en claro solo para esta llamada. */
+	password: string,
+};
+
+/**  Resultado de cerrar todas las sesiones. */
+export type LogoutAllDto = {
+	/**  Sesiones revocadas, incluida la actual. */
+	revoked: number,
+};
+
 /**  Página explícita, sin organización ni actor controlados por el consumidor. */
 export type PageRequest = {
 	/**  Límite de 1 a 100, validado por Application. */
@@ -179,6 +211,59 @@ export type ProductDto_Serialize = {
 	categoryId: string | null,
 	/**  Versión decimal entera. */
 	version: string,
+};
+
+/**  Sucursal elegida por la persona autenticada. */
+export type SelectBranchRequestDto = {
+	/**  UUID de una sucursal de la organización del principal. */
+	branchId: string,
+};
+
+/**
+ *  Identidad pública de la sesión y permisos efectivos.
+ *
+ *  No incluye handle, digest, hash de credencial ni código de sesión.
+ */
+export type SessionIdentityDto = SessionIdentityDto_Serialize | SessionIdentityDto_Deserialize;
+
+/**
+ *  Identidad pública de la sesión y permisos efectivos.
+ *
+ *  No incluye handle, digest, hash de credencial ni código de sesión.
+ */
+export type SessionIdentityDto_Deserialize = {
+	/**  Usuario autenticado. */
+	userId: string,
+	/**  Organización derivada del usuario. */
+	organizationId: string,
+	/**  Nombre visible. */
+	displayName: string,
+	/**  Email normalizado. */
+	email: string,
+	/**  Sucursal operativa, si ya se seleccionó. */
+	branchId?: string | null,
+	/**  Permisos efectivos resueltos en SQLite. */
+	permissions: string[],
+};
+
+/**
+ *  Identidad pública de la sesión y permisos efectivos.
+ *
+ *  No incluye handle, digest, hash de credencial ni código de sesión.
+ */
+export type SessionIdentityDto_Serialize = {
+	/**  Usuario autenticado. */
+	userId: string,
+	/**  Organización derivada del usuario. */
+	organizationId: string,
+	/**  Nombre visible. */
+	displayName: string,
+	/**  Email normalizado. */
+	email: string,
+	/**  Sucursal operativa, si ya se seleccionó. */
+	branchId: string | null,
+	/**  Permisos efectivos resueltos en SQLite. */
+	permissions: string[],
 };
 
 /* Tauri Specta runtime */

@@ -1,8 +1,14 @@
 {
   "identifier": "local-main-commands",
-  "description": "Comandos locales de la ventana única: lecturas sintéticas del laboratorio y estado de instalación. Sin bootstrap, archivos, shell ni red.",
+  "description": "Comandos locales de la ventana única: autenticación sobre la instalación persistente, lecturas sintéticas del laboratorio y estado de instalación. Sin bootstrap, archivos, shell ni red.",
   "windows": ["main"],
   "permissions": [
+    "allow-auth-login",
+    "allow-auth-me",
+    "allow-auth-logout",
+    "allow-auth-logout-all",
+    "allow-auth-select-branch",
+    "allow-auth-list-branches",
     "allow-lab-list-branches",
     "allow-lab-list-categories",
     "allow-lab-list-products",
