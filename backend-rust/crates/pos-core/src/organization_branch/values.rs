@@ -61,10 +61,11 @@ impl NegativeStockPolicy {
 pub struct Timezone(String);
 
 impl Timezone {
-    /// Acepta aliases Java UTC/GMT/UT, `Z`, offsets hasta ±18:00 e IDs TZDB estructurados.
+    /// Acepta lo que `ZoneId.of` de Java admite para Local: aliases UTC/GMT/UT,
+    /// `Z`, offsets fijos de hasta ±18:00 y zonas presentes en TZDB.
     ///
-    /// La validación de reglas históricas TZDB queda delegada al runtime de
-    /// presentación/infraestructura hasta incorporar una base TZDB versionada.
+    /// Las zonas nombradas se contrastan contra la base TZDB incluida; una forma
+    /// textual plausible pero inexistente se rechaza.
     pub fn new(value: &str) -> Result<Self, DomainError> {
         if value.is_empty() || value.chars().any(char::is_whitespace) || utf16_len(value) > 64 {
             return Err(DomainError::InvalidTimezone);
@@ -72,7 +73,7 @@ impl Timezone {
         let valid = matches!(value, "Z" | "UTC" | "GMT" | "UT")
             || valid_offset(value)
             || valid_prefixed_offset(value)
-            || valid_tzdb_shape(value);
+            || valid_tzdb_zone(value);
         if !valid {
             return Err(DomainError::InvalidTimezone);
         }
@@ -113,7 +114,10 @@ impl IsoCurrency {
 pub struct LocaleTag(String);
 
 impl LocaleTag {
-    /// Rechaza tags vacíos, subtags mal formados o mayores de 20 unidades UTF-16.
+    /// Rechaza tags vacíos, mal formados, no canónicos o mayores de 20 unidades UTF-16.
+    ///
+    /// El perfil exige la misma forma que `Locale.toLanguageTag()` de Java, de modo
+    /// que una variante como `es_mx` o `ES-mx` no se persiste como si fuera otra.
     pub fn new(value: &str) -> Result<Self, DomainError> {
         if value.is_empty() || utf16_len(value) > 20 || value.contains('_') {
             return Err(DomainError::InvalidLocale);
@@ -130,6 +134,11 @@ impl LocaleTag {
         if !parts.all(|part| {
             (1..=8).contains(&part.len()) && part.bytes().all(|byte| byte.is_ascii_alphanumeric())
         }) {
+            return Err(DomainError::InvalidLocale);
+        }
+        let canonical =
+            icu_locale_core::Locale::try_from_str(value).map_err(|_| DomainError::InvalidLocale)?;
+        if !canonical.to_string().eq_ignore_ascii_case(value) {
             return Err(DomainError::InvalidLocale);
         }
         Ok(Self(value.to_owned()))

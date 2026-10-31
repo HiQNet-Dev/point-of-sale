@@ -9,10 +9,8 @@ publish = false
 [dependencies]
 chrono-tz.workspace = true
 icu_locale_core.workspace = true
-iso_currency.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-uuid.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

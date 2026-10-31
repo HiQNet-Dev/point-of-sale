@@ -143,6 +143,7 @@ impl Organization {
             next.revision = next
                 .revision
                 .checked_add(1)
+                .filter(|revision| *revision <= MAX_REVISION)
                 .ok_or(DomainError::RevisionOverflow)?;
         }
         *self = next;

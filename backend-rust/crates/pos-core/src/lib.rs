@@ -1,17 +1,8 @@
-//! Primitivas monetarias exactas, sin dependencias de infraestructura.
+//! Dominio puro de HiQNet POS, sin dependencias de infraestructura.
 //!
-//! Las unidades menores no incorporan una escala implícita ni políticas de
-//! redondeo. La importación decimal exige que el llamador proporcione la escala.
-
-mod branch;
-mod organization;
-
-pub use branch::{Branch, BranchPatch, BranchStatus, TimezonePatch};
-pub use organization::{
-    BranchId, BusinessCode, ChangedFields, DisplayName, DomainError, IanaTimezone,
-    InventoryNegativeStockPolicy, LocaleTag, Organization, OrganizationCurrency, OrganizationId,
-    OrganizationPatch, OrganizationStatus, Revision,
-};
+//! Las primitivas monetarias no incorporan una escala implícita ni políticas de
+//! redondeo: la importación decimal exige que el llamador proporcione la escala.
+//! Organization/Branch tiene una única autoridad en [`organization_branch`].
 
 use std::fmt;
 

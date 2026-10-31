@@ -21,6 +21,9 @@ mod ports;
 mod text;
 mod values;
 
+#[cfg(test)]
+mod tests;
+
 pub use audit_event::{AuditEvent, UtcTimestamp};
 pub use branch::{Branch, BranchPatch, NewBranch, TimezoneOverridePatch, branch_changed_fields};
 pub use errors::{ApplicationError, DomainError};
@@ -36,55 +39,78 @@ pub use ports::{
 pub use text::{BusinessCode, DisplayName, java_trim};
 pub use values::{IsoCurrency, LocaleTag, NegativeStockPolicy, Status, Timezone};
 
+/// Mayor revisión representable en el `BIGINT` compartido con Java/PostgreSQL.
+///
+/// El dominio rechaza incrementos por encima de este valor para no producir un
+/// estado que la persistencia no pueda representar sin truncamiento.
+pub const MAX_REVISION: u64 = i64::MAX as u64;
+
 pub(crate) fn utf16_len(value: &str) -> usize {
     value.encode_utf16().count()
 }
 
+/// Reconoce `UTC`, `GMT` o `UT` seguidos de un offset fijo de `ZoneId.of`.
 pub(crate) fn valid_prefixed_offset(value: &str) -> bool {
-    for prefix in ["UTC", "GMT", "UT"] {
-        if let Some(offset) = value.strip_prefix(prefix) {
-            return valid_offset(offset);
-        }
-    }
-    false
+    ["UTC", "GMT", "UT"]
+        .iter()
+        .any(|prefix| value.strip_prefix(prefix).is_some_and(valid_offset))
 }
 
+/// Reconoce las formas de offset fijo que acepta `ZoneId.of` de Java.
+///
+/// Admite `+H`, `+HH`, `+HHMM`, `+HH:MM`, `+HHMMSS` y `+HH:MM:SS`. El rango se
+/// limita a `±18:00:00` con minutos y segundos menores que 60, que es el máximo
+/// que Java acepta sin normalizar silenciosamente una entrada ambigua.
 pub(crate) fn valid_offset(value: &str) -> bool {
-    let Some((sign, rest)) = value.as_bytes().split_first() else {
+    let Some(rest) = value.strip_prefix('+').or_else(|| value.strip_prefix('-')) else {
         return false;
     };
-    if !matches!(sign, b'+' | b'-') {
+    // La segmentación por bytes de abajo exige ASCII: una entrada UTF-8 no debe
+    // provocar un corte en un límite de carácter inválido.
+    if !rest.is_ascii() {
         return false;
     }
-    let (hour, minute) = match rest {
-        [a, b] => (Some([*a, *b]), Some(*b"00")),
-        [a, b, b':', c, d] => (Some([*a, *b]), Some([*c, *d])),
-        [a, b, c, d] => (Some([*a, *b]), Some([*c, *d])),
-        _ => (None, None),
+
+    let (hours, minutes, seconds) = if rest.contains(':') {
+        let mut parts = rest.split(':');
+        let (Some(hours), Some(minutes)) = (parts.next(), parts.next()) else {
+            return false;
+        };
+        let seconds = parts.next().unwrap_or("00");
+        if parts.next().is_some() || hours.len() != 2 || minutes.len() != 2 || seconds.len() != 2 {
+            return false;
+        }
+        (hours, minutes, seconds)
+    } else {
+        match rest.len() {
+            1 | 2 => (rest, "00", "00"),
+            4 => (&rest[..2], &rest[2..], "00"),
+            6 => (&rest[..2], &rest[2..4], &rest[4..]),
+            _ => return false,
+        }
     };
-    let (Some(hour), Some(minute)) = (hour, minute) else {
+
+    let parse = |part: &str| {
+        if !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()) {
+            part.parse::<u16>().ok()
+        } else {
+            None
+        }
+    };
+    let (Some(hours), Some(minutes), Some(seconds)) =
+        (parse(hours), parse(minutes), parse(seconds))
+    else {
         return false;
     };
-    if !hour
-        .into_iter()
-        .chain(minute)
-        .all(|digit| digit.is_ascii_digit())
-    {
-        return false;
-    }
-    let hours = u16::from(hour[0] - b'0') * 10 + u16::from(hour[1] - b'0');
-    let minutes = u16::from(minute[0] - b'0') * 10 + u16::from(minute[1] - b'0');
-    hours < 18 || (hours == 18 && minutes == 0) || (hours < 18 && minutes < 60)
+    hours <= 18 && minutes <= 59 && seconds <= 59 && (hours != 18 || (minutes == 0 && seconds == 0))
 }
 
-pub(crate) fn valid_tzdb_shape(value: &str) -> bool {
-    value.contains('/')
-        && value.split('/').all(|part| {
-            !part.is_empty()
-                && part.bytes().all(|byte| {
-                    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'+' | b'.')
-                })
-        })
+/// Valida una zona nombrada contra la base TZDB incluida en el binario.
+///
+/// Una forma textual plausible no basta: `Europe/` o `America//Mexico` comparten
+/// sintaxis con zonas reales y deben rechazarse.
+pub(crate) fn valid_tzdb_zone(value: &str) -> bool {
+    value.parse::<chrono_tz::Tz>().is_ok()
 }
 
 pub(crate) const JAVA_CURRENCIES: &[&str] = &[
