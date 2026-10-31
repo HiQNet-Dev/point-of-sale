@@ -335,6 +335,48 @@ fn first_installation_is_gated_by_platform_custody() -> Result<(), Box<dyn Error
 }
 
 #[test]
+fn catalog_commands_require_a_session_and_reject_the_laboratory() -> Result<(), Box<dyn Error>> {
+    tauri::async_runtime::block_on(async {
+        let lab = LocalState::synthetic().await?;
+        assert_eq!(
+            lab.catalog_list_products(page()).await.err(),
+            Some(IpcError::OperationNotAvailable)
+        );
+        assert_eq!(
+            lab.catalog_create_category(crate::dto::NewCategoryRequestDto {
+                code: "bebidas".to_owned(),
+                name: "Bebidas".to_owned(),
+            })
+            .await
+            .err(),
+            Some(IpcError::OperationNotAvailable)
+        );
+        lab.shutdown().await;
+
+        let directory = tempfile::tempdir()?;
+        let state = LocalState::open_installation(directory.path()).await?;
+        for result in [
+            state.catalog_list_categories(page()).await.err(),
+            state.catalog_list_products(page()).await.err(),
+            state
+                .catalog_get_product(crate::dto::CatalogItemRequestDto {
+                    id: "00000000-0000-0000-0000-000000000001".to_owned(),
+                })
+                .await
+                .err(),
+            state
+                .catalog_create_product(new_product("CAFE-1", "1.0000"))
+                .await
+                .err(),
+        ] {
+            assert_eq!(result, Some(IpcError::Unauthorized));
+        }
+        state.shutdown().await;
+        Ok(())
+    })
+}
+
+#[test]
 fn create_product_persists_with_exact_price_and_audit() -> Result<(), Box<dyn Error>> {
     tauri::async_runtime::block_on(async {
         let state = LocalState::synthetic().await?;

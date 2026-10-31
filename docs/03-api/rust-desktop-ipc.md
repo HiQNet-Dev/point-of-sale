@@ -84,12 +84,34 @@ Fuente verificable: `apps/pos-desktop/src/commands.rs` + `dto.rs`, relativa a
 | `lab_list_products` | Laboratorio | `{ "request": { "limit": 20, "offset": 0 } }` | `ProductDto_Serialize[]` | `product.read` | Organización del principal |
 | `lab_create_product` | Laboratorio | `{ "request": { "sku", "name", "unitPrice", "categoryId?", "barcode?", "description?" } }` | `CreatedProductDto` | `product.create` | Organización del principal |
 | `installation_status` | Instalación | `{}` | `InstallationStatusDto` | Ninguno (sin datos de negocio) | Instalación local |
+| `bootstrap_status` | Instalación | `{}` | `BootstrapStatusDto` | Ninguno (solo estado) | Instalación local |
+| `bootstrap_install` | Instalación | `{ "request": { "businessName", "businessCode?", "administratorName", "email", "password", "currency?" } }` | vacío | Autorización nativa viva | Instalación local |
 | `auth_login` | Instalación | `{ "request": { "email", "password" } }` | `SessionIdentityDto` | Ninguno (autentica) | Instalación local |
 | `auth_me` | Instalación | `{}` | `SessionIdentityDto` | Sesión vigente | Sesión nativa |
 | `auth_logout` | Instalación | `{}` | vacío | Sesión vigente | Sesión nativa |
 | `auth_logout_all` | Instalación | `{}` | `LogoutAllDto` | Sesión vigente | Usuario de la sesión |
 | `auth_select_branch` | Instalación | `{ "request": { "branchId" } }` | `SessionIdentityDto` | `branch.read` en el scope resultante | Organización del principal |
 | `auth_list_branches` | Instalación | `{}` | `BranchDto[]` | `branch.read` | Organización del principal |
+| `catalog_list_categories` | Instalación | `{ "request": { "limit", "offset" } }` | `CategoryDto[]` | `category.read` | Organización del principal |
+| `catalog_list_products` | Instalación | `{ "request": { "limit", "offset" } }` | `ProductDto_Serialize[]` | `product.read` | Organización del principal |
+| `catalog_get_product` | Instalación | `{ "request": { "id" } }` | `ProductDto_Serialize` | `product.read` | Organización del principal |
+| `catalog_create_category` | Instalación | `{ "request": { "code", "name" } }` | `CategoryDto` | `category.create` | Organización del principal |
+| `catalog_create_product` | Instalación | `{ "request": { "sku", "name", "unitPrice", "categoryId?", "barcode?", "description?" } }` | `CreatedProductDto` | `product.create` | Organización del principal |
+| `catalog_update_product` | Instalación | `{ "request": { "productId", "expectedVersion", "name?", "unitPrice?", "categoryId?", "status?" } }` | `ProductDto_Serialize` | `product.update` | Organización del principal |
+
+### Primera instalación
+
+`bootstrap_status` no muta nada. `bootstrap_install` solo actúa sobre un derecho
+vivo leído del archivo privado del directorio de instalación; el token no aparece
+en ningún request, respuesta, log ni binding. La organización, el administrador,
+la credencial y los 59 grants se crean en la misma UoW que consume la
+autorización. Diseño en [ADR-0028](../01-architecture/adr/0028-guided-first-installation.md).
+
+### Catálogo
+
+Los seis comandos `catalog_*` revalidan la sesión nativa en cada llamada y
+resuelven organización y permisos en SQLite. El cliente aporta solo datos de
+negocio y la versión que leyó; el precio viaja como texto decimal de escala 4.
 
 ### Autenticación Local
 

@@ -12,6 +12,7 @@ mod arguments;
 mod auth;
 mod bindings;
 mod bootstrap;
+mod catalog;
 mod command_names;
 mod commands;
 mod composition;

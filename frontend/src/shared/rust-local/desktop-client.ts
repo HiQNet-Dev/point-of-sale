@@ -1,4 +1,4 @@
-import { commands, type BootstrapInstallRequestDto_Deserialize, type CreateProductRequest_Deserialize, type IpcError } from './desktop.generated'
+import { commands, type BootstrapInstallRequestDto_Deserialize, type CreateProductRequest_Deserialize, type IpcError, type UpdateProductRequestDto_Deserialize } from './desktop.generated'
 
 /** Errores públicos del adaptador IPC, sin diagnósticos de almacenamiento. */
 export class DesktopCommandError extends Error {
@@ -48,4 +48,12 @@ export const desktopService = {
    */
   bootstrapStatus: () => unwrap(commands.bootstrapStatus()),
   bootstrapInstall: (request: BootstrapInstallRequestDto_Deserialize) => unwrap(commands.bootstrapInstall(request)),
+
+  /** Catálogo de la organización autenticada. */
+  catalogListCategories: (offset = 0) => unwrap(commands.catalogListCategories({ limit: 100, offset })),
+  catalogListProducts: (offset = 0) => unwrap(commands.catalogListProducts({ limit: 100, offset })),
+  catalogGetProduct: (id: string) => unwrap(commands.catalogGetProduct({ id })),
+  catalogCreateCategory: (code: string, name: string) => unwrap(commands.catalogCreateCategory({ code, name })),
+  catalogCreateProduct: (request: CreateProductRequest_Deserialize) => unwrap(commands.catalogCreateProduct(request)),
+  catalogUpdateProduct: (request: UpdateProductRequestDto_Deserialize) => unwrap(commands.catalogUpdateProduct(request)),
 }

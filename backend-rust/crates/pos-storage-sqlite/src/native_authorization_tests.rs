@@ -17,12 +17,17 @@ use pos_application::{
         BootstrapRequest, ProvisioningProof, provision_initial_installation_with_proof,
         requires_provisioning,
     },
+    catalog::{
+        CatalogApplication, CatalogPage, NewCategoryRequest, NewProductRequest,
+        ProductUpdateRequest,
+    },
     identity::LoginRequest,
 };
 use pos_core::{
     audit::{
         AuditEventId, AuditOccurredAt, BootstrapError, BootstrapSecretVerifier, authorize_bootstrap,
     },
+    catalog::PatchField,
     identity::{NormalizedEmail, ProvisioningAuthorization, ProvisioningPurpose, UtcSeconds},
     organization_branch::{
         ApplicationError, BusinessCode, DisplayName, EntityId, IdentityGenerator, IsoCurrency,
@@ -333,7 +338,98 @@ async fn first_installation_consumes_the_native_authorization_and_logs_in()
     assert_eq!(session.identity.user_id, id(ADMIN));
     assert!(session.identity.permissions.contains("product.create"));
 
-    // Reapertura: identidad y permisos persisten.
+    // Primer módulo comercial: catálogo sobre la sesión autenticada.
+    let hash = pos_credentials::SessionHandle::from_encoded(&session.handle)?.hash()?;
+    let principal = application.principal(&hash, login.now).await?;
+    let catalog = CatalogApplication::new(SqliteUnitOfWork::new(pool.clone()));
+    let mut identities = TestIdentities;
+    let category = catalog
+        .create_category(
+            &principal,
+            &mut identities,
+            NewCategoryRequest {
+                code: "bebidas".to_owned(),
+                name: "Bebidas".to_owned(),
+            },
+            &AuditOccurredAt::new(&iso_now(&pool).await)?,
+        )
+        .await?;
+    let product = catalog
+        .create_product(
+            &principal,
+            &mut identities,
+            NewProductRequest {
+                sku: "CAFE-001".to_owned(),
+                name: "Café de olla".to_owned(),
+                unit_price: "45.5000".to_owned(),
+                barcode: None,
+                description: None,
+                category_id: Some(category.id().clone()),
+            },
+            &AuditOccurredAt::new(&iso_now(&pool).await)?,
+        )
+        .await?;
+    assert_eq!(product.unit_price().to_string(), "45.5000");
+    let listed = catalog
+        .list_products(
+            &principal,
+            None,
+            None,
+            CatalogPage {
+                limit: 10,
+                offset: 0,
+            },
+        )
+        .await?;
+    assert_eq!(listed.len(), 1);
+    let read = catalog.get_product(&principal, product.id()).await?;
+    assert_eq!(read.sku().as_str(), "CAFE-001");
+
+    // Edición con CAS y precio exacto.
+    let updated = catalog
+        .update_product(
+            &principal,
+            &mut identities,
+            product.id(),
+            ProductUpdateRequest {
+                expected_version: product.revision(),
+                name: Some("Café de olla grande".to_owned()),
+                description: PatchField::Absent,
+                barcode: PatchField::Absent,
+                unit_price: Some("52.0000".to_owned()),
+                category_id: PatchField::Absent,
+                status: None,
+            },
+            &AuditOccurredAt::new(&iso_now(&pool).await)?,
+        )
+        .await?;
+    assert_eq!(updated.unit_price().to_string(), "52.0000");
+
+    // Sin `product.create` la mutación se rechaza tras revalidar el principal.
+    sqlx::query("DELETE FROM role_permission WHERE permission_code = 'product.create'")
+        .execute(&pool)
+        .await?;
+    let principal = application.principal(&hash, login.now).await?;
+    assert!(matches!(
+        catalog
+            .create_product(
+                &principal,
+                &mut identities,
+                NewProductRequest {
+                    sku: "CAFE-002".to_owned(),
+                    name: "Café americano".to_owned(),
+                    unit_price: "40.0000".to_owned(),
+                    barcode: None,
+                    description: None,
+                    category_id: None,
+                },
+                &AuditOccurredAt::new(&iso_now(&pool).await)?,
+            )
+            .await,
+        Err(ApplicationError::Forbidden)
+    ));
+
+    // Reapertura: identidad, permisos y catálogo persisten.
     pool.close().await;
     let reopened = open(&database, Duration::from_millis(500)).await?;
     let application = identity_application(reopened.clone())?;
@@ -346,6 +442,23 @@ async fn first_installation_consumes_the_native_authorization_and_logs_in()
     };
     let session = application.login(&mut identities, &login, PASSWORD).await?;
     assert_eq!(session.identity.organization_id, id(ORG));
+    let catalog = CatalogApplication::new(SqliteUnitOfWork::new(reopened.clone()));
+    let hash = pos_credentials::SessionHandle::from_encoded(&session.handle)?.hash()?;
+    let principal = application.principal(&hash, login.now).await?;
+    let persisted = catalog
+        .list_products(
+            &principal,
+            None,
+            None,
+            CatalogPage {
+                limit: 10,
+                offset: 0,
+            },
+        )
+        .await?;
+    assert_eq!(persisted.len(), 1);
+    assert_eq!(persisted[0].sku().as_str(), "CAFE-001");
+    assert_eq!(persisted[0].unit_price().to_string(), "52.0000");
     reopened.close().await;
     Ok(())
 }

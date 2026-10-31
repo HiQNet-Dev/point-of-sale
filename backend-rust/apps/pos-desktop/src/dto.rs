@@ -166,6 +166,45 @@ pub struct LogoutAllDto {
     pub revoked: u32,
 }
 
+/// Identidad de una entidad del catálogo.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CatalogItemRequestDto {
+    /// UUID canónico dentro de la organización del principal.
+    pub id: String,
+}
+
+/// Alta de categoría por el administrador autenticado.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NewCategoryRequestDto {
+    /// Código slug de la categoría.
+    pub code: String,
+    /// Nombre visible.
+    pub name: String,
+}
+
+/// Edición de producto con versión exacta.
+///
+/// Los campos ausentes se conservan; el precio viaja como texto decimal de
+/// escala 4 y nunca como número de JavaScript.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateProductRequestDto {
+    /// UUID del producto.
+    pub product_id: String,
+    /// Versión leída por el cliente, en texto decimal.
+    pub expected_version: String,
+    /// Nombre nuevo, si cambia.
+    pub name: Option<String>,
+    /// Precio nuevo exacto, si cambia.
+    pub unit_price: Option<String>,
+    /// Categoría nueva, si cambia.
+    pub category_id: Option<String>,
+    /// `ACTIVE` o `INACTIVE`, si cambia.
+    pub status: Option<String>,
+}
+
 /// Estado del asistente de primera instalación.
 ///
 /// No incluye tokens, digests ni rutas. `expiresAt` es el fin de la ventana de

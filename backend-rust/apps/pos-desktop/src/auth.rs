@@ -15,7 +15,7 @@ use pos_application::{
 };
 use pos_core::{
     audit::AuditOccurredAt,
-    identity::{NormalizedEmail, SessionHash, UtcSeconds},
+    identity::{NormalizedEmail, SessionHash, UtcSeconds, VerifiedPrincipal},
     organization_branch::{ApplicationError, EntityId, IdentityGenerator},
 };
 use pos_credentials::SessionHandle;
@@ -87,6 +87,24 @@ impl LocalState {
             }
             Err(error) => Err(IpcError::from(error)),
         }
+    }
+
+    /// Revalida la sesión nativa y devuelve el principal para módulos de negocio.
+    ///
+    /// # Errors
+    /// Devuelve [`IpcError::Unauthorized`] sin sesión vigente.
+    pub(crate) async fn authenticated_principal(&self) -> Result<VerifiedPrincipal, IpcError> {
+        let product = self.product_installation()?;
+        let Some(handle) = current_handle(product).await? else {
+            return Err(IpcError::Unauthorized);
+        };
+        let hash = hash_of(&handle)?;
+        let (now, _) = clock(&product.pool).await?;
+        let application = identity_application(product.pool.clone()).map_err(IpcError::from)?;
+        application
+            .principal(&hash, now)
+            .await
+            .map_err(IpcError::from)
     }
 
     /// Revoca la sesión actual y libera el handle nativo.
@@ -201,7 +219,7 @@ impl From<SessionIdentity> for SessionIdentityDto {
 }
 
 /// Generador criptográfico de identidades para eventos de auditoría.
-struct SecureIdentities;
+pub(crate) struct SecureIdentities;
 
 impl IdentityGenerator for SecureIdentities {
     fn next_id(&mut self) -> Result<EntityId, ApplicationError> {

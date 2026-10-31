@@ -1,6 +1,6 @@
 {
   "identifier": "local-main-commands",
-  "description": "Comandos locales de la ventana única: primera instalación, autenticación sobre la instalación persistente, lecturas sintéticas del laboratorio y estado de instalación. Sin archivos arbitrarios, shell ni red.",
+  "description": "Comandos locales de la ventana única: primera instalación, autenticación, catálogo sobre la sesión, lecturas sintéticas del laboratorio y estado de instalación. Sin archivos arbitrarios, shell ni red.",
   "windows": ["main"],
   "permissions": [
     "allow-bootstrap-status",
@@ -11,6 +11,12 @@
     "allow-auth-logout-all",
     "allow-auth-select-branch",
     "allow-auth-list-branches",
+    "allow-catalog-list-categories",
+    "allow-catalog-list-products",
+    "allow-catalog-get-product",
+    "allow-catalog-create-category",
+    "allow-catalog-create-product",
+    "allow-catalog-update-product",
     "allow-lab-list-branches",
     "allow-lab-list-categories",
     "allow-lab-list-products",
