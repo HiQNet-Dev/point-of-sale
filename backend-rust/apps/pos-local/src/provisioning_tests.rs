@@ -72,6 +72,15 @@ async fn candidate_directory()
     Ok((temp, database))
 }
 
+/// Instante real del recorrido; la autorización se emite con el reloj de
+/// pared, así que un valor congelado en el pasado haría fallar el consumo.
+fn now_epoch() -> i64 {
+    let elapsed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_else(|error| panic!("reloj: {error}"));
+    i64::try_from(elapsed.as_secs()).unwrap_or_else(|error| panic!("instante: {error}"))
+}
+
 fn read_file(directory: &Path) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
     let contents = std::fs::read_to_string(directory.join(AUTHORIZATION_FILE))?;
     Ok(contents
@@ -218,6 +227,7 @@ async fn the_issued_token_provisions_once_and_cannot_be_replayed()
     let installation_id = EntityId::parse(&value("installation_id"))?;
     let authorization_id = EntityId::parse(&value("authorization_id"))?;
     let token = ProvisioningToken::from_encoded(&value("token"))?;
+    let instant = now_epoch();
 
     let pool = open(&database, Duration::from_millis(75)).await?;
     let administrator = id(ADMIN);
@@ -249,7 +259,7 @@ async fn the_issued_token_provisions_once_and_cannot_be_replayed()
             administrator.clone(),
             administrator,
             "contraseña-sintetica-cli-2k",
-            UtcSeconds::new(1_793_232_000).unwrap_or_else(|error| panic!("instante: {error}")),
+            UtcSeconds::new(instant).unwrap_or_else(|error| panic!("instante: {error}")),
         )
         .unwrap_or_else(|_| panic!("credencial sintética")),
     };
@@ -257,7 +267,7 @@ async fn the_issued_token_provisions_once_and_cannot_be_replayed()
     let proof = ProvisioningProof {
         authorization_id: &authorization_id,
         presented_digest: &digest,
-        now_epoch: 1_793_232_000,
+        now_epoch: instant,
     };
 
     let unit_of_work = SqliteUnitOfWork::new(pool.clone());
