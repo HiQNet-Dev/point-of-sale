@@ -1,8 +1,8 @@
-//! Dominio puro de compras: órdenes de compra, partidas y reglas de recepción.
+//! Dominio puro de compras: órdenes de compra, partidas, recepciones y reglas.
 //!
 //! Reproduce `purchasing/domain/PurchaseOrder`, `PurchaseOrderLine` y las reglas
 //! de `PurchaseReceiptService` sin JPA, Spring, SQLx ni transporte. El agregado
-//! `Supplier` todavía no se migra: la orden guarda su identificador y los
+//! `Supplier` vive en [`crate::supplier`]: la orden guarda su identificador y los
 //! snapshots de código y nombre, que es lo que el historial necesita.
 //!
 //! # Ciclo de vida
@@ -31,6 +31,12 @@
 //! - Una recepción nunca puede exceder lo pedido y no admite líneas repetidas.
 
 use std::fmt;
+
+mod receipt;
+
+pub use receipt::{
+    NewPurchaseReceipt, PurchaseReceipt, PurchaseReceiptLine, allocate_receipt_line_ids,
+};
 
 use crate::{
     Currency,

@@ -61,6 +61,22 @@ pub enum Permission {
     InventoryRecipeRead,
     /// Mantenimiento de recetas y efectos de inventario de modificadores.
     InventoryRecipeWrite,
+    /// Lectura de proveedores de la organización.
+    PurchasingSupplierRead,
+    /// Alta y actualización de proveedores.
+    PurchasingSupplierWrite,
+    /// Lectura de órdenes de compra de la sucursal.
+    PurchasingOrderRead,
+    /// Creación y edición de borradores y sus partidas.
+    PurchasingOrderWrite,
+    /// Emisión de una orden de compra.
+    PurchasingOrderIssue,
+    /// Cancelación de una orden de compra.
+    PurchasingOrderCancel,
+    /// Lectura de recepciones de compra.
+    PurchasingReceiptRead,
+    /// Registro de recepciones que incrementan stock.
+    PurchasingReceiptWrite,
 }
 
 impl Permission {
@@ -102,6 +118,14 @@ impl Permission {
             Self::InventoryStockAdjust => Some("inventory.stock.adjust"),
             Self::InventoryRecipeRead => Some("inventory.recipe.read"),
             Self::InventoryRecipeWrite => Some("inventory.recipe.write"),
+            Self::PurchasingSupplierRead => Some("purchasing.supplier.read"),
+            Self::PurchasingSupplierWrite => Some("purchasing.supplier.write"),
+            Self::PurchasingOrderRead => Some("purchasing.order.read"),
+            Self::PurchasingOrderWrite => Some("purchasing.order.write"),
+            Self::PurchasingOrderIssue => Some("purchasing.order.issue"),
+            Self::PurchasingOrderCancel => Some("purchasing.order.cancel"),
+            Self::PurchasingReceiptRead => Some("purchasing.receipt.read"),
+            Self::PurchasingReceiptWrite => Some("purchasing.receipt.write"),
         }
     }
 }

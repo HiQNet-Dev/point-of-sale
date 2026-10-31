@@ -115,6 +115,34 @@ pub enum ApplicationError {
     InsufficientInventory,
     /// Entrada de inventario o receta que no cumple el contrato.
     InvalidInventoryInput,
+    /// Entrada de compras que no cumple el contrato.
+    InvalidPurchaseInput,
+    /// Proveedor inexistente en la organización del principal.
+    SupplierNotFound,
+    /// Código de proveedor duplicado dentro de la organización.
+    SupplierCodeAlreadyExists,
+    /// El proveedor está inactivo y no admite nuevas órdenes.
+    SupplierInactive,
+    /// Orden de compra inexistente en el scope solicitado.
+    PurchaseOrderNotFound,
+    /// Código de orden duplicado dentro de la organización.
+    PurchaseOrderCodeAlreadyExists,
+    /// La orden no está en borrador y no admite la operación.
+    PurchaseOrderNotDraft,
+    /// La orden ya fue emitida y no admite una segunda emisión.
+    PurchaseOrderAlreadyIssued,
+    /// La orden ya fue cancelada.
+    PurchaseOrderAlreadyCancelled,
+    /// La orden no admite recepciones en su estado actual.
+    PurchaseOrderNotReceivable,
+    /// Partida de compra inexistente en la orden.
+    PurchaseOrderLineNotFound,
+    /// La recepción solicitada duplica cantidades ya recibidas.
+    OverReceipt,
+    /// La clave de idempotencia ya fue utilizada por otra recepción.
+    DuplicateReceipt,
+    /// Recepción de compra inexistente en el scope solicitado.
+    PurchaseReceiptNotFound,
     /// La entidad referenciada pertenece a otra organización.
     OwnershipMismatch,
     /// Una entrada de catálogo incumple el contrato de dominio.
@@ -178,6 +206,24 @@ impl fmt::Display for ApplicationError {
             }
             Self::InsufficientInventory => formatter.write_str("existencias insuficientes"),
             Self::InvalidInventoryInput => formatter.write_str("entrada de inventario no válida"),
+            Self::InvalidPurchaseInput => formatter.write_str("entrada de compras no válida"),
+            Self::SupplierNotFound => formatter.write_str("proveedor inexistente"),
+            Self::SupplierCodeAlreadyExists => formatter.write_str("código de proveedor duplicado"),
+            Self::SupplierInactive => formatter.write_str("el proveedor está inactivo"),
+            Self::PurchaseOrderNotFound => formatter.write_str("orden de compra inexistente"),
+            Self::PurchaseOrderCodeAlreadyExists => {
+                formatter.write_str("código de orden de compra duplicado")
+            }
+            Self::PurchaseOrderNotDraft => formatter.write_str("la orden no está en borrador"),
+            Self::PurchaseOrderAlreadyIssued => formatter.write_str("la orden ya fue emitida"),
+            Self::PurchaseOrderAlreadyCancelled => formatter.write_str("la orden ya fue cancelada"),
+            Self::PurchaseOrderNotReceivable => {
+                formatter.write_str("la orden no admite recepciones")
+            }
+            Self::PurchaseOrderLineNotFound => formatter.write_str("partida de compra inexistente"),
+            Self::OverReceipt => formatter.write_str("cantidad recibida superior a la pedida"),
+            Self::DuplicateReceipt => formatter.write_str("recepción repetida para la misma clave"),
+            Self::PurchaseReceiptNotFound => formatter.write_str("recepción inexistente"),
             Self::OwnershipMismatch => {
                 formatter.write_str("la entidad pertenece a otra organización")
             }
