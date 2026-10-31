@@ -50,8 +50,9 @@ Reglas de decisión:
 - ruta desconocida (no documentación y no mapeada a un área) → fail-safe:
   validación completa, para no omitir jobs ante código no reconocido.
 
-La integración E2E **no** depende de la detección de cambios: corre solo en el CI
-robusto de `main` y en la validación manual.
+La integración E2E **no** depende de la detección de cambios: corre en push a
+`main`, en PR hacia `main` y en la validación manual. El CI de PRs hacia `dev`
+no la ejecuta y `CI Gate` tolera ese `skipped`.
 
 ## Rust: integración técnica (`dev`) y gate normativo de release (`main`)
 
@@ -143,6 +144,20 @@ valida el manejo de junctions, symlinks, locking de instalación y rutas Windows
 `skipped` solo cuando la detección no requiere Rust, de modo que una omisión
 inesperada falla cerrado.
 
+### E2E obligatorio en `main`
+
+El job `e2e` corre cuando hay push a `main`, PR hacia `main` o
+`workflow_dispatch` autorizado. `CI Gate` aplica una política estricta sobre su
+resultado:
+
+- Destino `main` (PR a `main`, push a `main`, dispatch): exige
+  `e2e.result == "success"`. Un `skipped`, `failure` o `cancelled` **falla** el
+  gate.
+- Destino `dev`: acepta `success` o `skipped`, pero nunca un fallo.
+
+Así un PR hacia `main` no puede fusionarse sin haber ejecutado la integración
+real, y `dev` conserva el CI ligero.
+
 ### Nivel 2 — `rust-normative`: evidencia normativa real
 
 La foundation ya incluye un primer esquema parcial: Local org/branch y PG
@@ -229,6 +244,10 @@ ocultarlo, y que `CI Gate` acepta `BLOCKED` solo para `dev` y exige `PASSED` par
 Las regresiones de Windows comprueban que `windows-desktop` corre en
 `windows-latest` con la toolchain fijada, que el frontend sintético se construye
 antes del binario y que su resultado es obligatorio cuando `rust_run=true`.
+Las regresiones de E2E comprueban que el job corre en PR hacia `main`, push a
+`main` y dispatch, que `main` rechaza `skipped`, `failure` y `cancelled`, que
+`dev` los tolera solo como `skipped`, y que un `BLOCKED` normativo sigue
+rechazándose en `main`.
 
 ## Concurrency
 
