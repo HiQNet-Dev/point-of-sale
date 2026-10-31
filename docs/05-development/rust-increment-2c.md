@@ -1,160 +1,216 @@
-# Incremento 2C — avance de seguridad del camino persistente
+# Incremento 2C — consolidación, bootstrap canónico y Purchasing preparado
 
-**Estado: parcial; no se declara completada la activación de producto.**
+**Cierre técnico del alcance mínimo de la continuación; activación comercial pendiente.**
+No se declara terminado el reemplazo Java/Rust ni autorizado v0.4.0.
 
-Base verificada: `0e7afa3251a229a6b6882d9a60c3ef22c868c3e9`, rama
-`feat/fullstack/rust-desktop-vertical-1x`. Checkout inicialmente limpio, un solo
-worktree. PR #84 abierto, Draft hacia `dev`, mismo SHA remoto y sin checks
-asociados en `statusCheckRollup` al consultar GitHub. No se ejecutaron Actions,
-merges, releases ni promociones de migraciones. Las correcciones inicialmente
-sin commit se consolidan en esta continuación mediante commits enfocados con
-`[skip actions]`; ambos workflows usan eventos compatibles con esa omisión nativa
-de GitHub. `VERSION` no cambia. La publicación no equivale a CI aprobado.
+## 1. Base, preservación y publicación
 
-## 1. Funcionalidad corregida, sin otro laboratorio
+Base local/remota verificada: `0e7afa3251a229a6b6882d9a60c3ef22c868c3e9`, rama
+`feat/fullstack/rust-desktop-vertical-1x`, PR #84 Draft hacia `dev`. Se preservaron
+los nueve archivos locales de la primera entrega de 2C; no hubo reset, clean,
+force-push, cambios de rama ni worktrees nuevos.
 
-### Historial SQLx en el camino de producto
+Commits enfocados de esta continuación (el informe final se añade después):
 
-La reapertura devolvía éxito sin invocar el migrador cuando existía historial.
-Se reprodujo el defecto con SQLite real: tras alterar el checksum de `0001`,
-`prepare_installation` devolvía `REOPENED` en lugar de rechazar la base.
-
-Ahora `pos-application::installation::prepare_installation`:
-
-1. Observa el historial y rechaza esquemas futuros antes de migrar.
-2. Invoca siempre el migrador **aprobado**, incluso al reabrir, para validar
-   checksums e historial SQLx y aplicar solo upgrades aprobados pendientes.
-3. Vuelve a observar y exige alcanzar la versión aprobada antes de devolver éxito.
-4. Conserva en el reporte la clasificación del momento de apertura.
-
-El adaptador sigue ejecutando exclusivamente `migrations/local`; no se cambió
-ningún SQL ni checksum histórico. No se introdujo SQL en Application o Tauri.
-La comprobación del historial no acredita por sí sola que nadie haya alterado
-manualmente las tablas de negocio.
-
-Pruebas añadidas: checksum alterado, migración fallida, upgrade aprobado pendiente,
-migrador que no alcanza la versión esperada y rechazo de esquema futuro antes de
-invocar al migrador. El composition root desktop también verifica rechazo por
-checksum y liberación del candado después de un fallo de arranque.
-
-### Apertura de directorios y exclusión desktop
-
-`apps/pos-desktop::installation_dir` añade:
-
-- Rechazo de enlaces/junctions/puntos de reanálisis en todos los antecesores.
-- Validación del archivo principal, `-wal`, `-shm`, `-journal` y lock file;
-  rechaza redirecciones y objetos que no sean archivos regulares.
-- Directorio final privado en Unix: rechaza permisos de grupo/otros sin cambiar
-  silenciosamente los permisos de una instalación existente.
-- Candado exclusivo del SO mediante `File::try_lock` sobre `.hiqnet-pos.lock`,
-  adquirido antes de abrir SQLite. La segunda instancia desktop recibe un fallo
-  seguro de arranque. El estado mantiene el descriptor hasta cerrar el pool.
-- El lock file no se elimina: borrarlo permitiría bloquear objetos distintos bajo
-  el mismo nombre. El SO libera el candado al cerrar el descriptor/proceso.
-
-No hay rutas recibidas desde JavaScript ni cambios de comandos/bindings IPC.
-El candado es cooperativo y solo lo usa desktop: no impide que herramientas o
-`pos-local` que no participen en el protocolo abran el mismo archivo. SQLite
-conserva la responsabilidad de las transacciones y `BEGIN IMMEDIATE`.
-
-## 2. Validación ejecutada
-
-| Control | Resultado de este avance |
+| Commit | Responsabilidad |
 | --- | --- |
-| Headless: fmt, Clippy estricto, build con workspace/all-features/locked | PASS |
-| Headless: `cargo test --locked --workspace --all-features` | **315 PASS**, 0 fallos; incluye arquitectura y SQLite |
-| Desktop Windows: fmt, Clippy estricto, test, build | **29 PASS**, 0 fallos |
-| Directorios Linux Docker, usuario de la imagen de pruebas y sin red | **9 PASS**, 0 fallos |
-| Frontend: lint y typecheck | PASS |
-| Frontend: suite | **212 PASS**, 3 skipped |
-| Contratos Rust↔TypeScript | **3 PASS** |
-| Frontend build | PASS; warning existente de chunk mayor de 500 kB |
-| E2E real React/WebView2/IPC: laboratorio | PASS; `productive: false` |
-| E2E real React/WebView2/IPC: instalación persistente | PASS; `authEnabled: false`, `productive: false` |
-| Docker build/runtime y smoke de instalación/reinicio | PASS; no-root, permisos `700 10001:10001`, healthcheck y cierre limpio |
-| `git diff --check` | PASS al revisar los cambios de código |
+| `cafc8e47` | Consolidar historial/checksums, directorios seguros y candado desktop |
+| `ac263072` | Bootstrap en Application, unicidad de instalación y grants del administrador |
+| `6cc4a944` | Scope/payload del reintento de recepción |
+| `f0572112` | Exclusión entre procesos y recuperación tras terminación forzada |
+| `b05a501d` | 17 contratos/handlers Purchasing preparados, bindings y servicio/Query TypeScript |
 
-El smoke Docker conservó el digest del archivo cerrado entre arranques:
-`2477458c136582bf068f92929061618811b9a59c9c8913040c9f7e2686a2e03b`.
+Todos llevan `[skip actions]`. Los dos workflows inspeccionados (`ci.yml` y
+`rust-contracts.yml`) usan eventos push/pull_request o dispatch manual, compatibles
+con la omisión nativa de GitHub. No se modificó ningún workflow. La publicación
+se realiza en la misma rama; no se solicita merge, tag, release ni ejecución de
+Actions. Los commits omitidos no constituyen evidencia CI: antes de integrar se
+requiere autorización para CI normal sobre el SHA definitivo.
 
-La prueba Linux del módulo de directorios compila **el archivo fuente actual**
-montado de solo lectura con `rustc --test`, usando la dependencia `tempfile` ya
-compilada en `hiqnet-pos-rust-contracts:local`. Ejecuta las ramas Unix de enlaces,
-permisos, auxiliares y candado. No equivale a compilar/probar todo Tauri en Linux.
-El E2E gráfico se ejecutó en Windows; Docker headless no se presenta como E2E.
+## 2. Integridad y directorios consolidados
 
-Fallos intermedios documentados:
+La reapertura ya no devuelve éxito sin validar SQLx. Se reprodujo primero una
+aceptación incorrecta de un checksum alterado; ahora se rechaza. El caso de uso
+observa, rechaza esquema futuro antes de migrar, ejecuta el migrador aprobado en
+cada apertura y comprueba que alcance la versión esperada. No reaplica DDL ya
+confirmado ni carga propuestas. Se prueban historial fallido, checksum alterado,
+upgrade aprobado pendiente y errores de arranque sin dejar el candado adquirido.
 
-- La regresión del checksum falló antes del arreglo y pasó después.
-- Las primeras pruebas Unix usaban directamente un directorio temporal que no
-  cumplía la política privada; se corrigieron las fixtures para crear el
-  subdirectorio mediante el validador real, sin debilitar la política.
-- Una repetición de la suite headless agotó 120 s. La ejecución completa posterior
-  con techo de 300 s terminó con las 315 pruebas aprobadas. Log local (ignorado
-  por Git): `backend-rust/target/2c-workspace-tests.log`.
+La validación cubre antecesores, symlinks, junctions/reparse points Windows y los
+archivos principal/WAL/SHM/journal/lock. En Unix exige directorio final privado y
+no cambia permisos existentes silenciosamente. La verificación de historial no
+certifica que un administrador no haya alterado manualmente tablas de negocio.
 
-## 3. Autorizaciones y activación
+El candado `.hiqnet-pos.lock` se adquiere antes de SQLite y se mantiene hasta
+cerrar el pool. Nunca se elimina al cerrar. Se prueba exclusión en otro proceso,
+terminación forzada de ese proceso y adquisición posterior sin borrar el archivo.
+Es **cooperativo y desktop**, no exclusión global: `pos-local` y herramientas que
+no participen pueden ignorarlo. No sustituye las transacciones de SQLite.
 
-| Bloque | Estado | Activado en este avance |
-| --- | --- | --- |
-| A — identidad/sesión/RBAC/auditoría/bootstrap | Pendiente de aceptación, reconciliación SYSTEM/USER y política de credenciales | No |
-| B — catálogo/cajas/turnos | Pendiente; depende de identidad autorizada | No |
-| C — ventas/inventario/checkout | Pendiente y sujeto a dependencias físicas | No |
-| D — transporte/almacenamiento | Diseño aceptado el 2026-10-30 | Se mejora apertura segura y exclusión desktop; no distribución |
-| CC21-03 | Aceptación parcial del costo pactado opcional | Se conserva; no se amplía su alcance |
-| D-AUTH-09 | Bloqueada | No se activa login ni política LAB comercial |
+### ACL Windows y TOCTOU: límites constatados
 
-Solo `0001_organization_branch.sql` permanece en `migrations/local`. `0002`–`0016`
-siguen como propuestas; no hay nuevas autorizaciones ni migraciones promovidas.
+Se inspeccionó el ACL real del directorio Local de datos del perfil con `Get-Acl`.
+Además de propietario/SYSTEM/Administradores apareció una ACE de otro principal
+con lectura/ejecución. No se modificó el ACL ni se publicó su SID. Por tanto, no
+se presupone que todo directorio del perfil o de recuperación sea privado.
 
-D-AUTH-09 conserva el benchmark/interoperabilidad y admisión acotada de 2B. Este
-avance **no** añade medición sobre hardware objetivo, política final de intentos
-por cuenta/instalación, enfriamiento ni aprobación criptográfica. No se anuncia
-login comercial, sesión auténtica ni bootstrap canónico terminado.
+Pendientes: verificación ACL nativa y efectiva, directorios compartidos, enlaces
+sustituidos entre validación/apertura (TOCTOU), ownership/hardlinks, continuidad
+ante cambio de bundle identifier, APIs nativas Tauri para ruta, backup/restore y
+actualizaciones. Las comprobaciones actuales no son aperturas atómicas no-follow.
+No se movieron bases existentes ni se fijó el identificador comercial definitivo.
 
-## 4. Purchasing y paridad
+Respaldo/recuperación deben operar con desktop cerrado y conexiones drenadas;
+no borrar el lock file para forzar una apertura. Antes de operar concurrentemente
+con desktop, una herramienta autorizada deberá participar en el mismo protocolo
+y coordinar SQLite. No se añade todavía un modo de restauración o respaldo.
 
-Las 17 operaciones de Purchasing de 2B permanecen implementadas en Application y
-SQLite candidato; sus pruebas se ejecutaron dentro de las 315 headless. **No se
-añadieron handlers, DTOs/bindings o pantallas Purchasing en este avance.** Tampoco
-se ejecutó una comparación diferencial nueva contra los 17 endpoints Java.
+## 3. Bootstrap canónico: código real, todavía candidato
 
-El modo instalación sigue exponiendo únicamente `installation_status`; las
-lecturas de sucursales/categorías/productos y la escritura de producto siguen
-restringidas al modo sintético. Ninguna operación comercial nueva se presenta
-como disponible. Se actualiza la guía IPC con los fallos de arranque y sus límites.
+Se extrajo de infraestructura la coordinación existente, sin otro servicio paralelo:
 
-No hay evidencia nueva para cambiar los 30 casos normativos. El último estado
-reportado se conserva como antecedente: **1 PASSED, 28 BLOCKED, 1 NOT_RUN**. No se
-revalidó el conjunto normativo en este avance ni se modificaron sus estados,
-`--require-complete`, DDL13/PAR/AS o CI Gate.
+- `pos-application::bootstrap::{BootstrapRequest, BootstrapTransaction,
+  requires_provisioning, provision_initial_installation}`.
+- `SqliteTransaction` implementa el puerto sobre la UoW abierta. No abre otro pool
+  ni confirma por su cuenta. El llamador conserva `BEGIN IMMEDIATE`, commit/rollback.
+- Application construye Organization y `bootstrap.completed` con atribución SYSTEM
+  y sin sesión. Exige `BootstrapProvisioning`, emitida solo por `authorize_bootstrap`.
+- Crea instalación, administrador, rol y vínculos; concede al administrador los
+  **59 permisos del catálogo** en la misma UoW, reutilizando la política que el
+  escenario existente aplicaba desde fuera. Se retiró esa duplicación del escenario.
+- La detección no depende de IDs del cliente: organización/instalación/usuario o
+  registro inicial existentes/parciales impiden comenzar de nuevo. Dos intentos
+  concurrentes con IDs distintos solo pueden confirmar uno.
+- Auditoría fallida revierte organización, instalación, administrador, rol, grants
+  y bootstrap. Se comprueba persistencia y rechazo de otro bootstrap tras reabrir.
+- Se conserva el import anterior desde storage mediante reexportación, no una
+  segunda implementación. El runtime comercial no invoca la ruta candidata.
 
-## 5. Trabajo restante verificable
+### Decisión mínima pendiente para Free Local
 
-1. Bloque A: cerrar técnicamente SYSTEM/USER y bootstrap, y completar la política
-   de intentos/expiración/rehash/revocación sin dos caminos comerciales de identidad.
-2. D-AUTH-09: medición en hardware representativo y aceptación explícita antes de
-   usar parámetros comerciales. El contenedor limitado no sustituye ese hardware.
-3. Bloque D: ACL Windows real, mitigación de TOCTOU/aperturas atómicas, política de
-   almacenamiento compartido, APIs nativas Tauri, identificador de bundle definitivo
-   con continuidad de datos, backup/restore y actualizaciones seguras. No se mueve
-   ninguna base ni se fija silenciosamente el identificador comercial.
-4. Preparar IPC/React de Purchasing sobre los casos existentes, con disponibilidad
-   cerrada en producto hasta resolver `0016` y la identidad. Recepción económica,
-   fichas físicas, snapshots/import y ADR-0021 siguen pendientes.
-5. Tras autorización expresa A/B/C, promover solo el conjunto aprobado y ejecutar
-   clean install/upgrade, checksums, rollback, aislamiento y reapertura antes de
-   habilitar operaciones comerciales. No activar por una bandera que cargue proposals.
-6. Completar contratos, pantallas, pruebas diferenciales e importador versionado
-   con distribución Local/Central/Control aprobada. El E2E productivo completo aún
-   no puede declararse ejecutado.
-7. Antes de integrar a `dev`: autorización para CI, checks completos sobre el SHA
-   final y gates/aprobaciones exigidos. Las pruebas locales no reemplazan CI.
-8. Antes de retirar Java/v0.4.0: paridad completa, Purchasing expuesto, identidad y
-   esquema productivos, instalador, recuperación, plan de reversión y Release Audit.
+El contrato existente exige **secreto de despliegue verificado** antes de emitir
+la capacidad. Detectar «no hay administrador» no autoriza a cualquiera a tomar la
+instalación. Falta resolver cómo se provisiona, custodia y entrega ese secreto en
+el primer arranque Free Local sin Spring Boot, y quién puede recuperar el control.
+No se sustituye por un botón allow-all, ruta JS ni usuario fijo.
 
-No hubo subagentes disponibles en las herramientas de esta sesión. Se utilizaron
-las skills instaladas de arquitectura, debugging, testing, documentación y revisión
-de código mediante lectura de sus instrucciones. La revisión del diff fue propia,
-no una revisión independiente por un segundo agente. No había skill/herramienta
-`secure-coding` disponible y no se atribuye una auditoría externa inexistente.
+Este caso todavía **no crea/verifica una credencial inicial ni emite una sesión**.
+Esas capacidades existen separadas como candidatas y deben componerse con política
+aprobada y una UoW coherente. No se declara login/primer administrador comerciales
+operativos por haber completado el provisioning de identidad y sus grants.
+
+## 4. Auth/RBAC y D-AUTH-09
+
+Se reutilizan `LocalPrincipalService`, las lecturas canónicas SQLite, revocación,
+expiración, `LockoutPolicy` y las transiciones de credenciales existentes. Las
+pruebas comprueban permisos retirados y revocación efectivos en la siguiente
+llamada, CAS y rollback. No se reemplazó esa lógica ni se repitieron benchmarks.
+
+La admisión acotada y la interoperabilidad BCrypt/Argon2id de 2B se conservan.
+**D-AUTH-09 sigue bloqueada**: falta hardware objetivo y aprobación; no se activan
+`LAB_V0`/`LAB_V1` como políticas comerciales. Siguen pendientes el contrato final
+de intentos/enfriamiento, límite por instalación persistente, comportamiento de
+cuenta inexistente y composición de login/rehash/sesión con protección de enumeración.
+No se anuncia terminada una política comercial solo por existir primitivas probadas.
+
+## 5. Purchasing: 17 handlers y frontera frontend preparada
+
+Los 17 casos de uso se reutilizan. Se añaden DTOs independientes, handlers Tauri,
+registro preparado, bindings Specta, servicio TypeScript inyectable y opciones
+TanStack Query. **No se registran en el dispatcher activo, no se añaden ACLs y el
+estado no tiene constructor productivo.** Solo pruebas pueden ensamblarlo ahora.
+El singleton frontend falla cerrado sin invocar IPC; no se conecta ninguna pantalla
+comercial a fixtures ni se cambia el backend Java de las pantallas existentes.
+
+Cada llamada preparada reconstruye el principal desde sesión backend y SQLite;
+no acepta actor, organización, sesión ni ruta desde JS. El reloj/generador del
+contexto de prueba se inyectan solo para reutilizar las fixtures existentes; no se
+crea otra identidad sintética de producto.
+
+Las versiones y decimales son texto; costos desconocidos siguen `null`, no cero.
+Los patches usan `keep`/`clear`/`set` explícitos para no perder la distinción al
+deserializar. Los errores se traducen sin SQL/secretos; no hay reintentos automáticos
+de mutaciones/CAS. El servicio no repite cálculos empresariales.
+
+La prueba de bindings compara lo regenerado, comprueba los 17 nombres en la guía
+y que el registro activo no los exponga. Se amplía únicamente la excepción ESLint
+ya existente para el runtime generado por Specta al nuevo archivo generado; no se
+modifica ese runtime a mano ni se desactiva lint en código de aplicación.
+
+### Defecto de seguridad encontrado en la integración
+
+El reintento de recepción devolvía el hecho encontrado por clave de organización
+antes de comprobar sucursal, orden o cantidades. La regresión de otra sucursal
+falló antes del arreglo (devolvía éxito). Ahora Application exige misma sucursal,
+misma orden y mismo conjunto de cantidades exactas; rechaza cambio de scope/payload
+sin nuevo movimiento/recepción/auditoría y mantiene el replay legítimo. Hay pruebas
+headless SQLite y del handler preparado.
+
+Correspondencia completa Java → Rust → comando, permisos, requests/responses,
+patches, paginación, errores y límites:
+[Purchasing IPC preparado](../03-api/rust-purchasing-ipc.md).
+
+## 6. Evidencia ejecutada en la continuación
+
+| Control | Resultado |
+| --- | --- |
+| Headless fmt, Clippy `-D warnings`, workspace/all-targets/all-features/locked, build | PASS |
+| Suite headless completa, arquitectura y SQLite incluidas | **318 PASS**, 0 fallos |
+| Workspace desktop Windows: fmt, Clippy estricto, test y build | **35 PASS**, 0 fallos |
+| Directorios/candado Linux Docker sin red | **11 PASS**; incluye un helper de proceso, no 11 escenarios comerciales |
+| Frontend lint/typecheck | PASS |
+| Suite frontend completa, `vitest run --maxWorkers=2` | **218 PASS**, 3 opt-in skipped |
+| Contratos Rust↔TS existentes | **3 PASS** |
+| Frontend build | PASS; warning de chunk >500 kB existente |
+| E2E React/WebView2/IPC lab e instalación persistente | Ambos PASS, `productive: false`, instalación sin auth |
+| Docker build/runtime/smoke | PASS: no-root, `700 10001:10001`, healthcheck, cierre, reapertura |
+| Escenario POS existente dentro de la imagen Linux actual, sin red/read-only | PASS: venta COMPLETED, turno CLOSED, inventario exacto; candidato/sintético |
+
+Digest del archivo cerrado conservado entre los dos arranques del smoke final:
+`a0be5724b371c78a1e499f69ea66e8aabbe1087874ad33442f0754df744a01ad`.
+Log local ignorado por Git: `backend-rust/target/2c-workspace-tests.log` (318 PASS).
+
+Se agotaron límites de tiempo de las primeras ejecuciones paralelas headless/Docker;
+la suite frontend por defecto también tuvo fallos de tiempo y una expectativa de
+navegación bajo esa carga. No se modificaron las pruebas ni sus timeouts. Las
+repeticiones completas secuenciales y frontend con dos workers pasaron. Se corrigió
+además el setup del test nuevo: no debe retornar el mock desde `beforeEach`, pues
+Vitest lo interpretaba como teardown y volvía a ejecutar una función rechazada.
+
+Los 17 handlers se prueban por llamada Rust con estado Tauri y SQLite candidato;
+**no es dispatcher IPC real de Purchasing ni E2E comercial**. TypeScript prueba el
+cliente generado con `invoke` simulado y QueryClient. Los E2E gráficos solo validan
+los comandos activos previos. Linux compila el módulo de directorios actual y sus
+pruebas de proceso; no se declara compilación/E2E gráfico completo Tauri en Linux.
+
+## 7. Estado normativo e integración
+
+| Bloque | Estado |
+| --- | --- |
+| A | No aprobado; provisioning Application avanzado, pero credencial/login, secreto Local y reconciliación física pendientes |
+| B | No aprobado; depende de identidad comercial y promoción de `0008`–`0010` |
+| C | No aprobado; depende de A/B y decisiones físicas para `0011`–`0015` |
+| D | Diseño aceptado 2026-10-30; apertura/candado avanzados, ACL/TOCTOU/identificador/backup pendientes |
+| CC21-03 | Aprobación parcial conservada; no autoriza costo efectivo ni ADR-0021 completo |
+| D-AUTH-09 | Bloqueada, sin nueva medición de hardware objetivo ni aceptación |
+
+Solo `0001` autorizada en `migrations/local`; `0002`–`0016` siguen propuestas.
+Flyway, SQLx histórico, VERSION y gates intactos. No hay E2E productivo completo,
+importador autorizado ni paridad diferencial comercial completa. Último estado
+normativo reportado: **1 PASSED, 28 BLOCKED, 1 NOT_RUN**, sin reclasificación nueva
+ni certificación del conjunto en esta continuación.
+
+Antes de `dev`: revisión, aprobaciones aplicables y CI normal autorizado sobre el
+SHA definitivo, sin omisión. Antes de retirar Java/v0.4.0: identidad auténtica,
+esquema productivo, pantallas/contratos activados, paridad diferencial, importación
+con política Local/Central/Control, backup/restore, instalador, reversión y Release
+Audit. Publicar este PR Draft no autoriza ninguno de esos pasos.
+
+La revisión de los 33 archivos del diff no encontró bases SQLite, WAL/SHM,
+`.env`, directorios target/dist/node_modules ni resultados temporales incluidos.
+Una comprobación de marcadores de claves privadas/AWS no encontró coincidencias;
+no equivale a un análisis exhaustivo de secretos. Gitleaks no estaba instalado.
+
+No había herramientas de subagentes ni Context7 disponibles. Se usaron las skills
+instaladas aplicables y las APIs/patrones ya presentes, sin nuevas dependencias.
+La revisión fue propia; no se atribuye una auditoría independiente inexistente.

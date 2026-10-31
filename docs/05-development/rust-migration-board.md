@@ -36,7 +36,7 @@ auditoría transaccional— sobre un esquema **candidato** que aún no vive en
 | Audit | `PERSISTENCE (fixture)` | `pos-core::audit` (metadata ≤16 KiB, USER/SYSTEM), `audit_event` propuesto con triggers append-only | DDL aprobado, writer persistente, tabla canónica |
 | Users / Auth | `PERSISTENCE (lab)` | `pos-core::identity`, `identity_lab`, `credential_lab`, `pos-credentials` | DDL aprobado, verificación productiva, sesiones operativas |
 | RBAC | `PERSISTENCE (lab)` | Catálogo exacto de 59 permisos, override de organización, modo recuperación | DDL aprobado, resolución contextual productiva |
-| Bootstrap | `PERSISTENCE (fixture)` | Pruebas de one-shot, ownership compuesto y rollback; tramo Organization en Rust | Secreto pre-body, DDL aprobado, endpoint/servicio de producto |
+| Bootstrap | `APPLICATION (candidate)` | `pos-application::bootstrap`, capacidad autorizada, organización/administrador y 59 grants + auditoría SYSTEM en una UoW; pruebas de concurrencia, reapertura, IDs nuevos y rollback | Credencial inicial, política del secreto de despliegue para Free Local, aprobación A y transporte comercial |
 | Catálogo (categorías, productos) | `APPLICATION (candidate)` | `pos-core::catalog`, `proposals/local-catalog/0008`, `SqliteCatalogApplication`, 9 pruebas de integración (CAS, tenant, rollback por auditoría, reapertura); escritura expuesta solo en laboratorio por IPC con auditoría transaccional | Aprobación D-CAT, promoción a `migrations/local`, API |
 | Modificadores | `PERSISTENCE (fixture)` | `0011` candidato, FKs same-org y snapshots de opciones usados por ventas SQLite | CRUD/autorización administrativa, aprobación D-SALES, promoción, API |
 | Cajas | `APPLICATION (candidate)` | `pos-core::cash`, `0009` candidato, `SqliteCashApplication`, SQLite real: scope, CAS, auditoría, reapertura | Aprobación D-CASH, promoción, API |
@@ -59,13 +59,32 @@ auditoría transaccional— sobre un esquema **candidato** que aún no vive en
 La instalación aprobada añade validación SQLx de checksums en cada reapertura,
 upgrades limitados al migrador aprobado, rechazo de rutas redirigidas/auxiliares
 inseguros y exclusión de segunda instancia desktop mediante candado del SO.
-Pruebas: 315 headless, 29 desktop Windows, 9 de directorios en Linux Docker;
+Pruebas de la continuación: 318 headless, 35 desktop Windows, 11 de directorios/candado en Linux Docker;
 E2E WebView2 de instalación y laboratorio, y smoke Docker aprobados localmente.
 Detalle y límites en [el informe 2C](rust-increment-2c.md).
 
-No se promovió ninguna migración, no hay login comercial ni nuevos comandos de
-Purchasing. Las 17 operaciones permanecen `APPLICATION (candidate)`, sin paridad
-diferencial completa ni integración IPC/React. A/B/C y D-AUTH-09 siguen pendientes.
+No se promovió ninguna migración ni se habilitó login comercial. Purchasing tiene
+17 handlers preparados, DTOs, bindings y servicio/consultas TypeScript, pero su
+registro no se incluye en el dispatcher activo ni tiene ACLs. Se corrigió la
+idempotencia para exigir misma sucursal, orden y cantidades. No hay paridad
+diferencial completa ni pantallas comerciales Rust. A/B/C y D-AUTH-09 siguen pendientes.
+
+### Frontera de sustitución real (no porcentaje de migración)
+
+| Módulo | DOMAIN | APPLICATION | STORAGE | TRANSPORT | REACT | PARITY_VERIFIED |
+| --- | --- | --- | --- | --- | --- | --- |
+| Identity / RBAC | Sí | Principal/credenciales existentes; login comercial incompleto | Candidato | Sin login IPC | Java operativo | No |
+| Bootstrap | Capacidad y SYSTEM | Canónico, one-shot y grants | Candidato | No expuesto | No | No |
+| Organization / Branch | Sí | Sí | 0001 aprobado; atribución canónica pendiente | Lectura de sucursales solo lab | Solo lab | No |
+| Catálogo | Sí | Sí | Candidato | Lectura/crear producto solo lab | Solo lab | No |
+| Caja / turnos | Sí | Sí | Candidato | No | Java | No |
+| Inventario / recetas | Sí | Operaciones de stock; mantenimiento de recetas pendiente | Candidato | No | Java | No |
+| Ventas / checkout | Sí | Sí, UoW única | Candidato | No | Java | No |
+| Purchasing (17 operaciones) | Sí | Sí | 0016 candidato | 17 handlers preparados, no registrados | Servicio y Query preparados, sin pantallas activadas | No |
+
+Correspondencia de las 17 operaciones, permisos, requests/responses y pruebas:
+[Purchasing IPC preparado](../03-api/rust-purchasing-ipc.md). Un handler preparado
+no cambia por sí solo el estado de exposición o la autoridad productiva.
 
 ## 3. Dinero y cantidades
 
