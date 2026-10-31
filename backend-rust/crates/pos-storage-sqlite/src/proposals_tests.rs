@@ -1322,26 +1322,43 @@ async fn first_run_rolls_back_everything_when_audit_fails() -> Result<(), Box<dy
 }
 
 #[tokio::test]
-async fn bootstrap_authorization_enforces_one_live_right_and_terminal_states()
+async fn bootstrap_authorization_models_preauthorization_and_append_only_events()
 -> Result<(), Box<dyn std::error::Error>> {
+    const PROVISIONAL: &str = "00000000-0000-0000-0000-0000000001b0";
+    const PROVISIONAL_TWO: &str = "00000000-0000-0000-0000-0000000001b1";
     const AUTH: &str = "00000000-0000-0000-0000-0000000001a0";
-    const AUTH_TWO: &str = "00000000-0000-0000-0000-0000000001a1";
-    const AUTH_THREE: &str = "00000000-0000-0000-0000-0000000001a2";
-    const EVENT: &str = "00000000-0000-0000-0000-0000000001e0";
+    const AUTH_REISSUED: &str = "00000000-0000-0000-0000-0000000001a2";
+    const EVENT_ISSUED: &str = "00000000-0000-0000-0000-0000000001e0";
+    const EVENT_REJECTED: &str = "00000000-0000-0000-0000-0000000001e1";
 
     let temp = tempfile::tempdir()?;
-    let pool = open_proposed(&temp.path().join("authorization.sqlite")).await?;
+    let path = temp.path().join("authorization.sqlite");
+    let pool = open_proposed(&path).await?;
     seed(&pool).await?;
 
-    let digest = "a".repeat(64);
+    // La preautorización existe antes de la organización y no depende de ella.
+    for (id, fingerprint) in [
+        (PROVISIONAL, "ed25519:provisional-a"),
+        (PROVISIONAL_TWO, "ed25519:provisional-b"),
+    ] {
+        sqlx::query(
+            "INSERT INTO provisional_installation (id, fingerprint, created_at) \
+             VALUES (?, ?, 900)",
+        )
+        .bind(id)
+        .bind(fingerprint)
+        .execute(&pool)
+        .await?;
+    }
+
     sqlx::query(
         "INSERT INTO bootstrap_authorization \
          (id, installation_id, purpose, token_digest, issued_at, expires_at, updated_at) \
          VALUES (?, ?, 'BOOTSTRAP', ?, 1000, 1600, 1000)",
     )
     .bind(AUTH)
-    .bind(INSTALLATION)
-    .bind(&digest)
+    .bind(PROVISIONAL)
+    .bind("a".repeat(64))
     .execute(&pool)
     .await?;
 
@@ -1350,11 +1367,10 @@ async fn bootstrap_authorization_enforces_one_live_right_and_terminal_states()
         sqlx::query(
             "INSERT INTO bootstrap_authorization \
              (id, installation_id, purpose, token_digest, issued_at, expires_at, updated_at) \
-             VALUES (?, ?, 'BOOTSTRAP', ?, 1000, 1600, 1000)",
+             VALUES ('00000000-0000-0000-0000-0000000001a1', ?, 'BOOTSTRAP', ?, 1000, 1600, 1000)",
         )
-        .bind(AUTH_TWO)
-        .bind(INSTALLATION_TWO)
-        .bind(&digest)
+        .bind(PROVISIONAL_TWO)
+        .bind("a".repeat(64))
         .execute(&pool)
         .await
         .is_err()
@@ -1365,90 +1381,160 @@ async fn bootstrap_authorization_enforces_one_live_right_and_terminal_states()
         sqlx::query(
             "INSERT INTO bootstrap_authorization \
              (id, installation_id, purpose, token_digest, issued_at, expires_at, updated_at) \
-             VALUES (?, ?, 'BOOTSTRAP', ?, 1000, 1600, 1000)",
+             VALUES ('00000000-0000-0000-0000-0000000001a3', ?, 'BOOTSTRAP', ?, 1000, 1600, 1000)",
         )
-        .bind(AUTH_THREE)
-        .bind(INSTALLATION)
+        .bind(PROVISIONAL)
         .bind("b".repeat(64))
         .execute(&pool)
         .await
         .is_err()
     );
 
-    // Ventana fuera de política: 50 s y 4000 s se rechazan, 600 s se acepta.
-    for (expires_at, accepted) in [(1050_i64, false), (5000_i64, false), (1600_i64, true)] {
-        let result = sqlx::query(
+    // Ventana fuera de política.
+    assert!(
+        sqlx::query(
             "INSERT INTO bootstrap_authorization \
              (id, installation_id, purpose, token_digest, issued_at, expires_at, updated_at) \
-             VALUES ('00000000-0000-0000-0000-0000000001b0', ?, \
-                     'ADMINISTRATIVE_RECOVERY', ?, 1000, ?, 1000)",
+             VALUES ('00000000-0000-0000-0000-0000000001a4', ?, \
+                     'ADMINISTRATIVE_RECOVERY', ?, 1000, 1050, 1000)",
         )
-        .bind(INSTALLATION)
-        .bind(format!("c{}", "0".repeat(63)))
-        .bind(expires_at)
+        .bind(PROVISIONAL)
+        .bind("c".repeat(64))
         .execute(&pool)
-        .await;
-        assert_eq!(result.is_ok(), accepted, "expires_at {expires_at}");
-        let _ = sqlx::query(
-            "DELETE FROM bootstrap_authorization WHERE id = '00000000-0000-0000-0000-0000000001b0'",
+        .await
+        .is_err()
+    );
+
+    // PENDING no admite cierre y EXPIRED no cierra antes de caducar.
+    assert!(
+        sqlx::query(
+            "INSERT INTO bootstrap_authorization \
+             (id, installation_id, purpose, token_digest, issued_at, expires_at, state, \
+              closed_at, updated_at) \
+             VALUES ('00000000-0000-0000-0000-0000000001a5', ?, \
+                     'ADMINISTRATIVE_RECOVERY', ?, 1000, 1600, 'PENDING', 1200, 1200)",
         )
+        .bind(PROVISIONAL)
+        .bind("d".repeat(64))
+        .execute(&pool)
+        .await
+        .is_err()
+    );
+    assert!(
+        sqlx::query(
+            "INSERT INTO bootstrap_authorization \
+             (id, installation_id, purpose, token_digest, issued_at, expires_at, state, \
+              closed_at, updated_at) \
+             VALUES ('00000000-0000-0000-0000-0000000001a6', ?, \
+                     'ADMINISTRATIVE_RECOVERY', ?, 1000, 1600, 'EXPIRED', 1500, 1500)",
+        )
+        .bind(PROVISIONAL)
+        .bind("e".repeat(64))
+        .execute(&pool)
+        .await
+        .is_err()
+    );
+
+    // Eventos auditables sin secretos y append-only.
+    for (id, kind, context) in [
+        (EVENT_ISSUED, "ISSUED", Some("issuer=native")),
+        (EVENT_REJECTED, "REJECTED", Some("reason=expired")),
+    ] {
+        sqlx::query(
+            "INSERT INTO bootstrap_authorization_event \
+             (id, authorization_id, event_type, occurred_at, security_context) \
+             VALUES (?, ?, ?, 1000, ?)",
+        )
+        .bind(id)
+        .bind(AUTH)
+        .bind(kind)
+        .bind(context)
         .execute(&pool)
         .await?;
     }
-
-    // Consumo y revocación son terminales incompatibles entre sí.
     assert!(
-        sqlx::query(
-            "UPDATE bootstrap_authorization SET consumed_at = 1200, revoked_at = 1300, \
-             updated_at = 1300 WHERE id = ?",
-        )
-        .bind(AUTH)
-        .execute(&pool)
-        .await
-        .is_err()
+        sqlx::query("UPDATE bootstrap_authorization_event SET event_type = 'CONSUMED'")
+            .execute(&pool)
+            .await
+            .is_err()
+    );
+    assert!(
+        sqlx::query("DELETE FROM bootstrap_authorization_event")
+            .execute(&pool)
+            .await
+            .is_err()
     );
 
-    sqlx::query(
-        "UPDATE bootstrap_authorization SET consumed_at = 1200, updated_at = 1200 WHERE id = ?",
+    // Consumo con CAS: solo la primera transición afecta una fila.
+    let consumed = sqlx::query(
+        "UPDATE bootstrap_authorization SET state = 'CONSUMED', closed_at = 1200, \
+         updated_at = 1200 WHERE id = ? AND state = 'PENDING'",
     )
     .bind(AUTH)
     .execute(&pool)
     .await?;
-
-    sqlx::query(
-        "INSERT INTO bootstrap_authorization_event \
-         (id, authorization_id, event_type, occurred_at, security_context) \
-         VALUES (?, ?, 'CONSUMED', 1200, 'bootstrap.completed')",
+    assert_eq!(consumed.rows_affected(), 1);
+    let replay = sqlx::query(
+        "UPDATE bootstrap_authorization SET state = 'CONSUMED', closed_at = 1201, \
+         updated_at = 1201 WHERE id = ? AND state = 'PENDING'",
     )
-    .bind(EVENT)
     .bind(AUTH)
     .execute(&pool)
     .await?;
+    assert_eq!(replay.rows_affected(), 0);
 
-    // El evento exige una autorización existente y un tipo conocido.
+    // Tras el estado terminal se puede reemitir para la misma instalación.
+    sqlx::query(
+        "INSERT INTO bootstrap_authorization \
+         (id, installation_id, purpose, token_digest, issued_at, expires_at, updated_at) \
+         VALUES (?, ?, 'BOOTSTRAP', ?, 1300, 1900, 1300)",
+    )
+    .bind(AUTH_REISSUED)
+    .bind(PROVISIONAL)
+    .bind("f".repeat(64))
+    .execute(&pool)
+    .await?;
+
+    // Reclamación de la preautorización: ambos campos o ninguno.
     assert!(
-        sqlx::query(
-            "INSERT INTO bootstrap_authorization_event \
-             (id, authorization_id, event_type, occurred_at) \
-             VALUES ('00000000-0000-0000-0000-0000000001e1', \
-                     '00000000-0000-0000-0000-0000000009f9', 'ISSUED', 1200)",
-        )
-        .execute(&pool)
-        .await
-        .is_err()
+        sqlx::query("UPDATE provisional_installation SET claimed_at = 1700 WHERE id = ?")
+            .bind(PROVISIONAL)
+            .execute(&pool)
+            .await
+            .is_err()
     );
-    assert!(
-        sqlx::query(
-            "INSERT INTO bootstrap_authorization_event \
-             (id, authorization_id, event_type, occurred_at) \
-             VALUES ('00000000-0000-0000-0000-0000000001e2', ?, 'UNKNOWN', 1200)",
-        )
-        .bind(AUTH)
-        .execute(&pool)
-        .await
-        .is_err()
-    );
+    sqlx::query(
+        "UPDATE provisional_installation SET claimed_at = 1700, claimed_installation_id = ? \
+         WHERE id = ?",
+    )
+    .bind(INSTALLATION)
+    .bind(PROVISIONAL)
+    .execute(&pool)
+    .await?;
 
     pool.close().await;
+
+    // Durabilidad tras reapertura: los estados y el append-only se conservan.
+    let reopened = open(&path, Duration::from_millis(75)).await?;
+    let state: String =
+        sqlx::query_scalar("SELECT state FROM bootstrap_authorization WHERE id = ?")
+            .bind(AUTH)
+            .fetch_one(&reopened)
+            .await?;
+    assert_eq!(state, "CONSUMED");
+    let claimed: i64 = sqlx::query_scalar(
+        "SELECT claimed_installation_id IS NOT NULL FROM provisional_installation WHERE id = ?",
+    )
+    .bind(PROVISIONAL)
+    .fetch_one(&reopened)
+    .await?;
+    assert_eq!(claimed, 1);
+    assert!(
+        sqlx::query("DELETE FROM bootstrap_authorization_event")
+            .execute(&reopened)
+            .await
+            .is_err()
+    );
+    reopened.close().await;
     Ok(())
 }
