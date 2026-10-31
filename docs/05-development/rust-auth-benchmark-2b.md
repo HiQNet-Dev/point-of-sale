@@ -64,9 +64,9 @@ Lecturas:
    criptográfica: la política hace lo que declara.
 3. **La retención crece con la concurrencia**, aproximadamente `(workers − 1) × m`
    en este proceso aislado: 2 → ~19 MiB, 4 → ~59 MiB, 8 → ~136 MiB.
-4. El valor de 1.46 GiB de 2A **no era el coste de ocho verificaciones**: era la
-   acumulación del mismo proceso tras medir candidatos de 64 MiB y rondas
-   repetidas. Con procesos aislados, ocho verificaciones pican ~158 MiB.
+4. El valor de 1.46 GiB de 2A corresponde a la acumulación del mismo proceso tras
+   medir candidatos de 64 MiB y rondas repetidas, no al coste de ocho
+   verificaciones: con procesos aislados, ocho verificaciones pican ~158 MiB.
 
 ## 4. Latencia y throughput (2 vCPU)
 

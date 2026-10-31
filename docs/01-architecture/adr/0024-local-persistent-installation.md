@@ -121,21 +121,25 @@ proceso, `BEGIN IMMEDIATE` para escrituras críticas).
 
 ### Pendiente para cerrar el bloque D
 
-1. Implementar `app_data_dir` por plataforma y decidir el identificador de
-   aplicación (candidato `com.hiqnet.pos`, sin fijar hasta verificar colisiones,
-   continuidad de almacenamiento y requisitos de distribución).
-2. Decidir si la instalación admite varias bases (por sucursal o por perfil) o
+1. Implementado en 2B: `--installation-default` resuelve el directorio de datos
+   privado del usuario (`%LOCALAPPDATA%`, `$XDG_DATA_HOME` o `~/.local/share`) y
+   lo combina con el directorio estable `com.hiqnet.pos`.
+2. Decidir el bundle identifier definitivo (candidato `com.hiqnet.pos`, sin fijar
+   hasta verificar colisiones, continuidad de almacenamiento y distribución).
+   Cambiarlo mueve la ruta de una instalación existente y exige detección,
+   respaldo y migración reversible.
+3. Decidir si la instalación admite varias bases (por sucursal o por perfil) o
    exactamente una.
-3. Confirmar que la recuperación administrativa usa una ruta explícita y no un
-   modo oculto.
+4. Confirmar que la recuperación administrativa usa `--installation <directorio>`
+   y no un modo oculto.
 
 ## Alternativas descartadas
 
 - **Reutilizar el laboratorio como producto**: mezclaría fixtures con datos
   reales y afirmaría identidad inexistente.
-- **Resolver el directorio con `app_data_dir`**: la ruta depende del
-  identificador de bundle, que es una decisión de identidad de producto; se
-  pospone hasta el bloque D.
+- **Usar `app_data_dir` con el identificador de laboratorio**: situaría datos de
+  producto bajo `local.hiqnet.rustlab`; 2B resuelve la ruta con el directorio
+  estable del producto y deja el bundle identifier como decisión separada.
 - **Abrir un servidor HTTP para probar**: contraviene ADR-0020 y ampliaría la
   superficie de red sin decisión.
 - **Ignorar el esquema más nuevo y operar igualmente**: convierte una
