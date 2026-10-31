@@ -30,9 +30,11 @@ fn encoded_tokens_round_trip_and_reject_non_canonical_input()
         "A".repeat(PROVISIONING_TOKEN_HEX_LEN),
         format!("{}g", "0".repeat(PROVISIONING_TOKEN_HEX_LEN - 1)),
     ] {
-        assert_eq!(
-            ProvisioningToken::from_encoded(&value),
-            Err(CredentialError::InvalidInput),
+        assert!(
+            matches!(
+                ProvisioningToken::from_encoded(&value),
+                Err(CredentialError::InvalidInput)
+            ),
             "valor {value:?}"
         );
     }
@@ -47,19 +49,35 @@ fn digest_matches_only_the_presented_token() -> Result<(), Box<dyn std::error::E
 
     assert!(digest.matches(&token));
     assert!(!digest.matches(&other));
-    assert_eq!(TokenDigest::parse(digest.as_str())?, digest);
+    assert_eq!(TokenDigest::parse(&digest.hex())?, digest);
+    assert_eq!(digest.hex().len(), PROVISIONING_TOKEN_HEX_LEN);
 
-    let malformed = vec![
+    for value in [
         String::new(),
         "0".repeat(PROVISIONING_TOKEN_HEX_LEN - 1),
         "Z".repeat(PROVISIONING_TOKEN_HEX_LEN),
-    ];
-    for value in &malformed {
+    ] {
         assert_eq!(
-            TokenDigest::parse(value),
+            TokenDigest::parse(&value),
             Err(CredentialError::InvalidInput)
         );
     }
+    Ok(())
+}
+
+#[test]
+fn one_bit_difference_breaks_the_digest() -> Result<(), Box<dyn std::error::Error>> {
+    let token = ProvisioningToken::generate()?;
+    let mut altered = token.expose().to_owned();
+    // Cambia solo el último carácter hexadecimal del token presentado.
+    altered.pop();
+    altered.push(if token.expose().ends_with('0') {
+        '1'
+    } else {
+        '0'
+    });
+    let presented = ProvisioningToken::from_encoded(&altered)?;
+    assert!(!token.digest().matches(&presented));
     Ok(())
 }
 
@@ -70,6 +88,6 @@ fn debug_never_reveals_the_token_or_its_digest() -> Result<(), Box<dyn std::erro
     assert_eq!(format!("{token:?}"), "ProvisioningToken(<redacted>)");
     assert_eq!(format!("{digest:?}"), "TokenDigest(<redacted>)");
     assert!(!format!("{token:?}").contains(token.expose()));
-    assert!(!format!("{digest:?}").contains(digest.as_str()));
+    assert!(!format!("{digest:?}").contains(&digest.hex()));
     Ok(())
 }

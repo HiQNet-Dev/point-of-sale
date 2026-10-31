@@ -26,6 +26,7 @@ tracing-subscriber = { version = "0.3.23", features = ["json"] }
 
 chrono-tz = "0.10.4"
 icu_locale_core = { version = "2.4.0", features = ["alloc"] }
+subtle = "2.6.1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
