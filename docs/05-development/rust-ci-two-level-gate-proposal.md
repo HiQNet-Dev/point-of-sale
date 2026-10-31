@@ -1,11 +1,13 @@
 # CI de dos niveles para Rust — diseño e implementación
 
-**Estado: IMPLEMENTADO en la rama `feat/fullstack/rust-integration-recovery`.**
-Los workflows ya distinguen el nivel técnico (`rust`) del normativo
-(`rust-normative`). El cambio está validado en local con los tests de contrato;
-**no se ha publicado ni ejecutado CI remoto**, y el merge a `dev` sigue sin
-autorizar. Este documento describe el diseño aprobado y su correspondencia con
-el workflow real.
+**Estado: IMPLEMENTADO y fusionado en `dev`** (PR #84 y posteriores). Los
+workflows distinguen el nivel técnico (`rust`) del normativo (`rust-normative`)
+y el gate de `dev` ya tolera `BLOCKED` normativo declarado.
+
+> **Nota 2026-10-31.** Las referencias a `backend-rust/proposals/0002`–`0016` y
+al hecho de que «el migrador solo embebe `0001`» describen el estado previo a la
+> promoción física registrada en ADR-0026: hoy `migrations/local` contiene
+> `0001`–`0017` y `proposals/` conserva solo su README.
 
 Fecha de redacción: 2026-10-31.
 SHA base evaluado: `e2de3f554e4c6958adbf8eaf65431334ee0cb1f4`.
