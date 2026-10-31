@@ -1,6 +1,6 @@
 # Tablero maestro de migración Java → Rust
 
-**Actualizado en el Incremento 2A.** Este tablero registra el estado real de la
+**Actualizado en el Incremento 2B.** Este tablero registra el estado real de la
 migración, no el deseado. Un estado solo avanza con evidencia publicada.
 
 Arquitectura: monolito modular hexagonal (`pos-core` ← `pos-application` ←
@@ -44,12 +44,12 @@ auditoría transaccional— sobre un esquema **candidato** que aún no vive en
 | Inventario (artículos, saldos, ledger) | `APPLICATION (candidate)` | `pos-core::inventory`, `0013` candidato, `SqliteInventoryApplication`, ledger append-only por trigger, apertura única, CAS y dos pools | Aprobación D-INV, promoción, API |
 | Ventas | `APPLICATION (candidate)` | `0011`/`0012` candidatos, `SqliteSalesApplication`, snapshots, CAS, auditoría, carreras venta/cierre y reapertura | Aprobación D-SALES, promoción, API |
 | Checkout y pagos | `APPLICATION (candidate)` | `0015` candidato, `SqliteCheckoutApplication`, pagos + consumo + `COMPLETED` + auditoría en una UoW, política de stock y rollback | Aprobación D-SALES-04/05, promoción, API |
-| Compras y recepciones | `DOMAIN` | `pos-core::purchasing` (estados, emisión, cancelación, recepciones acumuladas, costo opcional con prueba «desconocido ≠ cero»), validación de sobre-recepción y unidad inmutable | DDL (decisión `unit_cost` NULL), adaptador, casos de uso, API |
-| Proveedores | `DOMAIN` | `pos-core::supplier`, slug inmutable, contacto acotado, email normalizado y snapshot | DDL, adaptador, API |
+| Compras y recepciones | `APPLICATION (candidate)` | `pos-core::purchasing` (estados, emisión, cancelación, recepciones acumuladas, costo opcional con prueba «desconocido ≠ cero»), `PurchasingApplication` con 13 casos de uso de orden/recepción, `proposals/local-purchasing/0016`, 12 pruebas SQLite reales (emisión irreversible, CAS, sobre-recepción, idempotencia, rollback por auditoría) | Aprobación física de `0016`, promoción, API |
+| Proveedores | `APPLICATION (candidate)` | `pos-core::supplier`, `PurchasingApplication` (crear/consultar/listar/actualizar con CAS), `0016` candidato, pruebas de slug duplicado y aislamiento | Aprobación física, promoción, API |
 | Recetas y efectos de modificador | `PERSISTENCE (fixture)` | `pos-core::recipe`, `0014` candidato, resolución de consumo y snapshots usados por checkout | Mantenimiento administrativo, aprobación D-INV, promoción, API |
 | API HTTP / OpenAPI | `NOT_STARTED` | — | Todo |
 | Transporte Local | `IPC (lab)` | Tauri v2: tres handlers de lectura, bindings generados, ACL local y sesión revalidada en SQLite; [contrato](../03-api/rust-desktop-ipc.md), ADR-0023 | Activación comercial, composición canónica y seguridad aprobada |
-| Instalación Local persistente | `PERSISTENCE (approved 0001)` | `apps/pos-desktop --installation <dir>`: migrador aprobado, clasificación primera instalación/reapertura, rechazo de esquema posterior, cierre con checkpoint; E2E Windows de dos arranques y smoke Docker | Identidad de instalación (D-INST), directorio canónico, operaciones de negocio y aprobación del bloque D |
+| Instalación Local persistente | `PERSISTENCE (approved 0001)` | `apps/pos-desktop --installation <dir>`: migrador aprobado, clasificación primera instalación/reapertura, rechazo de esquema posterior, cierre con checkpoint; E2E Windows de dos arranques y smoke Docker | Directorio canónico por plataforma (`app_data_dir`), identificador estable de aplicación y operaciones de negocio; el bloque D está aceptado como diseño desde 2026-10-30 |
 | Integración React | `INTEGRATED (lab only)` | Pantalla separada de laboratorio (lectura + creación de producto) y pantalla de instalación; E2E Windows real React → WebView2 IPC → Application → SQLite → auditoría | Login comercial, escrituras en producto, integración de pantallas operativas y paridad completa |
 | Arnés Docker Local | `DEV HARNESS (validated)` | `backend-rust/Dockerfile` multi-stage, runtime no-root, volumen, healthcheck funcional (`verify_health`: integridad + migraciones), reinicio, cierre con checkpoint, evidencia `first_install` → `reopened` y checksum idéntico | No es distribución Free Local ni expone red |
 | Arnés sintético extremo a extremo | `E2E (synthetic)` | `tools/pos-lab`: bootstrap → admin → sesión → RBAC → sucursal → categoría → producto → inventario → receta → caja → turno → venta → checkout → consumo → `COMPLETED` → auditoría → cierre → reapertura, más matriz ejecutable de dependencias `0002`–`0015` (FK y `foreign_key_check` por paso). Ejecutado en local y en Docker | Sigue sobre esquema **candidato**; no es producto |
@@ -78,6 +78,14 @@ auditoría transaccional— sobre un esquema **candidato** que aún no vive en
 | Cajas y turnos candidatos | Nombres, importes, índice parcial y coordinación venta/cierre | Impide promover `0009`–`0010` (D-CASH-01..04) |
 | Ventas y modificadores candidatos | Tablas, snapshots, dinero `TEXT` exacto y coordinación SQLite | Impide promover `0011`–`0012` (D-SALES-01..03) |
 | Inventario, recetas y checkout candidatos | Cantidades `TEXT` escala 6, triggers, pagos y snapshots de consumo | Impide promover `0013`–`0015` (D-INV-01..02, D-SALES-04/05) |
+| Compras candidatas | `0016` sobre `unit_cost` opcional y recepciones sin valoración | `CC21-03` aceptada el 2026-10-30 desbloquea la representación del costo pactado; sigue pendiente la aprobación física de `ADR-0021` (fichas, costo efectivo, snapshots) para promover `0016` |
+
+### Decisiones aceptadas (2026-10-30)
+
+| Decisión | Alcance aceptado | Efecto en el tablero |
+| --- | --- | --- |
+| Bloque D | Tauri v2/IPC, una SQLite por instalación, directorio privado del SO, rutas explícitas solo por argumentos, sin HTTP local, separación laboratorio/producto | Habilita implementar `app_data_dir`; no autoriza distribución ni release |
+| `CC21-03` | `unit_cost TEXT NULL` con semántica desconocido ≠ cero y total derivado `NULL` | Habilita la propuesta `0016`; `ADR-0021` sigue `PROPOSED` |
 
 Ningún bloqueo autoriza a debilitar FKs, `--require-complete` ni los gates
 DDL13/PAR/AS.

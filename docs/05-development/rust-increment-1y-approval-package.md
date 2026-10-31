@@ -119,12 +119,17 @@ resuelve `ADR-0021`.
 
 ## 4. Bloque D — Transporte de escritorio y política de credenciales
 
+**Aceptado como diseño el 2026-10-30.** No autoriza distribución, instalador ni
+release.
+
 | Elemento | Estado | Qué se propone |
 | --- | --- | --- |
 | `ADR-0023` laboratorio Tauri de sólo lectura | Aceptado como laboratorio en 1X | Se mantiene; el modo laboratorio sigue sin datos reales |
-| `ADR-0024` instalación Local persistente (1Y) | **Propuesto** | Modo producto con directorio explícito, migraciones aprobadas y estado de instalación; sin identidad sintética ni operaciones de negocio |
-| Transporte comercial | **Pendiente** | Confirmar Tauri/IPC como frontera de producto; no se introduce HTTP |
-| Directorio de datos | **Pendiente** | Resolver si la ruta la elige el usuario, la instalación o el identificador de bundle (`D-INST`) |
+| `ADR-0024` instalación Local persistente (1Y) | **Aceptado como diseño (2026-10-30)** | Modo producto con migraciones aprobadas y estado de instalación; sin identidad sintética ni operaciones de negocio |
+| Transporte comercial | **Aceptado**: Tauri v2/IPC | Frontera de producto; no se introduce servidor HTTP local |
+| Directorio de datos | **Aceptado**: directorio privado administrado por el sistema operativo | Pendiente de implementar `app_data_dir`; una SQLite por instalación |
+| Identificador de aplicación | **Pendiente de fijar** | `com.hiqnet.pos` es candidato; exige verificar colisiones, continuidad de almacenamiento y distribución |
+| Rutas desde JavaScript | **Aceptado: prohibidas** | Solo desarrollo y recuperación autorizada, por argumentos |
 | `D-AUTH-09` | **Bloqueada** | Benchmark de Argon2id e interoperabilidad con el verificador Java |
 
 **Qué desbloquea**
@@ -161,9 +166,14 @@ Marcar sólo lo que el titular acepte. Sin marcas, todo permanece pendiente.
     (BEGIN IMMEDIATE + índice parcial en lugar del lock de JVM).
 [ ] Bloque C — Ventas, inventario y checkout (0011–0015), incluidas D-SALES-03,
     D-SALES-04 y la dependencia abierta de ADR-0021.
-[ ] Bloque D — Transporte Tauri/IPC para producto y política de directorio de
-    instalación (ADR-0024).
+[x] Bloque D — Transporte Tauri/IPC para producto y política de directorio de
+    instalación (ADR-0024). **Aceptado el 2026-10-30** como diseño; excluye
+    distribución, instalador y release.
 [ ] Mantengo D-AUTH-09 bloqueada hasta disponer de benchmark e interoperabilidad.
+
+**Aprobación parcial adicional registrada el 2026-10-30:** `CC21-03` (costo
+pactado `unit_cost TEXT NULL`). No aprueba `ADR-0021` completo ni los bloques A,
+B o C.
 
 Firmado por:
 Fecha:

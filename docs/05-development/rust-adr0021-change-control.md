@@ -1,9 +1,23 @@
 # CC-0021 — solicitud de cambio del físico y paridad Free Local v1
 
-**Estado: PROPUESTO, SIN APROBACIÓN. Fecha: 2026-10-28.**
+**Estado: PROPUESTO en su conjunto. `CC21-03` aceptada el 2026-10-30; el resto
+sigue pendiente. Fecha de apertura: 2026-10-28.**
 Relacionada con [ADR-0021](../01-architecture/adr/0021-frozen-physical-parity-conflicts.md).
 No edita documentos canónicos de Drive ni autoriza DDL, import o producción.
-Titular/aprobador, aceptación y versiones nuevas: **PENDIENTES**.
+
+## 0. Registro de aprobación parcial
+
+| Solicitud | Estado | Fecha | Alcance aceptado |
+| --- | --- | --- | --- |
+| `CC21-01` inventario | Pendiente | — | — |
+| `CC21-02` padres incompletos | Pendiente | — | — |
+| `CC21-03` costo pactado | **Aceptada** | 2026-10-30 | `unit_cost TEXT NULL`; `NULL` = desconocido, `0.0000` = cero conocido; total derivado `NULL` si falta algún costo; reportes distinguen «sin costo»; sin inferir costo efectivo de recepción |
+| `CC21-04` costo efectivo/valoración | Pendiente | — | — |
+| `CC21-05` snapshots | Pendiente | — | — |
+
+Fuente de la aceptación: `00B · Control maestro de revisiones y aprobaciones —
+HiQNet POS` (2026-10-30). La aceptación de `CC21-03` **no** aprueba `ADR-0021`
+completo ni las demás solicitudes.
 
 ## 1. Motivo y separación de decisiones
 

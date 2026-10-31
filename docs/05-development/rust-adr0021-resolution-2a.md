@@ -1,9 +1,9 @@
 # Resolución técnica de ADR-0021 — Incremento 2A
 
-**Estado: resolución técnica preparada, sin aprobación.** No modifica el contrato
-congelado, no crea fichas canónicas, no promueve DDL y no inventa datos
-históricos. Su objetivo es que, cuando el titular decida, la implementación no
-requiera rediseño.
+**Estado: resolución técnica preparada. `CC21-03` aceptada el 2026-10-30;
+`ADR-0021` continúa `PROPOSED`.** No modifica el contrato congelado, no crea
+fichas canónicas, no promueve DDL y no inventa datos históricos. Su objetivo es
+que, cuando el titular decida, la implementación no requiera rediseño.
 
 Relacionado: [ADR-0021](../01-architecture/adr/0021-frozen-physical-parity-conflicts.md),
 [CC-0021](rust-adr0021-change-control.md),
@@ -88,19 +88,35 @@ remoto no puede ser requisito para operar Free Local.
 | Dominio con costo opcional y prueba de «desconocido ≠ cero» | **Hecho (2A)** |
 | Validación de cantidades, sobre-recepción y snapshots de partida | Ya existente en `pos-core` |
 | Matriz de dependencias de migraciones candidatas | Hecho en 1Z |
-| DDL de `unit_cost NULL` | **Bloqueado** por decisión |
+| DDL de `unit_cost NULL` | **Autorizado (CC21-03, 2026-10-30)**; la propuesta `0016` lo implementa sin promoverla |
 | Fichas de los cinco padres | **Bloqueado** por decisión |
 | Import sintético versionado | **Bloqueado** por DDL aprobado |
 
-## 7. Decisión que se solicita
+## 7. Decisión registrada — `CC21-03`
 
-Una sola pregunta al titular, con sus límites:
+**Aceptada por el titular el 2026-10-30** (documento `00B · Control maestro de
+revisiones y aprobaciones — HiQNet POS`).
+
+Pregunta resuelta:
 
 > ¿Se acepta que el destino físico represente el costo pactado como `NULL`
 > (opción A), que el total de orden sea `NULL` cuando falte algún costo y que los
 > reportes muestren «sin costo» en lugar de cero?
 
-Aceptarla habilita `CC21-03` y desbloquea parcialmente `DDL13-01`. No habilita las
-fichas ausentes, el import ni la paridad completa.
+**Sí.** Alcance aceptado:
 
-Registro: este documento **no** modifica ADR-0021, que permanece `PROPOSED`.
+1. `unit_cost TEXT NULL`; `NULL` es costo pactado desconocido y `0.0000` es un
+   cero conocido.
+2. Los valores conocidos son decimales exactos; prohibido el punto flotante.
+3. El total derivado es `NULL` cuando alguna partida carece de costo pactado; no
+   se publica un subtotal parcial como total confirmado.
+4. Los reportes distinguen «sin costo» de cero.
+5. No se inventan costos históricos ni se infiere el costo efectivo de recepción
+   a partir del costo pactado.
+
+Lo que la aceptación **no** cubre y sigue pendiente en `ADR-0021`: las cinco
+fichas físicas ausentes, costeo efectivo de recepción, valoración histórica,
+regularización económica, snapshots pendientes, políticas de recepción nueva e
+import y reconciliación de datos históricos.
+
+Registro: este documento **no** modifica `ADR-0021`, que permanece `PROPOSED`.

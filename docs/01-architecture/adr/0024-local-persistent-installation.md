@@ -2,7 +2,10 @@
 
 ## Estado y autoridad
 
-**Implementación técnica solicitada en 1Y; activación comercial NO aprobada.**
+**Diseño del bloque D aceptado por el titular el 2026-10-30.** La aceptación es
+arquitectónica y de política de almacenamiento: **no** autoriza distribución,
+instalador, autoarranque, actualizaciones, release ni cutover.
+
 Este ADR no aprueba D-AUTH, D-INST, D-CAT, D-CASH, D-SALES, D-INV ni ADR-0022,
 no promueve DDL candidato y no autoriza distribución, instalador ni release.
 
@@ -63,10 +66,29 @@ y no invente identidad** mientras las decisiones físicas siguen pendientes.
 - El identificador de bundle se mantiene sin cambios. Fijar el directorio de datos
   por plataforma e identidad de instalación depende de `D-INST` (bloque D).
 
-## Resolución 1Z del bloque D (propuesta, sin aceptación)
+## Aceptación del bloque D — 2026-10-30
 
-El titular debe confirmar esta política. 1Z la implementa solo en la parte que no
-requiere promover DDL.
+Registro de la autorización del titular (documento `00B · Control maestro de
+revisiones y aprobaciones — HiQNet POS`, 2026-10-30). La aceptación cubre la
+política, no su distribución comercial.
+
+| Elemento | Resolución **aceptada** | Implementación |
+| --- | --- | --- |
+| Transporte principal de Free Local | Tauri v2/IPC; sin servidor HTTP local | Sí (1X/1Y) |
+| Base de datos | Una única SQLite por instalación | Sí |
+| Directorio de datos | Directorio privado administrado por el sistema operativo | **Pendiente de implementar**: `app_data_dir` por plataforma |
+| Identificador de aplicación | Estable y decidido por producto; `com.hiqnet.pos` es candidato, **no fijado** | No (se conserva `local.hiqnet.rustlab` hasta verificar colisiones y distribución) |
+| Rutas explícitas | Solo desarrollo, recuperación y herramientas autorizadas | Sí (`--installation`) |
+| Rutas desde JavaScript | Prohibidas | Sí (ningún comando las acepta) |
+| HTTP local | Prohibido por defecto | Sí (no existe) |
+| Separación laboratorio/producto | Modos disjuntos, sin fixtures en producto | Sí |
+| Identidades sintéticas en runtime comercial | Prohibidas | Sí (el modo instalación no crea sesiones ni operadores) |
+
+La aceptación **no** fija el directorio ni el identificador: cambiarlos mueve la
+ubicación de una instalación existente y exige detección, respaldo y migración
+reversible antes de aplicarse.
+
+## Resolución 1Z del bloque D (registro histórico previo a la aceptación)
 
 | Elemento | Resolución propuesta | Implementado en 1Z |
 | --- | --- | --- |
@@ -78,6 +100,9 @@ requiere promover DDL.
 | Rutas desde JavaScript | Prohibidas | Sí (ningún comando las acepta) |
 | HTTP local | Prohibido por defecto | Sí (no existe) |
 | Separación laboratorio/producto | Modos disjuntos, sin fixtures en producto | Sí |
+
+> 1Z describió esta tabla como propuesta. El **2026-10-30** el titular aceptó la
+> política completa del bloque D; la tabla superior es la referencia vigente.
 
 ### Reglas de directorio ya implementadas
 
@@ -96,8 +121,9 @@ proceso, `BEGIN IMMEDIATE` para escrituras críticas).
 
 ### Pendiente para cerrar el bloque D
 
-1. Elegir el directorio por plataforma (`app_data_dir`) y el identificador de
-   aplicación; ambos son decisiones de identidad de producto.
+1. Implementar `app_data_dir` por plataforma y decidir el identificador de
+   aplicación (candidato `com.hiqnet.pos`, sin fijar hasta verificar colisiones,
+   continuidad de almacenamiento y requisitos de distribución).
 2. Decidir si la instalación admite varias bases (por sucursal o por perfil) o
    exactamente una.
 3. Confirmar que la recuperación administrativa usa una ruta explícita y no un

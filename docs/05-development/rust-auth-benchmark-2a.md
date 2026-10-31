@@ -88,6 +88,15 @@ la concurrencia de verificación**. La base ya dispone de
 de cuántos intentos simultáneos admitir y cómo encolar/limitar por usuario queda
 pendiente de decisión, junto con D-AUTH-09.
 
+> **Corrección 2B.** El aislamiento por proceso
+> ([`rust-auth-benchmark-2b.md`](rust-auth-benchmark-2b.md)) muestra que el coste
+> criptográfico real es ≈19.5 MiB por verificación y que la cifra de 1.46 GiB
+> acumulaba candidatos de 64 MiB y rondas en el mismo proceso. Con procesos
+> aislados, 8 verificaciones pican ≈158 MiB. La necesidad de acotar la
+> concurrencia se mantiene, pero el techo razonable es 4 verificaciones
+> simultáneas. 2B implementa además cola acotada, espera máxima y respuesta de
+> saturación segura.
+
 ## 6. Interoperabilidad
 
 Ejecutada en 1Z y conservada: BCrypt (coste 10/12) de Java → Rust
