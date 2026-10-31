@@ -100,6 +100,37 @@ impl SqliteProvisioningStore {
         }
     }
 
+    /// Registra la preautorización de una instalación que aún no tiene organización.
+    ///
+    /// Es idempotente: emitir otra autorización para la misma instalación no
+    /// duplica la fila provisional.
+    pub async fn ensure_provisional_installation(
+        &self,
+        installation_id: &EntityId,
+        fingerprint: &str,
+        now: i64,
+    ) -> Result<(), ProvisioningStorageError> {
+        let mut transaction = self
+            .unit_of_work
+            .begin()
+            .await
+            .map_err(|_| ProvisioningStorageError::Database)?;
+        sqlx::query(
+            "INSERT INTO provisional_installation (id, fingerprint, created_at) \
+             VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING",
+        )
+        .bind(installation_id.as_str())
+        .bind(fingerprint)
+        .bind(now)
+        .execute(transaction.connection())
+        .await
+        .map_err(|_| ProvisioningStorageError::Database)?;
+        transaction
+            .commit()
+            .await
+            .map_err(|_| ProvisioningStorageError::Database)
+    }
+
     /// Emite una autorización pendiente y registra `ISSUED`.
     ///
     /// Primero materializa como `EXPIRED` cualquier derecho vivo cuya ventana ya

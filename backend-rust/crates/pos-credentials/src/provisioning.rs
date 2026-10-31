@@ -61,6 +61,32 @@ impl ProvisioningToken {
     }
 }
 
+/// Genera un identificador canónico UUID v4 con `OsRng`.
+///
+/// Se usa para identidades de instalación y autorización que nunca elige el
+/// cliente.
+///
+/// # Errors
+/// Devuelve [`CredentialError::CryptoUnavailable`] si no hay entropía.
+pub fn random_uuid_v4() -> Result<String, CredentialError> {
+    let mut bytes = Zeroizing::new([0_u8; 16]);
+    OsRng
+        .try_fill_bytes(bytes.as_mut())
+        .map_err(|_| CredentialError::CryptoUnavailable)?;
+    let mut value = *bytes;
+    value[6] = (value[6] & 0x0f) | 0x40;
+    value[8] = (value[8] & 0x3f) | 0x80;
+    let hex = hex(&value);
+    Ok(format!(
+        "{}-{}-{}-{}-{}",
+        &hex[0..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..32]
+    ))
+}
+
 impl fmt::Debug for ProvisioningToken {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("ProvisioningToken(<redacted>)")

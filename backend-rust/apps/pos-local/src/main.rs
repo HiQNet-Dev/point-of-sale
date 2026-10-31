@@ -1,5 +1,8 @@
 //! Composición explícita del proceso local: configuración, SQLite y cierre ordenado.
 
+mod provisioning;
+#[cfg(test)]
+mod provisioning_tests;
 mod signals;
 mod telemetry;
 
@@ -61,6 +64,24 @@ async fn prepare(
 async fn main() -> ExitCode {
     if std::env::args().any(|argument| argument == "--health") {
         return health().await;
+    }
+    // Operaciones administrativas: se resuelven antes del ciclo de vida normal y
+    // sin promover migraciones candidatas.
+    match provisioning::parse(&std::env::args().collect::<Vec<_>>()) {
+        Ok(Some(command)) => {
+            return match provisioning::execute(command).await {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!("{{\"event\":\"provisioning_rejected\",\"reason\":\"{error}\"}}");
+                    ExitCode::FAILURE
+                }
+            };
+        }
+        Ok(None) => {}
+        Err(error) => {
+            eprintln!("{{\"event\":\"provisioning_rejected\",\"reason\":\"{error}\"}}");
+            return ExitCode::FAILURE;
+        }
     }
     if telemetry::init().is_err() {
         // No imprimir el error del suscriptor, que podría incorporar datos externos.
