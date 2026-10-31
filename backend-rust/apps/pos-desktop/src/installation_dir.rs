@@ -310,6 +310,10 @@ fn ensure_private_directory(_path: &Path) -> Result<(), DirectoryError> {
 }
 
 #[cfg(test)]
+#[path = "installation_lock_tests.rs"]
+mod lock_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
