@@ -14,6 +14,10 @@ export const commands = {
 	labCreateProduct: (request: CreateProductRequest_Deserialize) => typedError<CreatedProductDto_Serialize, IpcError>(__TAURI_INVOKE("lab_create_product", { request })),
 	/**  Estado de la instalación persistente; no expone datos de negocio ni identidad. */
 	installationStatus: () => typedError<InstallationStatusDto, IpcError>(__TAURI_INVOKE("installation_status")),
+	/**  Estado del asistente de primera instalación. */
+	bootstrapStatus: () => typedError<BootstrapStatusDto_Serialize, IpcError>(__TAURI_INVOKE("bootstrap_status")),
+	/**  Completa la primera instalación consumiendo la autorización nativa. */
+	bootstrapInstall: (request: BootstrapInstallRequestDto_Deserialize) => typedError<null, IpcError>(__TAURI_INVOKE("bootstrap_install", { request })),
 	/**  Autentica con email y contraseña; el handle queda en memoria nativa. */
 	authLogin: (request: LoginRequestDto) => typedError<SessionIdentityDto_Serialize, IpcError>(__TAURI_INVOKE("auth_login", { request })),
 	/**  Identidad y permisos de la sesión nativa vigente. */
@@ -29,6 +33,98 @@ export const commands = {
 };
 
 /* Types */
+/**
+ *  Datos de la primera instalación.
+ *
+ *  La contraseña initial se verifica, hashea y persiste en Rust; el token de
+ *  autorización nunca forma parte de este contrato.
+ */
+export type BootstrapInstallRequestDto = BootstrapInstallRequestDto_Serialize | BootstrapInstallRequestDto_Deserialize;
+
+/**
+ *  Datos de la primera instalación.
+ *
+ *  La contraseña initial se verifica, hashea y persiste en Rust; el token de
+ *  autorización nunca forma parte de este contrato.
+ */
+export type BootstrapInstallRequestDto_Deserialize = {
+	/**  Nombre visible del negocio. */
+	businessName: string,
+	/**  Código slug opcional; si falta se deriva del nombre. */
+	businessCode?: string | null,
+	/**  Nombre visible del administrador. */
+	administratorName: string,
+	/**  Correo del administrador. */
+	email: string,
+	/**  Contraseña inicial en claro solo para esta llamada. */
+	password: string,
+	/**  Moneda ISO de la organización; por defecto `MXN`. */
+	currency?: string | null,
+};
+
+/**
+ *  Datos de la primera instalación.
+ *
+ *  La contraseña initial se verifica, hashea y persiste en Rust; el token de
+ *  autorización nunca forma parte de este contrato.
+ */
+export type BootstrapInstallRequestDto_Serialize = {
+	/**  Nombre visible del negocio. */
+	businessName: string,
+	/**  Código slug opcional; si falta se deriva del nombre. */
+	businessCode: string | null,
+	/**  Nombre visible del administrador. */
+	administratorName: string,
+	/**  Correo del administrador. */
+	email: string,
+	/**  Contraseña inicial en claro solo para esta llamada. */
+	password: string,
+	/**  Moneda ISO de la organización; por defecto `MXN`. */
+	currency: string | null,
+};
+
+/**
+ *  Estado del asistente de primera instalación.
+ *
+ *  No incluye tokens, digests ni rutas. `expiresAt` es el fin de la ventana de
+ *  la autorización nativa, en segundos Unix.
+ */
+export type BootstrapStatusDto = BootstrapStatusDto_Serialize | BootstrapStatusDto_Deserialize;
+
+/**
+ *  Estado del asistente de primera instalación.
+ *
+ *  No incluye tokens, digests ni rutas. `expiresAt` es el fin de la ventana de
+ *  la autorización nativa, en segundos Unix.
+ */
+export type BootstrapStatusDto_Deserialize = {
+	/**
+	 *  `READY`, `AWAITING_AUTHORIZATION`, `AUTHORIZATION_EXPIRED`,
+	 *  `AUTHORIZATION_REVOKED`, `AUTHORIZATION_CONSUMED`, `INVALID_AUTHORIZATION`,
+	 *  `INSECURE_PERMISSIONS`, `UNSUPPORTED_PLATFORM` o `ALREADY_PROVISIONED`.
+	 */
+	state: string,
+	/**  Fin de la ventana de autorización, en segundos Unix, si el estado está listo. */
+	expiresAt?: number | null,
+};
+
+/**
+ *  Estado del asistente de primera instalación.
+ *
+ *  No incluye tokens, digests ni rutas. `expiresAt` es el fin de la ventana de
+ *  la autorización nativa, en segundos Unix.
+ */
+export type BootstrapStatusDto_Serialize = {
+	/**
+	 *  `READY`, `AWAITING_AUTHORIZATION`, `AUTHORIZATION_EXPIRED`,
+	 *  `AUTHORIZATION_REVOKED`, `AUTHORIZATION_CONSUMED`, `INVALID_AUTHORIZATION`,
+	 *  `INSECURE_PERMISSIONS`, `UNSUPPORTED_PLATFORM` o `ALREADY_PROVISIONED`.
+	 */
+	state: string,
+	/**  Fin de la ventana de autorización, en segundos Unix, si el estado está listo. */
+	expiresAt: number | null,
+};
+
 /**  Resumen de una sucursal visible para el principal. */
 export type BranchDto = {
 	/**  UUID canónico. */

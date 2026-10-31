@@ -2,9 +2,9 @@
 use crate::{
     composition::LocalState,
     dto::{
-        BranchDto, CategoryDto, CreateProductRequest, CreatedProductDto, InstallationStatusDto,
-        IpcError, LoginRequestDto, LogoutAllDto, PageRequest, ProductDto, SelectBranchRequestDto,
-        SessionIdentityDto,
+        BootstrapInstallRequestDto, BootstrapStatusDto, BranchDto, CategoryDto,
+        CreateProductRequest, CreatedProductDto, InstallationStatusDto, IpcError, LoginRequestDto,
+        LogoutAllDto, PageRequest, ProductDto, SelectBranchRequestDto, SessionIdentityDto,
     },
 };
 use tauri::State;
@@ -53,6 +53,25 @@ pub fn installation_status(
     state: State<'_, LocalState>,
 ) -> Result<InstallationStatusDto, IpcError> {
     state.installation_status()
+}
+
+/// Estado del asistente de primera instalación.
+#[tauri::command]
+#[specta::specta]
+pub async fn bootstrap_status(
+    state: State<'_, LocalState>,
+) -> Result<BootstrapStatusDto, IpcError> {
+    state.bootstrap_status().await
+}
+
+/// Completa la primera instalación consumiendo la autorización nativa.
+#[tauri::command]
+#[specta::specta]
+pub async fn bootstrap_install(
+    state: State<'_, LocalState>,
+    request: BootstrapInstallRequestDto,
+) -> Result<(), IpcError> {
+    state.bootstrap_install(request).await
 }
 
 /// Autentica con email y contraseña; el handle queda en memoria nativa.
@@ -111,6 +130,8 @@ pub fn registry<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         lab_list_products,
         lab_create_product,
         installation_status,
+        bootstrap_status,
+        bootstrap_install,
         auth_login,
         auth_me,
         auth_logout,

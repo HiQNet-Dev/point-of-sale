@@ -29,6 +29,8 @@ pub mod identity;
 pub mod installation;
 /// Inventario persistente: artículos, saldos, ledger y recetas.
 pub mod inventory;
+/// Lectura protegida de la autorización de provisioning entregada por el emisor.
+pub mod native_authorization;
 mod organization_branch;
 mod prelude;
 /// Compras persistentes sobre el esquema productivo `0016`.
@@ -72,6 +74,8 @@ mod credential_lab_tests;
 mod identity_lab_tests;
 #[cfg(test)]
 mod inventory_store_tests;
+#[cfg(all(test, unix))]
+mod native_authorization_tests;
 #[cfg(test)]
 mod provisioning_flow_tests;
 #[cfg(test)]

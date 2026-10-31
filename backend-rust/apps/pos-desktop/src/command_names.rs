@@ -8,6 +8,8 @@ pub const COMMAND_NAMES: &[&str] = &[
     "lab_list_products",
     "lab_create_product",
     "installation_status",
+    "bootstrap_status",
+    "bootstrap_install",
     "auth_login",
     "auth_me",
     "auth_logout",
@@ -35,3 +37,7 @@ pub const AUTH_COMMAND_NAMES: &[&str] = &[
     "auth_select_branch",
     "auth_list_branches",
 ];
+
+/// Comandos de primera instalación; no existen en el laboratorio sintético.
+#[allow(dead_code)] // Consumido por las pruebas del dispatcher.
+pub const BOOTSTRAP_COMMAND_NAMES: &[&str] = &["bootstrap_status", "bootstrap_install"];

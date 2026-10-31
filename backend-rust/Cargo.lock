@@ -979,6 +979,7 @@ dependencies = [
 name = "pos-storage-sqlite"
 version = "0.1.0"
 dependencies = [
+ "nix",
  "pos-application",
  "pos-core",
  "pos-credentials",

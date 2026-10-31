@@ -166,6 +166,56 @@ pub struct LogoutAllDto {
     pub revoked: u32,
 }
 
+/// Estado del asistente de primera instalación.
+///
+/// No incluye tokens, digests ni rutas. `expiresAt` es el fin de la ventana de
+/// la autorización nativa, en segundos Unix.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BootstrapStatusDto {
+    /// `READY`, `AWAITING_AUTHORIZATION`, `AUTHORIZATION_EXPIRED`,
+    /// `AUTHORIZATION_REVOKED`, `AUTHORIZATION_CONSUMED`, `INVALID_AUTHORIZATION`,
+    /// `INSECURE_PERMISSIONS`, `UNSUPPORTED_PLATFORM` o `ALREADY_PROVISIONED`.
+    pub state: String,
+    /// Fin de la ventana de autorización, en segundos Unix, si el estado está listo.
+    pub expires_at: Option<u32>,
+}
+
+/// Datos de la primera instalación.
+///
+/// La contraseña initial se verifica, hashea y persiste en Rust; el token de
+/// autorización nunca forma parte de este contrato.
+#[derive(Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BootstrapInstallRequestDto {
+    /// Nombre visible del negocio.
+    pub business_name: String,
+    /// Código slug opcional; si falta se deriva del nombre.
+    pub business_code: Option<String>,
+    /// Nombre visible del administrador.
+    pub administrator_name: String,
+    /// Correo del administrador.
+    pub email: String,
+    /// Contraseña inicial en claro solo para esta llamada.
+    pub password: String,
+    /// Moneda ISO de la organización; por defecto `MXN`.
+    pub currency: Option<String>,
+}
+
+impl std::fmt::Debug for BootstrapInstallRequestDto {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BootstrapInstallRequestDto")
+            .field("business_name", &self.business_name)
+            .field("business_code", &self.business_code)
+            .field("administrator_name", &self.administrator_name)
+            .field("email", &self.email)
+            .field("currency", &self.currency)
+            .field("password", &"<redacted>")
+            .finish()
+    }
+}
+
 /// Error seguro; nunca contiene SQL ni material de sesión.
 #[derive(Debug, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "code", rename_all = "SCREAMING_SNAKE_CASE")]
