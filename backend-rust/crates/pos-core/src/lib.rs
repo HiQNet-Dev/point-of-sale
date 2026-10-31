@@ -1,19 +1,33 @@
-//! Primitivas monetarias exactas, sin dependencias de infraestructura.
+//! Dominio puro de HiQNet POS, sin dependencias de infraestructura.
 //!
-//! Las unidades menores no incorporan una escala implícita ni políticas de
-//! redondeo. La importación decimal exige que el llamador proporcione la escala.
-
-mod branch;
-mod organization;
-
-pub use branch::{Branch, BranchPatch, BranchStatus, TimezonePatch};
-pub use organization::{
-    BranchId, BusinessCode, ChangedFields, DisplayName, DomainError, IanaTimezone,
-    InventoryNegativeStockPolicy, LocaleTag, Organization, OrganizationCurrency, OrganizationId,
-    OrganizationPatch, OrganizationStatus, Revision,
-};
+//! Las primitivas monetarias no incorporan una escala implícita ni políticas de
+//! redondeo: la importación decimal exige que el llamador proporcione la escala.
+//! Organization/Branch tiene una única autoridad en [`organization_branch`].
 
 use std::fmt;
+
+/// Foundation pura de auditoría Local, independiente de DDL y adaptadores.
+pub mod audit;
+/// Cajas y turnos de caja, con recuperación explícita y sin persistencia.
+pub mod cash;
+/// Catálogo organizacional: categorías, productos y modificadores, sin persistencia.
+pub mod catalog;
+/// Identidad, credenciales y sesiones Locales, sin secretos en sus APIs públicas.
+pub mod identity;
+/// Inventario: artículos, cantidades exactas, balances y ledger, sin persistencia.
+pub mod inventory;
+/// Conversión exacta entre las familias monetarias del workspace.
+pub mod money_scale;
+/// Dominio Organization/Branch y puertos de aplicación reconstruidos tras INC-RECOVERY-01.
+pub mod organization_branch;
+/// Compras: órdenes, partidas y reglas de recepción, sin persistencia.
+pub mod purchasing;
+/// Recetas de producto, efectos de modificador y resolución de consumo.
+pub mod recipe;
+/// Ventas, pagos y cotización de modificadores, sin persistencia.
+pub mod sales;
+/// Proveedores de compras, con snapshots compatibles con `purchasing`.
+pub mod supplier;
 
 /// Código de moneda de tres letras ASCII, normalizado a mayúsculas.
 ///
@@ -336,5 +350,25 @@ impl fmt::Display for MoneyError {
 
 impl std::error::Error for MoneyError {}
 
+#[cfg(test)]
+mod audit_tests;
+#[cfg(test)]
+mod cash_tests;
+#[cfg(test)]
+mod catalog_tests;
+#[cfg(test)]
+mod identity_tests;
+#[cfg(test)]
+mod inventory_tests;
+#[cfg(test)]
+mod money_scale_tests;
+#[cfg(test)]
+mod purchasing_tests;
+#[cfg(test)]
+mod recipe_tests;
+#[cfg(test)]
+mod sales_tests;
+#[cfg(test)]
+mod supplier_tests;
 #[cfg(test)]
 mod tests;

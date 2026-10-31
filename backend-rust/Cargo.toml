@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/pos-core", "crates/pos-storage-sqlite", "apps/pos-local", "tools/migration-lab"]
+members = ["crates/pos-core", "crates/pos-application", "crates/pos-credentials", "crates/pos-storage-sqlite", "apps/pos-local", "tools/migration-lab", "tools/pos-lab"]
 resolver = "3"
 
 [workspace.package]
@@ -10,21 +10,22 @@ license = "LicenseRef-HiQNet-Proprietary"
 
 [workspace.dependencies]
 pos-core = { path = "crates/pos-core" }
+pos-application = { path = "crates/pos-application" }
+pos-credentials = { path = "crates/pos-credentials" }
 pos-storage-sqlite = { path = "crates/pos-storage-sqlite" }
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
-tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "signal"] }
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.11.1"
 tempfile = "3.27.0"
 thiserror = "2.0.21"
+zeroize = "1.9.1"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["json"] }
 
 chrono-tz = "0.10.4"
 icu_locale_core = { version = "2.4.0", features = ["alloc"] }
-iso_currency = "0.7.1"
-uuid = "1.29.0"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

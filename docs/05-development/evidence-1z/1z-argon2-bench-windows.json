@@ -1,0 +1,114 @@
+{
+  "candidates": [
+    {
+      "accepted_by_current_policy": true,
+      "hash_ms": 30.744139999999998,
+      "label": "cap-32m-2t-1p",
+      "m_kib": 32768,
+      "p": 1,
+      "t": 2,
+      "verify_ms": 30.4176
+    },
+    {
+      "accepted_by_current_policy": true,
+      "hash_ms": 43.32938,
+      "label": "cap-32m-3t-1p",
+      "m_kib": 32768,
+      "p": 1,
+      "t": 3,
+      "verify_ms": 43.8979
+    },
+    {
+      "accepted_by_current_policy": false,
+      "hash_ms": 26.381939999999997,
+      "label": "spring-default-46m-1t-1p",
+      "m_kib": 47104,
+      "p": 1,
+      "t": 1,
+      "verify_ms": 25.8724
+    },
+    {
+      "accepted_by_current_policy": false,
+      "hash_ms": 92.55806,
+      "label": "strong-64m-3t-1p",
+      "m_kib": 65536,
+      "p": 1,
+      "t": 3,
+      "verify_ms": 95.25562
+    }
+  ],
+  "concurrency": [
+    {
+      "failures": 0,
+      "operations": 5,
+      "per_operation_ms": 17.52106,
+      "policy": "lab-argon2-v1",
+      "total_ms": 87.6053,
+      "wall_throughput_per_s": 57.07417245303652,
+      "workers": 1
+    },
+    {
+      "failures": 0,
+      "operations": 10,
+      "per_operation_ms": 9.91722,
+      "policy": "lab-argon2-v1",
+      "total_ms": 99.1722,
+      "wall_throughput_per_s": 100.83470972712111,
+      "workers": 2
+    },
+    {
+      "failures": 0,
+      "operations": 20,
+      "per_operation_ms": 7.154675,
+      "policy": "lab-argon2-v1",
+      "total_ms": 143.0935,
+      "wall_throughput_per_s": 139.76875259882524,
+      "workers": 4
+    },
+    {
+      "failures": 0,
+      "operations": 40,
+      "per_operation_ms": 5.95034,
+      "policy": "lab-argon2-v1",
+      "total_ms": 238.0136,
+      "wall_throughput_per_s": 168.05762359797927,
+      "workers": 8
+    }
+  ],
+  "environment": {
+    "arch": "x86_64",
+    "cpu": "AMD64 Family 25 Model 80 Stepping 0, AuthenticAMD",
+    "hardware_class": "DEV_WORKSTATION",
+    "logical_cpus": 12,
+    "memory_total_kib": 33419224,
+    "os": "windows",
+    "rust_version": "1.99"
+  },
+  "memory": {
+    "note": "El coste de memoria de Argon2id está gobernado por el parámetro m; el pico de RSS agregado depende de las verificaciones concurrentes.",
+    "peak_rss_kib": null
+  },
+  "normative": "D-AUTH-09 remains blocked until target hardware evidence is recorded",
+  "policies": [
+    {
+      "hash_ms": 4.4361,
+      "id": "lab-argon2-v0",
+      "m_kib": 8192,
+      "p": 1,
+      "policy_cap_kib": 32768,
+      "t": 1,
+      "verify_ms": 4.06294
+    },
+    {
+      "hash_ms": 21.35298,
+      "id": "lab-argon2-v1",
+      "m_kib": 19456,
+      "p": 1,
+      "policy_cap_kib": 32768,
+      "t": 2,
+      "verify_ms": 17.32112
+    }
+  ],
+  "rounds": 5,
+  "status": "OBSERVED"
+}

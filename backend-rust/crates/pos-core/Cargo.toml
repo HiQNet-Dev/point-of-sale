@@ -6,12 +6,14 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
-[lints]
-workspace = true
-
 [dependencies]
-
 chrono-tz.workspace = true
 icu_locale_core.workspace = true
-iso_currency.workspace = true
-uuid.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

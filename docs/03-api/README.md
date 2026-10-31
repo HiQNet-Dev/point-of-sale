@@ -7,13 +7,26 @@ este directorio es la capa humana que explica cómo usarlo.
 
 ## Transición Rust
 
-La foundation Rust todavía **no expone HTTP ni IPC** y no promete compatibilidad
-`/api/v1`. Este contrato Java sigue siendo la referencia oficial; autenticación,
-rutas protegidas y errores se prueban contra Java, no contra un endpoint Rust
-simulado. No se han cambiado rutas, DTOs, permisos ni OpenAPI en este incremento.
-Ver [matriz AS-IS](../05-development/rust-parity-baseline.md) y
-[alcance Rust](../05-development/rust-foundation.md). Las pruebas diferenciales
-quedan pendientes hasta existir el adaptador de transporte y sus casos de uso.
+Rust todavía **no expone una API comercial** ni promete compatibilidad `/api/v1`.
+Java sigue siendo la referencia HTTP oficial. Los incrementos 1X y 1Y incorporan
+[lecturas Tauri/IPC reales](rust-desktop-ipc.md) en una aplicación de escritorio:
+mode laboratorio con SQLite y sesión sintéticos, y modo instalación persistente
+que sólo informa su estado. No sustituye login ni pantallas Java y no añade HTTP.
+Ver [matriz AS-IS](../05-development/rust-parity-baseline.md).
+
+### Contratos Rust Local (1W)
+
+La [guía Rust Local](rust-local-integration.md) explica el inventario generado de
+32 casos de uso, los bindings TypeScript/JSON Schema y la prueba real
+Rust → cliente TypeScript → SQLite. La vertical está **aislada en laboratorio**;
+no añade endpoints HTTP, comandos Tauri ni login comercial.
+
+### Escritorio Rust (1X–1Y)
+
+Para abrir la pantalla React conectada a Rust: desde `frontend/`, `pnpm desktop:lab`
+(laboratorio efímero) o `pnpm desktop:install -- <directorio>` (instalación
+persistente). Para probar los transportes reales: `pnpm test:desktop-lab` y
+`pnpm test:desktop-installation`. Ver [contrato IPC y requisitos](rust-desktop-ipc.md).
 
 ## Especificación viva (OpenAPI)
 

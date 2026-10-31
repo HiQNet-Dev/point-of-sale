@@ -1,5 +1,6 @@
 //! Telemetría JSON de vocabulario cerrado, sin datos operativos sensibles.
 
+use pos_application::installation::{InstallationError, InstallationReport, InstallationState};
 use pos_local::config::ConfigError;
 use tracing::Subscriber;
 use tracing_subscriber::{
@@ -11,9 +12,12 @@ const TARGET: &str = "pos_local::lifecycle";
 /// Eventos propios; ninguna variante almacena rutas, SQL ni errores originales.
 pub(crate) enum Event {
     ConfigurationRejected(ConfigError),
+    /// El historial no permite operar con este build; no se migra ni se escribe.
+    InstallationRejected(InstallationError),
+    /// Instalación clasificada: primera ejecución o reapertura del mismo archivo.
+    InstallationResolved(InstallationReport),
     SignalSetupFailed,
     StorageOpenFailed,
-    MigrationFailed,
     Ready,
     ShutdownRequested,
     SignalWaitFailed,
@@ -55,9 +59,42 @@ pub(crate) fn emit(event: Event) {
         }
         Event::SignalSetupFailed => tracing::error!(target: TARGET, event = "signal_setup_failed"),
         Event::StorageOpenFailed => tracing::error!(target: TARGET, event = "storage_open_failed"),
-        Event::MigrationFailed => tracing::error!(target: TARGET, event = "migration_failed"),
+        Event::InstallationRejected(error) => {
+            tracing::error!(
+                target: TARGET,
+                event = "installation_rejected",
+                reason = installation_code(error)
+            );
+        }
+        Event::InstallationResolved(report) => {
+            tracing::info!(
+                target: TARGET,
+                event = "installation_ready",
+                state = installation_state(report.state),
+                schema_version = report.schema_version,
+                applied_migrations = report.applied_migrations
+            );
+        }
         Event::SignalWaitFailed => tracing::error!(target: TARGET, event = "signal_wait_failed"),
         Event::CheckpointFailed => tracing::error!(target: TARGET, event = "checkpoint_failed"),
+    }
+}
+
+/// Códigos estáticos del ciclo de vida; nunca se registra la ruta del archivo.
+fn installation_state(state: InstallationState) -> &'static str {
+    match state {
+        InstallationState::FirstInstall => "first_install",
+        InstallationState::Reopened => "reopened",
+    }
+}
+
+fn installation_code(error: InstallationError) -> &'static str {
+    match error {
+        InstallationError::InvalidApprovedSchema => "invalid_approved_schema",
+        InstallationError::InconsistentHistory => "inconsistent_history",
+        InstallationError::SchemaAhead { .. } => "schema_ahead",
+        InstallationError::Unavailable => "unavailable",
+        InstallationError::MigrationFailed => "migration_failed",
     }
 }
 

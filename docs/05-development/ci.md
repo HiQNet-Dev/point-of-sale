@@ -53,10 +53,21 @@ Reglas de decisión:
 La integración E2E **no** depende de la detección de cambios: corre solo en el CI
 robusto de `main` y en la validación manual.
 
-## Rust: checks técnicos y gate normativo obligatorio
+## Rust: integración técnica (`dev`) y gate normativo de release (`main`)
 
-El job `rust` (`Rust (technical checks + mandatory DDL13 gate)`)
-trabaja en `backend-rust`, con toolchain **1.99.1**, `rustfmt` y `clippy`.
+El CI de Rust tiene dos niveles independientes:
+
+| Job | Nombre | Cuándo corre | `--require-complete` |
+| --- | --- | --- | --- |
+| `rust` | `Rust Technical Integration Gate` | PR y push con `rust_run=true` | no se ejecuta |
+| `windows-desktop` | `Windows Desktop (Tauri)` | `rust_run=true` | no aplica |
+| `rust-normative` | `Rust Normative Release Gate` | `rust_run=true`; siempre en `main` y dispatch | sí, sin cambios |
+
+El nivel técnico puede quedar verde con código Rust integrado pero inactivo
+comercialmente. El nivel normativo conserva su semántica y solo `PASSED` permite
+`main` o un release. `CI Gate` aplica la política del destino.
+
+El job `rust` trabaja en `backend-rust`, con toolchain **1.99.1**, `rustfmt` y `clippy`.
 La foundation declara MSRV **1.99**; este job valida 1.99.1, no una matriz
 adicional de compiladores. El workspace contiene `crates/pos-core`,
 `crates/pos-storage-sqlite`, `apps/pos-local` y `tools/migration-lab`.
@@ -97,43 +108,78 @@ sintéticos no acreditan los casos normativos. El step sigue bloqueante y no alt
 `--require-complete`.
 
 La ejecución normal devuelve **0 por ejecución técnica correcta, NO por
-aprobación normativa**. Los 41 checks técnicos pueden pasar, pero eso no basta
-para que el job Rust ni `CI Gate` estén verdes. No hay `continue-on-error` a
-nivel de job ni de step, `|| true`, fixtures aprobatorias ni resultados ficticios
-de completitud.
+aprobación normativa**. Los checks técnicos pueden pasar y el job `rust` quedar
+verde aunque la cobertura normativa siga incompleta: ese estado se declara en
+`rust-normative` y lo evalúa `CI Gate` según el destino. No hay
+`continue-on-error` a nivel de job ni de step, `|| true`, fixtures aprobatorias ni
+resultados ficticios de completitud.
 
-### Gate normativo automático obligatorio: esquema / DDL13
+### Nivel 1 en Windows — `windows-desktop`
 
-La foundation ya incluye un primer esquema parcial: Local org/branch y PG
-tenant/customer. Una revisión humana IMP01 por sí sola **no basta** para aprobar
-eso alcance con obligatorios pendientes. **PAR-08 está aprobado** porque el
-origen Flyway V1–V25 se ejecutó dos veces con 37/37 tablas y digest funcional
-idéntico; los otros **29 casos siguen BLOCKED/NOT_RUN**. Pasar formato, Clippy,
-tests, build o auditoría no permite aprobar el resto.
-
-El último check del job, después de `cargo audit` e inmediatamente antes del
-upload, ejecuta obligatoriamente:
+`apps/pos-desktop` declara su propio workspace, por lo que no lo cubre el job
+`rust`. El job `windows-desktop` corre en `windows-latest` con toolchain
+**1.99.1** fijada (`RUSTUP_TOOLCHAIN`) y shell `bash`, desde
+`backend-rust/apps/pos-desktop`:
 
 ```bash
-cargo run --locked -p migration-lab -- --output target/migration-gate-evidence --postgres-bin target/pg17-build/install/bin --java-source --require-complete
-python3 tools/migration-lab/scripts/verify_evidence.py --evidence target/migration-gate-evidence --expect-exit 2
+cargo metadata --locked --format-version 1
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked
+cargo build --locked
 ```
 
-Se ejecuta con `if: always()` dentro del job seleccionado por `rust_run=true`,
-también si falla un check técnico anterior. Escribe en una salida distinta de
-`target/migration-evidence`, sin sobrescribir la evidencia técnica parcial.
-Mientras haya obligatorios pendientes, el laboratorio devuelve **exit 2
-(`BLOCKED`)**, que se propaga sin interceptarse: el **job Rust queda rojo y
-`CI Gate` falla**. Si una etapa anterior impide ejecutar el laboratorio, tampoco
-se aprueba el job ni se fabrica evidencia.
+Antes de compilar se construye el frontend sintético
+(`pnpm exec vite build --config vite.rust-lab.config.ts`): `generate_context!`
+exige que exista `frontend/dist-rust-lab` y sin él la compilación falla. El
+bundling comercial sigue desactivado (`bundle.active=false`), así que no se
+genera instalador ni se requiere `icon.png`.
 
-**No hay merge hasta completar DDL13 y todos los obligatorios normativos.**
-El bloqueo automático está activo también durante la foundation parcial: es un
-bloqueo real e intencional, no un fallo oculto, opcional ni sustituible por una
-aprobación humana IMP01. Solo la evidencia completa y satisfactoria del SHA
-validado permite superar el gate; la revisión humana sigue siendo adicional.
-`CI Gate` debe mantenerse como required status check en las reglas de protección
-de rama, cuya configuración está fuera de estos archivos.
+Las pruebas cubren el registro IPC cerrado: los 17 comandos `purchasing_*` no
+están registrados, el modo producto rechaza los comandos de laboratorio, y se
+valida el manejo de junctions, symlinks, locking de instalación y rutas Windows.
+
+`CI Gate` exige `windows-desktop=success` cuando `rust_run=true` y acepta
+`skipped` solo cuando la detección no requiere Rust, de modo que una omisión
+inesperada falla cerrado.
+
+### Nivel 2 — `rust-normative`: evidencia normativa real
+
+La foundation ya incluye un primer esquema parcial: Local org/branch y PG
+tenant/customer. **PAR-08 está aprobado** porque el origen Flyway V1–V25 se
+ejecutó dos veces con 37/37 tablas y digest funcional idéntico; los otros **29
+casos siguen BLOCKED/NOT_RUN**.
+
+El job `rust-normative` compila PostgreSQL 17.11, instala la toolchain y ejecuta
+el wrapper del gate:
+
+```bash
+bash ../.github/scripts/rust-normative-gate.sh
+```
+
+El wrapper ejecuta `migration-lab --require-complete` sin alterar su semántica,
+captura el exit real y lo clasifica:
+
+| Exit | Estado | Step | `dev` | `main`/dispatch |
+| --- | --- | --- | --- | --- |
+| `0` | `PASSED` | éxito | permitido | requerido |
+| `2` | `BLOCKED` | éxito declarado | permitido | **rechazado** |
+| otro | `FAILED` | **fallo** | fallo | fallo |
+
+El estado y el exit se publican como `outputs.status` / `outputs.exit_code`, se
+escriben en el resumen del step y se verifican con
+`verify_evidence.py --expect-exit <exit capturado>`. Un `BLOCKED` nunca se
+presenta como aprobación: el job lo publica como tal y `CI Gate` lo rechaza para
+`main`. Un `FAILED` rompe el paso y no se convierte en verde.
+
+El job escribe en `target/migration-gate-evidence`, sin sobrescribir la evidencia
+técnica. Corre con `if: always()` respecto de `changes`/`rust`, de modo que la
+evidencia normativa se produce también si el nivel técnico falló.
+
+**No hay merge a `main` ni release hasta completar DDL13 y todos los
+obligatorios normativos.** `CI Gate` sigue siendo el único required status check
+recomendado, y su configuración de protección de rama está fuera de estos
+archivos.
 
 ### Seguridad y artefactos Rust
 
@@ -153,13 +199,11 @@ de rama, cuya configuración está fuera de estos archivos.
   excepciones inventadas. Vulnerabilidades y errores de auditoría fallan el job.
 - Las descargas de herramientas/dependencias y de la base RustSec requieren red;
   no se envían datos de producción ni se usan secretos de producción.
-- `actions/upload-artifact@v4` con **`if: always()`** intenta subir ambas salidas,
-  `backend-rust/target/migration-evidence` (técnica parcial) y
-  `backend-rust/target/migration-gate-evidence` (evaluación normativa), además de
-  `backend-rust/target/cargo-audit.json`, como
-  `rust-migration-technical-and-normative-evidence`, con 7 días de retención,
-  también cuando el gate devuelve exit 2. Si una etapa anterior impide producir
-  archivos, advierte de su ausencia; no fabrica evidencia ni convierte un
+- Cada nivel publica su artefacto con **`if: always()`** y 7 días de retención:
+  `rust-technical-evidence` (`target/migration-evidence` +
+  `target/cargo-audit.json`) y `rust-normative-evidence`
+  (`target/migration-gate-evidence`). Si una etapa anterior impide producir
+  archivos, advierten de su ausencia; no fabrican evidencia ni convierten un
   resultado `BLOCKED` en éxito. Subir el artefacto no certifica la aprobación.
 
 ## Tests de la lógica de CI
@@ -177,9 +221,14 @@ docs-only, cambios mixtos, borrados, áreas Java/frontend/Compose, cambios de CI
 fallback full y ejecución manual/schedule. Ejecuta el script real del gate con
 resultados simulados y exige que Rust requerido termine en `success`, nunca
 `skipped`; también comprueba errores/cancelaciones y contrato del workflow.
-Las regresiones normativas verifican el comando `--require-complete` al final,
-sin `continue-on-error` en job ni steps, su ejecución `always()`, ambas salidas
-subidas con `always()` y la propagación de exit 2 al bloqueo de `CI Gate`.
+Las regresiones de dos niveles comprueban que `rust` no ejecuta
+`--require-complete`, que `rust-normative` es un job independiente sin
+`continue-on-error`, que el wrapper clasifica `0`/`2`/cualquier otro exit sin
+ocultarlo, y que `CI Gate` acepta `BLOCKED` solo para `dev` y exige `PASSED` para
+`main` y `workflow_dispatch`.
+Las regresiones de Windows comprueban que `windows-desktop` corre en
+`windows-latest` con la toolchain fijada, que el frontend sintético se construye
+antes del binario y que su resultado es obligatorio cuando `rust_run=true`.
 
 ## Concurrency
 

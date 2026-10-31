@@ -1,0 +1,12 @@
+{
+  "identifier": "local-main-commands",
+  "description": "Comandos locales de la ventana única: lecturas sintéticas del laboratorio y estado de instalación. Sin bootstrap, archivos, shell ni red.",
+  "windows": ["main"],
+  "permissions": [
+    "allow-lab-list-branches",
+    "allow-lab-list-categories",
+    "allow-lab-list-products",
+    "allow-lab-create-product",
+    "allow-installation-status"
+  ]
+}

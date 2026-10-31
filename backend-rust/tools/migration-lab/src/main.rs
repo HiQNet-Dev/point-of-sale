@@ -2,6 +2,10 @@
 
 mod auth;
 mod cli;
+#[cfg(unix)]
+mod postgres;
+#[cfg(not(unix))]
+#[path = "postgres_unsupported.rs"]
 mod postgres;
 mod provenance;
 mod report;

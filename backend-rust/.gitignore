@@ -1,0 +1,8 @@
+# Artefactos de compilación
+/target/
+/target-linux/
+
+# Bases SQLite de pruebas locales
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

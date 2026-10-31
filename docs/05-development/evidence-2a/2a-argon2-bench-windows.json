@@ -1,0 +1,254 @@
+{
+  "burst": {
+    "failures": 0,
+    "latency": {
+      "count": 16,
+      "max_ms": 153.3321,
+      "mean_ms": 92.58569375,
+      "min_ms": 61.1858,
+      "p50_ms": 82.2479,
+      "p95_ms": 129.1439,
+      "p99_ms": 153.3321
+    },
+    "note": "Una ráfaga sin límites mide contención; el throttling por usuario/IP es política de aplicación, no criptográfica.",
+    "policy": "lab-argon2-v1",
+    "simultaneous_attempts": 16,
+    "throughput_per_s": 103.88018459508802,
+    "wall_ms": 154.02360000000002
+  },
+  "candidates": [
+    {
+      "accepted_by_current_policy": true,
+      "hash": {
+        "count": 10,
+        "max_ms": 48.662499999999994,
+        "mean_ms": 42.856100000000005,
+        "min_ms": 38.9204,
+        "p50_ms": 42.7617,
+        "p95_ms": 48.662499999999994,
+        "p99_ms": 48.662499999999994
+      },
+      "label": "cap-32m-2t-1p",
+      "m_kib": 32768,
+      "p": 1,
+      "t": 2,
+      "verify": {
+        "count": 10,
+        "max_ms": 45.6262,
+        "mean_ms": 41.44289,
+        "min_ms": 36.5229,
+        "p50_ms": 41.535000000000004,
+        "p95_ms": 45.6262,
+        "p99_ms": 45.6262
+      }
+    },
+    {
+      "accepted_by_current_policy": true,
+      "hash": {
+        "count": 10,
+        "max_ms": 65.7422,
+        "mean_ms": 59.64049,
+        "min_ms": 54.669200000000004,
+        "p50_ms": 59.2554,
+        "p95_ms": 65.7422,
+        "p99_ms": 65.7422
+      },
+      "label": "cap-32m-3t-1p",
+      "m_kib": 32768,
+      "p": 1,
+      "t": 3,
+      "verify": {
+        "count": 10,
+        "max_ms": 61.2318,
+        "mean_ms": 59.193650000000005,
+        "min_ms": 53.9476,
+        "p50_ms": 59.8239,
+        "p95_ms": 61.2318,
+        "p99_ms": 61.2318
+      }
+    },
+    {
+      "accepted_by_current_policy": false,
+      "hash": {
+        "count": 10,
+        "max_ms": 44.0313,
+        "mean_ms": 37.5657,
+        "min_ms": 33.4673,
+        "p50_ms": 37.3118,
+        "p95_ms": 44.0313,
+        "p99_ms": 44.0313
+      },
+      "label": "spring-default-46m-1t-1p",
+      "m_kib": 47104,
+      "p": 1,
+      "t": 1,
+      "verify": {
+        "count": 10,
+        "max_ms": 38.387299999999996,
+        "mean_ms": 36.74894,
+        "min_ms": 35.143,
+        "p50_ms": 36.5423,
+        "p95_ms": 38.387299999999996,
+        "p99_ms": 38.387299999999996
+      }
+    },
+    {
+      "accepted_by_current_policy": false,
+      "hash": {
+        "count": 10,
+        "max_ms": 138.275,
+        "mean_ms": 134.04454,
+        "min_ms": 128.0257,
+        "p50_ms": 134.3937,
+        "p95_ms": 138.275,
+        "p99_ms": 138.275
+      },
+      "label": "strong-64m-3t-1p",
+      "m_kib": 65536,
+      "p": 1,
+      "t": 3,
+      "verify": {
+        "count": 10,
+        "max_ms": 274.3057,
+        "mean_ms": 154.59922,
+        "min_ms": 133.0246,
+        "p50_ms": 142.85,
+        "p95_ms": 274.3057,
+        "p99_ms": 274.3057
+      }
+    }
+  ],
+  "concurrency": [
+    {
+      "failures": 0,
+      "latency": {
+        "count": 10,
+        "max_ms": 28.423199999999998,
+        "mean_ms": 26.886449999999996,
+        "min_ms": 24.8064,
+        "p50_ms": 27.250799999999998,
+        "p95_ms": 28.423199999999998,
+        "p99_ms": 28.423199999999998
+      },
+      "operations": 10,
+      "policy": "lab-argon2-v1",
+      "throughput_per_s": 37.12020003333394,
+      "wall_ms": 269.3951,
+      "workers": 1
+    },
+    {
+      "failures": 0,
+      "latency": {
+        "count": 40,
+        "max_ms": 55.7993,
+        "mean_ms": 44.300650000000005,
+        "min_ms": 35.1147,
+        "p50_ms": 43.0632,
+        "p95_ms": 53.023599999999995,
+        "p99_ms": 55.7993
+      },
+      "operations": 40,
+      "policy": "lab-argon2-v1",
+      "throughput_per_s": 87.90053527030953,
+      "wall_ms": 455.0598,
+      "workers": 4
+    },
+    {
+      "failures": 0,
+      "latency": {
+        "count": 80,
+        "max_ms": 199.0868,
+        "mean_ms": 65.79935624999999,
+        "min_ms": 30.282300000000003,
+        "p50_ms": 59.2922,
+        "p95_ms": 105.9879,
+        "p99_ms": 124.0866
+      },
+      "operations": 80,
+      "policy": "lab-argon2-v1",
+      "throughput_per_s": 96.7457978765023,
+      "wall_ms": 826.9092999999999,
+      "workers": 8
+    }
+  ],
+  "environment": {
+    "arch": "x86_64",
+    "cpu": "AMD64 Family 25 Model 80 Stepping 0, AuthenticAMD",
+    "external_limits": "shared dev machine, uncontrolled",
+    "hardware_class": "DEV_WORKSTATION",
+    "logical_cpus": 12,
+    "memory_total_kib": 33419224,
+    "os": "windows",
+    "rust_version": "1.99"
+  },
+  "input": {
+    "burst": 16,
+    "rounds": 10,
+    "workers": [
+      1,
+      4,
+      8
+    ]
+  },
+  "memory": {
+    "after_candidates_kib": null,
+    "after_concurrency_kib": null,
+    "after_policies_kib": null,
+    "note": "VmHWM es el pico del proceso y es monótono; el coste de Argon2id está gobernado por m, pero el asignador puede retener memoria por hilo bajo concurrencia.",
+    "peak_rss_kib": null
+  },
+  "normative": "D-AUTH-09 remains blocked until target hardware evidence is recorded and the holder approves",
+  "policies": [
+    {
+      "hash": {
+        "count": 10,
+        "max_ms": 7.139399999999999,
+        "mean_ms": 5.90216,
+        "min_ms": 5.0204,
+        "p50_ms": 5.8824000000000005,
+        "p95_ms": 7.139399999999999,
+        "p99_ms": 7.139399999999999
+      },
+      "id": "lab-argon2-v0",
+      "m_kib": 8192,
+      "p": 1,
+      "policy_cap_kib": 32768,
+      "t": 1,
+      "verify": {
+        "count": 10,
+        "max_ms": 6.5226,
+        "mean_ms": 5.696759999999999,
+        "min_ms": 4.8428,
+        "p50_ms": 5.7992,
+        "p95_ms": 6.5226,
+        "p99_ms": 6.5226
+      }
+    },
+    {
+      "hash": {
+        "count": 10,
+        "max_ms": 26.961100000000002,
+        "mean_ms": 25.021539999999998,
+        "min_ms": 23.2009,
+        "p50_ms": 25.2343,
+        "p95_ms": 26.961100000000002,
+        "p99_ms": 26.961100000000002
+      },
+      "id": "lab-argon2-v1",
+      "m_kib": 19456,
+      "p": 1,
+      "policy_cap_kib": 32768,
+      "t": 2,
+      "verify": {
+        "count": 10,
+        "max_ms": 27.7818,
+        "mean_ms": 24.94797,
+        "min_ms": 23.074399999999997,
+        "p50_ms": 24.8149,
+        "p95_ms": 27.7818,
+        "p99_ms": 27.7818
+      }
+    }
+  ],
+  "status": "OBSERVED"
+}

@@ -1,11 +1,26 @@
 # CC-0021 — solicitud de cambio del físico y paridad Free Local v1
 
-**Estado: PROPUESTO, SIN ACEPTACIÓN FORMAL. Fecha: 2026-10-28.**
+**Estado: PROPUESTO en su conjunto. `CC21-03` aceptada el 2026-10-30; el resto
+sigue pendiente. Fecha de apertura: 2026-10-28.**
 La dirección funcional D01..D07 fue **aprobada con condiciones** por el titular el
 2026-10-28; las condiciones y el registro están en el [paquete PRE0D-1](rust-0d-approval-package.md) §5.
 Relacionada con [ADR-0021](../01-architecture/adr/0021-frozen-physical-parity-conflicts.md).
 No edita documentos canónicos de Drive ni autoriza DDL, import o producción.
-Titular/aprobador por decisión, revisores, aceptación formal y versiones nuevas: **PENDIENTES**.
+Revisores, aceptación formal del conjunto y versiones nuevas: **PENDIENTES**.
+
+## 0. Registro de aprobación parcial
+
+| Solicitud | Estado | Fecha | Alcance aceptado |
+| --- | --- | --- | --- |
+| `CC21-01` inventario | Pendiente | — | — |
+| `CC21-02` padres incompletos | Pendiente | — | — |
+| `CC21-03` costo pactado | **Aceptada** | 2026-10-30 | `unit_cost TEXT NULL`; `NULL` = desconocido, `0.0000` = cero conocido; total derivado `NULL` si falta algún costo; reportes distinguen «sin costo»; sin inferir costo efectivo de recepción |
+| `CC21-04` costo efectivo/valoración | Pendiente | — | — |
+| `CC21-05` snapshots | Pendiente | — | — |
+
+Fuente de la aceptación: `00B · Control maestro de revisiones y aprobaciones —
+HiQNet POS` (2026-10-30). La aceptación de `CC21-03` **no** aprueba `ADR-0021`
+completo ni las demás solicitudes.
 
 ## Versión de aprobación PRE0D-1
 

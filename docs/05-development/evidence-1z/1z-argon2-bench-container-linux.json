@@ -1,0 +1,105 @@
+{
+  "candidates": [
+    {
+      "accepted_by_current_policy": true,
+      "hash_ms": 42.458773,
+      "label": "cap-32m-2t-1p",
+      "m_kib": 32768,
+      "p": 1,
+      "t": 2,
+      "verify_ms": 43.1588802
+    },
+    {
+      "accepted_by_current_policy": true,
+      "hash_ms": 58.558696600000005,
+      "label": "cap-32m-3t-1p",
+      "m_kib": 32768,
+      "p": 1,
+      "t": 3,
+      "verify_ms": 58.7396066
+    },
+    {
+      "accepted_by_current_policy": false,
+      "hash_ms": 44.0438216,
+      "label": "spring-default-46m-1t-1p",
+      "m_kib": 47104,
+      "p": 1,
+      "t": 1,
+      "verify_ms": 43.174088999999995
+    },
+    {
+      "accepted_by_current_policy": false,
+      "hash_ms": 126.62950760000001,
+      "label": "strong-64m-3t-1p",
+      "m_kib": 65536,
+      "p": 1,
+      "t": 3,
+      "verify_ms": 127.44850999999998
+    }
+  ],
+  "concurrency": [
+    {
+      "failures": 0,
+      "operations": 5,
+      "per_operation_ms": 24.640097,
+      "policy": "lab-argon2-v1",
+      "total_ms": 123.200485,
+      "wall_throughput_per_s": 40.584255816850074,
+      "workers": 1
+    },
+    {
+      "failures": 0,
+      "operations": 10,
+      "per_operation_ms": 12.8764286,
+      "policy": "lab-argon2-v1",
+      "total_ms": 128.764286,
+      "wall_throughput_per_s": 77.66128567668211,
+      "workers": 2
+    },
+    {
+      "failures": 0,
+      "operations": 20,
+      "per_operation_ms": 8.29912245,
+      "policy": "lab-argon2-v1",
+      "total_ms": 165.982449,
+      "wall_throughput_per_s": 120.49466748137931,
+      "workers": 4
+    }
+  ],
+  "environment": {
+    "arch": "x86_64",
+    "cpu": "AMD Ryzen 5 5600G with Radeon Graphics",
+    "hardware_class": "CONTAINER_LINUX",
+    "logical_cpus": 12,
+    "memory_total_kib": 16306828,
+    "os": "linux",
+    "rust_version": "1.99"
+  },
+  "memory": {
+    "note": "El coste de memoria de Argon2id está gobernado por el parámetro m; el pico de RSS agregado depende de las verificaciones concurrentes.",
+    "peak_rss_kib": 460176
+  },
+  "normative": "D-AUTH-09 remains blocked until target hardware evidence is recorded",
+  "policies": [
+    {
+      "hash_ms": 6.714412999999999,
+      "id": "lab-argon2-v0",
+      "m_kib": 8192,
+      "p": 1,
+      "policy_cap_kib": 32768,
+      "t": 1,
+      "verify_ms": 4.5442836
+    },
+    {
+      "hash_ms": 17.3078688,
+      "id": "lab-argon2-v1",
+      "m_kib": 19456,
+      "p": 1,
+      "policy_cap_kib": 32768,
+      "t": 2,
+      "verify_ms": 17.821679800000002
+    }
+  ],
+  "rounds": 5,
+  "status": "OBSERVED"
+}
