@@ -17,6 +17,7 @@ mod dto;
 mod installation_dir;
 #[cfg(test)]
 mod ipc_tests;
+mod purchasing;
 
 use std::error::Error;
 
@@ -36,6 +37,7 @@ fn execute() -> Result<(), Box<dyn Error>> {
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../../frontend/src/shared/rust-local/desktop.generated.ts");
             bindings::export(&path)?;
+            bindings::export_purchasing(&path.with_file_name("purchasing.generated.ts"))?;
             Ok(())
         }
         Invocation::SyntheticLab => {

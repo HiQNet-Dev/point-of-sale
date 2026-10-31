@@ -8,7 +8,7 @@ export class DesktopCommandError extends Error {
   }
 }
 
-async function unwrap<T>(operation: Promise<{ status: 'ok'; data: T } | { status: 'error'; error: IpcError }>): Promise<T> {
+export async function unwrap<T>(operation: Promise<{ status: 'ok'; data: T } | { status: 'error'; error: IpcError }>): Promise<T> {
   let result: Awaited<typeof operation>
   try {
     result = await operation

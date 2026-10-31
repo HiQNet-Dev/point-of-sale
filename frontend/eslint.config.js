@@ -24,7 +24,7 @@ export default tseslint.config(
   },
   {
     // Runtime emitido por Tauri Specta; no se modifica el archivo generado.
-    files: ['src/shared/rust-local/desktop.generated.ts'],
+    files: ['src/shared/rust-local/desktop.generated.ts', 'src/shared/rust-local/purchasing.generated.ts'],
     rules: { '@typescript-eslint/no-explicit-any': 'off' },
   },
 )

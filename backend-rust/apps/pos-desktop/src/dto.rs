@@ -114,9 +114,9 @@ pub enum IpcError {
     Unauthorized,
     /// Principal válido sin permiso suficiente.
     Forbidden,
-    /// Página fuera del contrato.
+    /// Entrada, página o cantidad fuera del contrato.
     ValidationError,
-    /// La entidad ya existe en el scope del principal.
+    /// CAS, código duplicado, idempotencia o estado incompatible.
     Conflict,
     /// La entidad referenciada no existe en el scope del principal.
     NotFound,
@@ -138,8 +138,24 @@ impl From<pos_core::organization_branch::ApplicationError> for IpcError {
     fn from(error: pos_core::organization_branch::ApplicationError) -> Self {
         use pos_core::organization_branch::ApplicationError;
         match error {
-            ApplicationError::Forbidden => Self::Forbidden,
-            ApplicationError::InvalidCatalogInput => Self::ValidationError,
+            ApplicationError::Forbidden | ApplicationError::OwnershipMismatch => Self::Forbidden,
+            ApplicationError::InvalidCatalogInput
+            | ApplicationError::InvalidPurchaseInput
+            | ApplicationError::OverReceipt => Self::ValidationError,
+            ApplicationError::SupplierNotFound
+            | ApplicationError::PurchaseOrderNotFound
+            | ApplicationError::PurchaseOrderLineNotFound
+            | ApplicationError::PurchaseReceiptNotFound
+            | ApplicationError::InventoryItemNotFound => Self::NotFound,
+            ApplicationError::ConcurrentModification
+            | ApplicationError::SupplierCodeAlreadyExists
+            | ApplicationError::PurchaseOrderCodeAlreadyExists
+            | ApplicationError::SupplierInactive
+            | ApplicationError::PurchaseOrderNotDraft
+            | ApplicationError::PurchaseOrderAlreadyIssued
+            | ApplicationError::PurchaseOrderAlreadyCancelled
+            | ApplicationError::PurchaseOrderNotReceivable
+            | ApplicationError::DuplicateReceipt => Self::Conflict,
             ApplicationError::CategoryNotFound | ApplicationError::ProductNotFound => {
                 Self::NotFound
             }

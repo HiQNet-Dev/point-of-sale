@@ -191,6 +191,14 @@ El workspace gráfico es independiente para no introducir GTK/WebKit en los
 crates headless. Ejecutar también allí fmt, Clippy con `-D warnings`, tests y
 build. Windows es el entorno gráfico ejecutado; no se afirma E2E desktop Linux.
 
+## Purchasing preparado (continuación 2C)
+
+Existe un registro separado de 17 handlers con DTOs/bindings generados y servicio
+TypeScript/Query preparado. **No se incluye en el dispatcher activo ni en las
+ACLs**, no tiene constructor de estado productivo y no conecta pantallas
+comerciales a fixtures. Contratos, pruebas y bloqueos:
+[Purchasing IPC preparado](rust-purchasing-ipc.md).
+
 ## Bloqueos y siguiente vertical
 
 No hay login comercial ni escritura IPC. D-AUTH, D-INST, D-CAT, D-CASH, D-SALES,

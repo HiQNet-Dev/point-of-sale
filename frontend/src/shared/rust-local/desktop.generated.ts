@@ -127,9 +127,9 @@ export type IpcError =
 { code: "UNAUTHORIZED" } |
 /**  Principal válido sin permiso suficiente. */
 { code: "FORBIDDEN" } |
-/**  Página fuera del contrato. */
+/**  Entrada, página o cantidad fuera del contrato. */
 { code: "VALIDATION_ERROR" } |
-/**  La entidad ya existe en el scope del principal. */
+/**  CAS, código duplicado, idempotencia o estado incompatible. */
 { code: "CONFLICT" } |
 /**  La entidad referenciada no existe en el scope del principal. */
 { code: "NOT_FOUND" } |
