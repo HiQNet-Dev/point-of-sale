@@ -1,9 +1,9 @@
-//! Flujo administrativo completo sobre el esquema **candidato**.
+//! Flujo administrativo completo sobre el esquema productivo.
 //!
-//! No es producto desplegable: las tablas vienen de `proposals/local-auth/` y
-//! `pos-local` no las carga. La prueba demuestra que los contratos de dominio,
-//! el adaptador canónico, la autorización DB-authoritative, la auditoría y el
-//! CAS de sesión encajan de extremo a extremo sin red.
+//! Las tablas las crea el migrador aprobado (`migrations/local`). La prueba
+//! demuestra que los contratos de dominio, el adaptador canónico, la autorización
+//! DB-authoritative, la auditoría y el CAS de sesión encajan de extremo a extremo
+//! sin red.
 #![allow(clippy::panic)]
 
 use std::time::Duration;
@@ -31,15 +31,6 @@ use crate::{
     bootstrap::{BootstrapRequest, provision_initial_installation},
     identity::SqliteIdentityLab,
 };
-
-const PROPOSALS: [&str; 6] = [
-    include_str!("../../../proposals/local-auth/0002_installation_identity.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0003_user_credential_session.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0004_rbac_catalog.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0005_branch_membership.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0006_audit_event.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0007_bootstrap_record.proposed.sql"),
-];
 
 const ORG: &str = "00000000-0000-0000-0000-0000000000a0";
 const INSTALLATION: &str = "00000000-0000-0000-0000-0000000000f0";
@@ -79,9 +70,6 @@ async fn open_candidate() -> Result<(tempfile::TempDir, SqlitePool), Box<dyn std
     let temp = tempfile::tempdir()?;
     let pool = open(&temp.path().join("flow.sqlite"), Duration::from_millis(75)).await?;
     migrate(&pool).await?;
-    for statement in PROPOSALS {
-        sqlx::raw_sql(statement).execute(&pool).await?;
-    }
     Ok((temp, pool))
 }
 

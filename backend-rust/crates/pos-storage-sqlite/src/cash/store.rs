@@ -1,9 +1,8 @@
-//! Casos de uso SQLite candidatos de cajas y turnos.
+//! Casos de uso SQLite de cajas y turnos.
 //!
-//! **No productivo todavía.** Las tablas viven en `proposals/local-cash/` y no
-//! están cargadas por `pos-local`. Esta composición reutiliza la frontera de
-//! principal verificado, `BEGIN IMMEDIATE` y auditoría transaccional para que la
-//! promoción aprobada no requiera reescribir reglas de seguridad.
+//! Las tablas las crea el migrador aprobado (`0009`, `0010`). Esta composición
+//! reutiliza la frontera de principal verificado, `BEGIN IMMEDIATE` y auditoría
+//! transaccional.
 //!
 //! El puerto [`OpenSalesForCashShift`] se ejecuta dentro de la misma UoW que el
 //! cierre. La futura persistencia de ventas debe usar la misma estrategia de

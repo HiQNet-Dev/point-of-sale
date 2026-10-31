@@ -114,7 +114,7 @@ mod tests {
             first_report.schema_version,
             crate::approved_schema_version()
         );
-        assert_eq!(first_report.applied_migrations, 1);
+        assert_eq!(first_report.applied_migrations, 17);
         assert!(first_report.was_migrated());
         first_pool.close().await;
 
@@ -166,6 +166,6 @@ mod tests {
 
     #[tokio::test]
     async fn approved_version_follows_the_embedded_migrator() {
-        assert_eq!(crate::approved_schema_version(), 1);
+        assert_eq!(crate::approved_schema_version(), 17);
     }
 }

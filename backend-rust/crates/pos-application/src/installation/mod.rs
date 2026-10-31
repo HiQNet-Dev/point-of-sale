@@ -1,8 +1,8 @@
 //! Ciclo de vida de la instalación Local persistente.
 //!
-//! Este módulo **no** interpreta el esquema candidato ni activa DDL: solo
-//! clasifica el historial de migraciones aplicado por el migrador autorizado y
-//! detecta bases que el binario actual no puede abrir con garantías.
+//! Este módulo **no** interpreta el esquema ni activa DDL: solo clasifica el
+//! historial de migraciones aplicado por el migrador autorizado y detecta bases
+//! que el binario actual no puede abrir con garantías.
 //!
 //! La política es deliberadamente pequeña y comprobable:
 //!
@@ -14,8 +14,8 @@
 //!   reciente y se rechaza: operar sobre un esquema desconocido rompería
 //!   invariantes antes de que la aplicación pueda detectarlo.
 //!
-//! El contenido del esquema sigue siendo responsabilidad de `migrations/local`.
-//! Las propuestas `0002`–`0015` no forman parte de esta decisión.
+//! El contenido del esquema es responsabilidad de `migrations/local`, que en
+//! v0.4.0 publica `0001`–`0017`.
 
 use std::fmt;
 

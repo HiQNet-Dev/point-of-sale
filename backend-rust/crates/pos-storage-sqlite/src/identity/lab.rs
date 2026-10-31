@@ -135,7 +135,7 @@ pub async fn ensure_lab_identity_schema(pool: &SqlitePool) -> Result<(), sqlx::E
 pub enum TableSet {
     /// Esquema de laboratorio; nunca se registra en producto.
     Lab,
-    /// Esquema candidato de `proposals/local-auth`; todavía no productivo.
+    /// Esquema canónico productivo (`0003`–`0005`).
     Canonical,
 }
 

@@ -20,8 +20,9 @@ El modo instalación aplica únicamente el migrador aprobado
 (`migrations/local`). Historial vacío ⇒ primera instalación; versión igual al
 build ⇒ reapertura; versión posterior ⇒ el arranque se rechaza. En cada apertura
 se valida el historial/checksums con SQLx; si faltan migraciones **aprobadas**, se
-aplican antes de informar disponibilidad. Nunca carga `proposals/`, nunca crea
-usuarios, sesiones ni credenciales.
+aplican antes de informar disponibilidad. El único cargador de DDL es
+`migrations/local` (`0001`–`0017`, ADR-0026); nunca crea usuarios, sesiones ni
+credenciales.
 
 Desde la consolidación 2C, una segunda instancia desktop sobre la misma
 instalación se rechaza antes de abrir SQLite. El candado `.hiqnet-pos.lock` se

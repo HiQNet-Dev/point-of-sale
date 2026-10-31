@@ -5,7 +5,3 @@ target/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
-
-# `proposals/` NO se excluye: el stage de build de `pos-lab` las embebe con
-# `include_str!`. El DDL candidato queda embebido en ese binario de laboratorio;
-# distribuirlo no equivale a aprobarlo ni a activarlo en `pos-local`.

@@ -1,9 +1,6 @@
 //! Adaptador SQLite del catálogo organizacional y sus casos de uso.
 //!
-//! **No productivo todavía.** Las tablas viven en
-//! `backend-rust/proposals/local-catalog/0008_catalog.proposed.sql`, fuera del
-//! migrador, y `pos-local` no las carga. El módulo existe para que la promoción
-//! consista en mover la propuesta, no en reescribir la persistencia.
+//! Las tablas las crea el migrador aprobado (`0008_catalog.sql`).
 //!
 //! # Frontera transaccional
 //!

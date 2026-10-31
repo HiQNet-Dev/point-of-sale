@@ -124,7 +124,7 @@ async fn configures_and_verifies_every_new_connection() -> Result<(), Box<dyn st
 }
 
 #[tokio::test]
-async fn clean_subset_is_strict_and_migration_replay_is_noop()
+async fn clean_schema_is_strict_and_migration_replay_is_noop()
 -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
     let pool = open(&temp.path().join("local.sqlite"), Duration::from_millis(75)).await?;
@@ -134,7 +134,7 @@ async fn clean_subset_is_strict_and_migration_replay_is_noop()
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM _sqlx_migrations WHERE success")
             .fetch_one(&pool)
             .await?,
-        1
+        17
     );
     let strict = sqlx::query_scalar::<_, i64>(
         "SELECT strict FROM pragma_table_list WHERE name='organization'",

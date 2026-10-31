@@ -1,10 +1,10 @@
-//! Checkout candidato sobre SQLite real: pagos, consumo y cierre de venta en una
-//! única unidad de trabajo.
+//! Checkout sobre SQLite real: pagos, consumo y cierre de venta en una única
+//! unidad de trabajo.
 //!
-//! **No productivo.** Las tablas `payment` y `sale_item_inventory_component`
-//! viven en `proposals/local-sales/0015` y se aplican solo en pruebas. No existe
-//! ruta de aplicación que marque una venta `COMPLETED` sin pagos, sin resolución
-//! de recetas y sin movimientos de ledger en la misma transacción.
+//! Las tablas `payment` y `sale_item_inventory_component` las crea la migración
+//! aprobada `0015_checkout.sql`. No existe ruta de aplicación que marque una venta
+//! `COMPLETED` sin pagos, sin resolución de recetas y sin movimientos de ledger en
+//! la misma transacción.
 //!
 //! # Orden de la transacción
 //!

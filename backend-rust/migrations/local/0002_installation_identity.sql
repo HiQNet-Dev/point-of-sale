@@ -1,4 +1,5 @@
--- PROPUESTA D-INST-01/02. No ejecutar sin aceptación formal.
+-- Aprobada para v0.4.0 (ADR-0026). Inmutable: toda corrección posterior exige
+-- una migración nueva.
 -- Depende de 0001 (organization). Debe aplicarse ANTES de 0007 bootstrap_record.
 --
 -- Transcripción de F1-10 §16.3. No se añaden campos que la ficha no declare.

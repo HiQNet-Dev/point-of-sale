@@ -1,9 +1,8 @@
-//! Casos de uso candidatos de inventario sobre SQLite real.
+//! Casos de uso de inventario sobre SQLite real.
 //!
-//! **No productivo.** Las tablas viven en `proposals/local-inventory/` y las
-//! pruebas las aplican de forma explícita; `pos-local::migrate()` no descubre
-//! esos archivos. Cada mutación comparte una única UoW `BEGIN IMMEDIATE` con el
-//! ledger y la auditoría, y confirma solo si ambos se escribieron.
+//! Las tablas las crea el migrador aprobado (`0013`, `0014`). Cada mutación
+//! comparte una única UoW `BEGIN IMMEDIATE` con el ledger y la auditoría, y
+//! confirma solo si ambos se escribieron.
 //!
 //! # Invariantes
 //!

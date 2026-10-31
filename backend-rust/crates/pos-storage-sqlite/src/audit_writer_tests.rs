@@ -1,7 +1,7 @@
-//! Pruebas del writer de auditoría contra el esquema candidato `audit_event`.
+//! Pruebas del writer de auditoría contra el esquema productivo `audit_event`.
 //!
-//! Estas pruebas **no** promueven la migración: cargan el SQL candidato desde
-//! `proposals/local-auth/` sobre una base temporal.
+//! El esquema lo aplica el migrador aprobado (`migrations/local`) sobre una base
+//! temporal.
 #![allow(clippy::panic)]
 
 use std::{path::Path, time::Duration};
@@ -25,19 +25,6 @@ use crate::{
     audit::SqliteAuditWriter,
     identity::{SqliteIdentityLab, ensure_lab_identity_schema},
 };
-
-const PROPOSAL_INSTALLATION: &str =
-    include_str!("../../../proposals/local-auth/0002_installation_identity.proposed.sql");
-const PROPOSAL_IDENTITY: &str =
-    include_str!("../../../proposals/local-auth/0003_user_credential_session.proposed.sql");
-const PROPOSAL_RBAC: &str =
-    include_str!("../../../proposals/local-auth/0004_rbac_catalog.proposed.sql");
-const PROPOSAL_MEMBERSHIP: &str =
-    include_str!("../../../proposals/local-auth/0005_branch_membership.proposed.sql");
-const PROPOSAL_AUDIT: &str =
-    include_str!("../../../proposals/local-auth/0006_audit_event.proposed.sql");
-const PROPOSAL_BOOTSTRAP: &str =
-    include_str!("../../../proposals/local-auth/0007_bootstrap_record.proposed.sql");
 
 const ORG: &str = "00000000-0000-0000-0000-0000000000a0";
 const INSTALLATION: &str = "00000000-0000-0000-0000-0000000000f0";
@@ -76,16 +63,6 @@ fn capability() -> BootstrapProvisioning {
 async fn open_candidate(path: &Path) -> Result<SqlitePool, Box<dyn std::error::Error>> {
     let pool = open(path, Duration::from_millis(75)).await?;
     migrate(&pool).await?;
-    for statement in [
-        PROPOSAL_INSTALLATION,
-        PROPOSAL_IDENTITY,
-        PROPOSAL_RBAC,
-        PROPOSAL_MEMBERSHIP,
-        PROPOSAL_AUDIT,
-        PROPOSAL_BOOTSTRAP,
-    ] {
-        sqlx::raw_sql(statement).execute(&pool).await?;
-    }
     Ok(pool)
 }
 

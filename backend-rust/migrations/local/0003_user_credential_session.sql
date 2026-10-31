@@ -1,4 +1,5 @@
--- PROPUESTA D-AUTH-01/02/04/05. No ejecutar sin aceptación formal.
+-- Aprobada para v0.4.0 (ADR-0026). Inmutable: toda corrección posterior exige
+-- una migración nueva.
 -- Depende de migrations/local/0001_organization_branch.sql.
 -- SQLite STRICT. Los UUID y timestamps siguen el formato de 0001.
 

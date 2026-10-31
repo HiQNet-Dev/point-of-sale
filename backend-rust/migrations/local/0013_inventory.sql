@@ -1,5 +1,6 @@
--- PROPUESTA D-INV-01. No ejecutar ni promover sin aceptación formal.
--- Inventario Local candidato: artículos, saldos por sucursal y ledger append-only.
+-- Aprobada para v0.4.0 (ADR-0026). Inmutable: toda corrección posterior exige
+-- una migración nueva.
+-- Inventario Local: artículos, saldos por sucursal y ledger append-only.
 -- Depende de 0001, 0003 y 0005 candidatos.
 --
 -- Las cantidades se persisten como TEXT decimal canónico con escala 6, nunca

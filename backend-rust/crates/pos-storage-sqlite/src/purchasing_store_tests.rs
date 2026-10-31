@@ -27,24 +27,6 @@ use crate::{
     },
 };
 
-const PROPOSALS: [&str; 15] = [
-    include_str!("../../../proposals/local-auth/0002_installation_identity.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0003_user_credential_session.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0004_rbac_catalog.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0005_branch_membership.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0006_audit_event.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0007_bootstrap_record.proposed.sql"),
-    include_str!("../../../proposals/local-catalog/0008_catalog.proposed.sql"),
-    include_str!("../../../proposals/local-cash/0009_cash_register.proposed.sql"),
-    include_str!("../../../proposals/local-cash/0010_cash_shift.proposed.sql"),
-    include_str!("../../../proposals/local-sales/0011_modifier_catalog.proposed.sql"),
-    include_str!("../../../proposals/local-sales/0012_sales_foundation.proposed.sql"),
-    include_str!("../../../proposals/local-inventory/0013_inventory.proposed.sql"),
-    include_str!("../../../proposals/local-inventory/0014_inventory_recipes.proposed.sql"),
-    include_str!("../../../proposals/local-sales/0015_checkout.proposed.sql"),
-    include_str!("../../../proposals/local-purchasing/0016_purchasing.proposed.sql"),
-];
-
 const ORG_A: &str = "00000000-0000-0000-0000-000000000380";
 const ORG_B: &str = "00000000-0000-0000-0000-000000000381";
 const BRANCH_A: &str = "00000000-0000-0000-0000-000000000390";
@@ -105,9 +87,6 @@ async fn open_candidate() -> Result<(tempfile::TempDir, SqlitePool), Box<dyn std
     )
     .await?;
     migrate(&pool).await?;
-    for statement in PROPOSALS {
-        sqlx::raw_sql(statement).execute(&pool).await?;
-    }
 
     let store = SqliteOrganizationBranchStore::new(pool.clone());
     for (organization_id, code) in [(ORG_A, "operacion-a"), (ORG_B, "operacion-b")] {

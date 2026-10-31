@@ -1,7 +1,7 @@
 //! Conexión SQLite Local: apertura validada, migraciones y checkpoint.
 //!
-//! Solo aplica el root embebido `migrations/local`; el esquema candidato sigue
-//! fuera de este cargador.
+//! Solo aplica el root embebido `migrations/local`, que contiene el esquema
+//! aprobado completo (`0001`–`0017`). Las migraciones promovidas son inmutables.
 
 use std::path::Path;
 use std::time::Duration;
@@ -112,7 +112,7 @@ fn has_disallowed_path_question_mark(value: &str) -> bool {
     }
 }
 
-/// Aplica exclusivamente el root Local embebido; el esquema sigue siendo parcial.
+/// Aplica exclusivamente el root Local embebido (`0001`–`0017`).
 ///
 /// SQLx conserva su propio historial y rechaza checksums alterados. Nunca se modifica Flyway.
 pub async fn migrate(pool: &SqlitePool) -> Result<(), StorageError> {

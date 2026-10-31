@@ -1,4 +1,5 @@
--- PROPUESTA D-CASH-01. No ejecutar ni promover sin aceptación formal.
+-- Aprobada para v0.4.0 (ADR-0026). Inmutable: toda corrección posterior exige
+-- una migración nueva.
 -- Caja Local, propiedad de una sucursal. Depende solo de 0001 (organization/branch).
 -- Restaura los campos e invariantes de Flyway V11 con nombres singulares del
 -- contexto Local, como organization, branch, category y product.

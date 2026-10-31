@@ -1,6 +1,6 @@
--- PROPUESTA 0017 — autorización de provisioning (opción B del ADR-0025).
--- CANDIDATA: no forma parte del migrador Local productivo (`migrations/local`),
--- que solo embebe 0001. No ejecutar sin aceptación formal del contrato físico.
+-- Aprobada para v0.4.0 (ADR-0026). Inmutable: toda corrección posterior exige
+-- una migración nueva.
+-- Autorización de provisioning (opción B del ADR-0025).
 --
 -- Secuencia resuelta: el token se emite ANTES de existir la primera organización.
 --   provisional_installation  -> existe sin organización y sin identidad canónica

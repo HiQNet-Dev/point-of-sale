@@ -1,4 +1,5 @@
--- PROPUESTA. No ejecutar. No está cargada por `pos-local` ni por SQLx.
+-- Aprobada para v0.4.0 (ADR-0026). Inmutable: toda corrección posterior exige
+-- una migración nueva.
 -- Catálogo Local: `category` y `product`, propiedad de la ORGANIZACIÓN.
 --
 -- Depende únicamente de `0001_organization_branch.sql`. No depende de

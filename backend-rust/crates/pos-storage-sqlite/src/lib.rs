@@ -7,17 +7,17 @@
 //! contratos de caso de uso; esos viven en `pos-core` (dominio) y
 //! `pos-application` (aplicación).
 
-/// Escritor de auditoría sobre la tabla candidata `audit_event`. No productivo.
+/// Escritor de auditoría sobre la tabla `audit_event`.
 pub mod audit;
 /// Snapshots consistentes y restauración a destino nuevo; sin exposición IPC.
 pub mod backup;
-/// Provisioning inicial sobre el esquema candidato. No productivo.
+/// Provisioning inicial sobre el esquema productivo.
 pub mod bootstrap;
-/// Cajas y turnos persistentes sobre el esquema candidato. No productivo.
+/// Cajas y turnos persistentes.
 pub mod cash;
-/// Catálogo organizacional persistente sobre el esquema candidato. No productivo.
+/// Catálogo organizacional persistente.
 pub mod catalog;
-/// Checkout candidato: pagos, consumo y cierre de venta en una única UoW.
+/// Checkout: pagos, consumo y cierre de venta en una única UoW.
 pub mod checkout;
 /// Conexión SQLite: apertura validada, migraciones y checkpoint.
 pub mod connection;
@@ -27,15 +27,15 @@ pub mod credential;
 pub mod identity;
 /// Observación del historial de migraciones para el ciclo de vida de instalación.
 pub mod installation;
-/// Inventario persistente candidato: artículos, saldos, ledger y recetas.
+/// Inventario persistente: artículos, saldos, ledger y recetas.
 pub mod inventory;
 mod organization_branch;
 mod prelude;
-/// Compras persistentes sobre el esquema candidato `0016`. No productivo.
+/// Compras persistentes sobre el esquema productivo `0016`.
 pub mod purchasing;
 
 pub mod provisioning;
-/// Ventas y snapshots persistentes sobre el esquema candidato. No productivo.
+/// Ventas y snapshots persistentes.
 pub mod sales;
 mod transaction;
 
@@ -71,8 +71,6 @@ mod identity_lab_tests;
 #[cfg(test)]
 mod inventory_store_tests;
 #[cfg(test)]
-mod proposals_tests;
-#[cfg(test)]
 mod provisioning_flow_tests;
 #[cfg(test)]
 mod provisioning_store_tests;
@@ -80,5 +78,7 @@ mod provisioning_store_tests;
 mod purchasing_store_tests;
 #[cfg(test)]
 mod sales_store_tests;
+#[cfg(test)]
+mod schema_tests;
 #[cfg(test)]
 mod tests;

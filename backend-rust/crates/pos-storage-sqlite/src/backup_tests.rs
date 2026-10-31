@@ -178,8 +178,8 @@ async fn changed_snapshot_is_not_restored_or_activated() -> Result<(), Box<dyn s
 async fn future_or_changed_migration_history_cannot_be_published_as_backup()
 -> Result<(), Box<dyn std::error::Error>> {
     for statement in [
-        "UPDATE _sqlx_migrations SET version=99",
-        "UPDATE _sqlx_migrations SET checksum=x'00'",
+        "UPDATE _sqlx_migrations SET version=99 WHERE version=(SELECT MAX(version) FROM _sqlx_migrations)",
+        "UPDATE _sqlx_migrations SET checksum=x'00' WHERE version=(SELECT MAX(version) FROM _sqlx_migrations)",
     ] {
         let directory = tempfile::tempdir()?;
         let pool = crate::open(
@@ -197,7 +197,7 @@ async fn future_or_changed_migration_history_cannot_be_published_as_backup()
             sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM _sqlx_migrations")
                 .fetch_one(&pool)
                 .await?,
-            1
+            17
         );
         pool.close().await;
     }

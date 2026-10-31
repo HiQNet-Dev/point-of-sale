@@ -1,5 +1,6 @@
--- PROPUESTA D-SALES-05. No ejecutar ni promover sin aceptación formal.
--- Checkout Local candidato: pagos inmutables y snapshots de consumo por línea.
+-- Aprobada para v0.4.0 (ADR-0026). Inmutable: toda corrección posterior exige
+-- una migración nueva.
+-- Checkout Local: pagos inmutables y snapshots de consumo por línea.
 -- Depende de 0012 (sale/sale_item), 0003 (pos_user) y 0013 (inventory_item).
 --
 -- Un pago pertenece a una venta y hereda su scope completo mediante la

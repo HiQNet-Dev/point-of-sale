@@ -1,4 +1,5 @@
--- PROPUESTA D-AUTH-06. No ejecutar sin aceptación formal.
+-- Aprobada para v0.4.0 (ADR-0026). Inmutable: toda corrección posterior exige
+-- una migración nueva.
 -- Depende de 0003 (pos_user) y 0001 (organization).
 -- Catálogo: 59 códigos exactos del backend Java (V5-V25), inventariados en
 -- docs/05-development/rust-parity-baseline.md §4.3. No concede nada a roles.

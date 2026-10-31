@@ -1,4 +1,5 @@
--- PROPUESTA D-AUTH-10. No ejecutar sin aceptación formal.
+-- Aprobada para v0.4.0 (ADR-0026). Inmutable: toda corrección posterior exige
+-- una migración nueva.
 -- Depende de 0002 (installation_identity), 0001 (organization), 0003 (pos_user)
 -- y 0004 (role).
 --

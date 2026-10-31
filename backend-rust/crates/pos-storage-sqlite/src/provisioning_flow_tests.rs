@@ -1,9 +1,9 @@
-//! Recorrido integral del provisioning nativo sobre el esquema **candidato**.
+//! Recorrido integral del provisioning nativo sobre el esquema productivo.
 //!
 //! Emite una autorización con el tipo criptográfico real, la persiste con
 //! `SqliteProvisioningStore`, ejecuta el bootstrap exigiendo su consumo en la
 //! misma transacción, reabre la base y comprueba que el token no puede reusarse.
-//! No hay red, Java ni servicio HTTP; `0017` sigue fuera del migrador productivo.
+//! No hay red, Java ni servicio HTTP; `0017` vive en el migrador aprobado.
 #![allow(clippy::panic)]
 
 use std::time::Duration;
@@ -25,16 +25,6 @@ use sqlx::SqlitePool;
 
 use super::*;
 use crate::provisioning::SqliteProvisioningStore;
-
-const PROPOSALS: [&str; 7] = [
-    include_str!("../../../proposals/local-auth/0002_installation_identity.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0003_user_credential_session.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0004_rbac_catalog.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0005_branch_membership.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0006_audit_event.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0007_bootstrap_record.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0017_bootstrap_authorization.proposed.sql"),
-];
 
 const ORG: &str = "00000000-0000-0000-0000-0000000000a0";
 const INSTALLATION: &str = "00000000-0000-0000-0000-0000000000f0";
@@ -70,9 +60,6 @@ fn capability() -> BootstrapProvisioning {
 async fn open_candidate(path: &std::path::Path) -> Result<SqlitePool, Box<dyn std::error::Error>> {
     let pool = open(path, Duration::from_millis(75)).await?;
     migrate(&pool).await?;
-    for statement in PROPOSALS {
-        sqlx::raw_sql(statement).execute(&pool).await?;
-    }
     sqlx::query(
         "INSERT INTO provisional_installation (id, fingerprint, created_at) \
          VALUES (?, 'ed25519:native-test', ?)",
