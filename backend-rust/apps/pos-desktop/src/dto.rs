@@ -106,6 +106,66 @@ pub struct InstallationStatusDto {
     pub applied_migrations: u32,
 }
 
+/// Credenciales presentadas por la pantalla de login.
+///
+/// La contraseña solo existe durante la llamada; el renderer nunca recibe el
+/// handle de sesión ni un token que pueda almacenar. El `Debug` redacta el
+/// secreto para que un registro accidental no lo exponga.
+#[derive(Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LoginRequestDto {
+    /// Email tal como lo escribe la persona; se normaliza en backend.
+    pub email: String,
+    /// Contraseña en claro solo para esta llamada.
+    pub password: String,
+}
+
+impl std::fmt::Debug for LoginRequestDto {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("LoginRequestDto")
+            .field("email", &self.email)
+            .field("password", &"<redacted>")
+            .finish()
+    }
+}
+
+/// Sucursal elegida por la persona autenticada.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SelectBranchRequestDto {
+    /// UUID de una sucursal de la organización del principal.
+    pub branch_id: String,
+}
+
+/// Identidad pública de la sesión y permisos efectivos.
+///
+/// No incluye handle, digest, hash de credencial ni código de sesión.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionIdentityDto {
+    /// Usuario autenticado.
+    pub user_id: String,
+    /// Organización derivada del usuario.
+    pub organization_id: String,
+    /// Nombre visible.
+    pub display_name: String,
+    /// Email normalizado.
+    pub email: String,
+    /// Sucursal operativa, si ya se seleccionó.
+    pub branch_id: Option<String>,
+    /// Permisos efectivos resueltos en SQLite.
+    pub permissions: Vec<String>,
+}
+
+/// Resultado de cerrar todas las sesiones.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LogoutAllDto {
+    /// Sesiones revocadas, incluida la actual.
+    pub revoked: u32,
+}
+
 /// Error seguro; nunca contiene SQL ni material de sesión.
 #[derive(Debug, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "code", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -139,10 +199,15 @@ impl From<pos_core::organization_branch::ApplicationError> for IpcError {
         use pos_core::organization_branch::ApplicationError;
         match error {
             ApplicationError::Forbidden | ApplicationError::OwnershipMismatch => Self::Forbidden,
-            ApplicationError::InvalidCatalogInput
+            ApplicationError::InvalidCredentials | ApplicationError::Unauthenticated => {
+                Self::Unauthorized
+            }
+            ApplicationError::InvalidSessionInput
+            | ApplicationError::InvalidCatalogInput
             | ApplicationError::InvalidPurchaseInput
             | ApplicationError::OverReceipt => Self::ValidationError,
-            ApplicationError::SupplierNotFound
+            ApplicationError::BranchNotFound
+            | ApplicationError::SupplierNotFound
             | ApplicationError::PurchaseOrderNotFound
             | ApplicationError::PurchaseOrderLineNotFound
             | ApplicationError::PurchaseReceiptNotFound

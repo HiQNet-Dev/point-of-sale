@@ -37,6 +37,8 @@ pub mod purchasing;
 pub mod provisioning;
 /// Ventas y snapshots persistentes.
 pub mod sales;
+/// Autenticación Local sobre el esquema productivo: login, sesión y logout.
+pub mod session;
 mod transaction;
 
 pub use connection::{
@@ -80,5 +82,7 @@ mod purchasing_store_tests;
 mod sales_store_tests;
 #[cfg(test)]
 mod schema_tests;
+#[cfg(test)]
+mod session_tests;
 #[cfg(test)]
 mod tests;

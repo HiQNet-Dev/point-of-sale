@@ -32,9 +32,9 @@ las tablas `*_lab` exclusivas de pruebas; no equivalen a persistencia productiva
 | Organization | `APPLICATION` | `pos-core::organization_branch`, `SqliteOrganizationApplication`, `SqliteUnitOfWork`, pruebas de CAS/rollback/lock sobre `0001` aprobado | IPC y UI canónicos |
 | Branch | `APPLICATION` | `BranchApplication`, `SqliteBranchApplication`, pruebas de ownership y timezone | IPC y UI canónicos |
 | Audit | `APPLICATION` | `pos-core::audit` (metadata ≤16 KiB, USER/SYSTEM), `0006` aprobado con triggers append-only, `SqliteAuditWriter` transaccional | IPC de consulta |
-| Users / Auth | `PERSISTENCE` | `pos-core::identity`, `0002`–`0004` aprobados, `pos-credentials`, tablas `*_lab` solo para pruebas | Caso de uso de login/sesión comercial, IPC y UI |
+| Users / Auth | `APPLICATION` | `pos-core::identity`, `0002`–`0004` aprobados, `pos-credentials`; login/logout/sesión comercial por IPC con custodia nativa del handle y revalidación DB-authoritative | Administración de usuarios y UI de recuperación |
 | RBAC | `PERSISTENCE` | Catálogo exacto de 59 permisos, override de organización, modo recuperación, resolución contextual probada | IPC de administración de roles |
-| Bootstrap | `APPLICATION` | `pos-application::bootstrap`, credencial inicial comprobada y persistida, organización/administrador y 59 grants + auditoría SYSTEM en una UoW; autorización nativa de provisioning (`0017`) ya consumida en la misma UoW | Login/sesión comercial, IPC de instalación y A/D-AUTH-09 |
+| Bootstrap | `APPLICATION` | `pos-application::bootstrap`, credencial inicial comprobada y persistida, organización/administrador y 59 grants + auditoría SYSTEM en una UoW; autorización nativa de provisioning (`0017`) consumida en la misma UoW; login del administrador verificado sobre SQLite real | UI de instalación/provisioning y A/D-AUTH-09 |
 | Catálogo (categorías, productos) | `APPLICATION` | `pos-core::catalog`, `0008` aprobado, `SqliteCatalogApplication`, 9 pruebas de integración (CAS, tenant, rollback por auditoría, reapertura); escritura expuesta solo en laboratorio por IPC | IPC comercial y pantallas |
 | Modificadores | `PERSISTENCE` | `0011` aprobado, FKs same-org y snapshots de opciones usados por ventas SQLite | CRUD/autorización administrativa e IPC |
 | Cajas | `APPLICATION` | `pos-core::cash`, `0009` aprobado, `SqliteCashApplication`, SQLite real: scope, CAS, auditoría, reapertura | IPC y pantallas de caja |
@@ -46,9 +46,9 @@ las tablas `*_lab` exclusivas de pruebas; no equivalen a persistencia productiva
 | Proveedores | `APPLICATION` | `pos-core::supplier`, `PurchasingApplication` (crear/consultar/listar/actualizar con CAS), `0016` aprobado, pruebas de slug duplicado y aislamiento | IPC y pantallas |
 | Recetas y efectos de modificador | `PERSISTENCE` | `pos-core::recipe`, `0014` aprobado, resolución de consumo y snapshots usados por checkout | Mantenimiento administrativo e IPC |
 | API HTTP / OpenAPI | `NOT_STARTED` | — | No es requisito de Free Local: el transporte es IPC Tauri |
-| Transporte Local | `IPC (lab)` | Tauri v2: handlers de lectura + `lab_create_product`, `installation_status`; bindings generados, ACL local y sesión revalidada en SQLite; [contrato](../03-api/rust-desktop-ipc.md), ADR-0023 | Login comercial, handlers de operación y ACL por permiso |
+| Transporte Local | `IPC` | Tauri v2: `auth_login`, `auth_me`, `auth_logout`, `auth_logout_all`, `auth_select_branch`, `auth_list_branches` con handle solo en memoria nativa; handlers de lectura de catálogo y `installation_status`; [contrato](../03-api/rust-desktop-ipc.md), ADR-0027 | Handlers de operación comercial y ACL por permiso |
 | Instalación Local persistente | `PERSISTENCE` | `apps/pos-desktop --installation <dir>`: migrador aprobado `0001`–`0017`, clasificación primera instalación/reapertura, rechazo de esquema posterior, cierre con checkpoint; E2E Windows de dos arranques y smoke Docker | Directorio canónico por plataforma (`app_data_dir`) e identificador estable de aplicación |
-| Integración React | `INTEGRATED (lab only)` | Pantalla separada de laboratorio (lectura + creación de producto) y pantalla de instalación; E2E Windows real React → WebView2 IPC → Application → SQLite → auditoría | Login comercial, pantallas operativas y paridad completa |
+| Integración React | `INTEGRATED` | Login, sesión autenticada, permisos, selección de sucursal y logout sobre IPC; pantalla de laboratorio separada | Pantallas operativas de catálogo, caja y ventas |
 | Arnés Docker Local | `DEV HARNESS (validated)` | `backend-rust/Dockerfile` multi-stage, runtime no-root, volumen, healthcheck funcional (`verify_health`: integridad + migraciones), reinicio, cierre con checkpoint | No es distribución Free Local ni expone red |
 | Arnés sintético extremo a extremo | `E2E (synthetic)` | `tools/pos-lab`: bootstrap → admin → sesión → RBAC → sucursal → categoría → producto → inventario → receta → caja → turno → venta → checkout → consumo → `COMPLETED` → auditoría → cierre → reapertura; matriz ejecutable de dependencias `0002`–`0017` aplicada sobre `0001` con `foreign_key_check` por paso | No es E2E de escritorio ni sustituye la verificación comercial |
 
@@ -123,7 +123,7 @@ no cambia por sí solo el estado de exposición o la autoridad productiva.
 | Bloqueo | Alcance | Efecto |
 | --- | --- | --- |
 | D-AUTH-01..08, D-AUTH-10, D-AUTH-11 | Identidad, sesión, auditoría, bootstrap, email | **Resueltas** por ADR-0026; `0002`–`0007` promovidas con la opción A de D-AUTH-11 (normalización en aplicación) |
-| D-AUTH-09 | Argon2id comercial | Sigue abierto: impide fijar parámetros productivos |
+| D-AUTH-09 | Argon2id comercial | **MEDIDA** el 2026-10-31 en Windows (32 MiB/t=3/p=1, p95 ≈ 51 ms); propuesta `local-argon2-v2` pendiente de ratificación, ver `rust-auth-benchmark-d-auth-09.md` |
 | D-INST-01, D-INST-02, ADR-0022 | Instalación y reconciliación física | **Resueltas** por ADR-0026 (`status` restringido a `ACTIVE`, sin unicidad global de huella) |
 | Representación física del catálogo | Importes, nombres de tabla | **Resuelta** por ADR-0026 (`0008` promovida) |
 | Cajas y turnos | Nombres, importes, índice parcial y coordinación venta/cierre | **Resuelta** por ADR-0026 (`0009`–`0010` promovidas) |

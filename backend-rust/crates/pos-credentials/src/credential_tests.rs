@@ -235,4 +235,11 @@ fn policy_catalog_is_closed_and_ids_resolve() {
     assert_eq!(Argon2Policy::LAB_V1.iterations(), 2);
     assert_eq!(Argon2Policy::LAB_V1.lanes(), 1);
     assert_eq!(Argon2Policy::LAB_V0.id(), "lab-argon2-v0");
+    assert_eq!(
+        Argon2Policy::from_id("local-argon2-v2"),
+        Some(Argon2Policy::LOCAL_V2)
+    );
+    assert_eq!(Argon2Policy::LOCAL_V2.memory_kib(), 32_768);
+    assert_eq!(Argon2Policy::LOCAL_V2.iterations(), 3);
+    assert_eq!(Argon2Policy::LOCAL_V2.lanes(), 1);
 }

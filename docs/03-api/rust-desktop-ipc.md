@@ -84,6 +84,38 @@ Fuente verificable: `apps/pos-desktop/src/commands.rs` + `dto.rs`, relativa a
 | `lab_list_products` | Laboratorio | `{ "request": { "limit": 20, "offset": 0 } }` | `ProductDto_Serialize[]` | `product.read` | Organización del principal |
 | `lab_create_product` | Laboratorio | `{ "request": { "sku", "name", "unitPrice", "categoryId?", "barcode?", "description?" } }` | `CreatedProductDto` | `product.create` | Organización del principal |
 | `installation_status` | Instalación | `{}` | `InstallationStatusDto` | Ninguno (sin datos de negocio) | Instalación local |
+| `auth_login` | Instalación | `{ "request": { "email", "password" } }` | `SessionIdentityDto` | Ninguno (autentica) | Instalación local |
+| `auth_me` | Instalación | `{}` | `SessionIdentityDto` | Sesión vigente | Sesión nativa |
+| `auth_logout` | Instalación | `{}` | vacío | Sesión vigente | Sesión nativa |
+| `auth_logout_all` | Instalación | `{}` | `LogoutAllDto` | Sesión vigente | Usuario de la sesión |
+| `auth_select_branch` | Instalación | `{ "request": { "branchId" } }` | `SessionIdentityDto` | `branch.read` en el scope resultante | Organización del principal |
+| `auth_list_branches` | Instalación | `{}` | `BranchDto[]` | `branch.read` | Organización del principal |
+
+### Autenticación Local
+
+`auth_login` es el único comando que acepta una contraseña. El proceso Rust
+verifica Argon2id y **custodia el handle de sesión en memoria nativa**: la
+respuesta solo contiene identidad y permisos. Los comandos posteriores usan ese
+handle sin que el renderer pueda leerlo ni guardarlo; `localStorage`,
+`sessionStorage` y SQLite nunca reciben el secreto (solo su digest SHA-256).
+
+`SessionIdentityDto`: `userId`, `organizationId`, `displayName`, `email`,
+`branchId` opcional y `permissions` efectivos resueltos en SQLite. No incluye
+handle, digest, hash de credencial ni tokens.
+
+Rechazos: usuario inexistente, contraseña errónea, cuenta inactiva, credencial
+bloqueada o reset pendiente responden todos `UNAUTHORIZED`, sin distinguir el
+motivo. Un correo mal formado también responde `UNAUTHORIZED`. Sin sesión, los
+demás comandos `auth_*` responden `UNAUTHORIZED`; en laboratorio responden
+`OPERATION_NOT_AVAILABLE`.
+
+`auth_select_branch` exige que la sucursal exista en la organización del
+principal y esté `ACTIVE`. Una sucursal de otra organización responde `NOT_FOUND`
+sin revelar su existencia; una inactiva o no descubrible responde `FORBIDDEN`.
+
+La sesión no sobrevive al cierre del proceso: al reabrir hay que autenticarse de
+nuevo. El usuario, sus permisos y su auditoría permanecen en SQLite. Diseño
+completo en [ADR-0027](../01-architecture/adr/0027-local-authentication.md).
 
 `CreatedProductDto` devuelve `id`, `sku`, `name`, `unitPrice` exacto, `categoryId`
 y `version`. La escritura es la única mutación expuesta y **solo existe en el

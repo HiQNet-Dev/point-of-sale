@@ -461,6 +461,41 @@ impl AuditEventRecord {
         Ok(event)
     }
 
+    /// Construye el hecho canónico de un intento de autenticación rechazado.
+    ///
+    /// Es el único constructor USER sin sesión: no acredita ninguna operación ni
+    /// autoriza escrituras, solo deja constancia de un hecho ya ocurrido sobre un
+    /// usuario resuelto en la base. El `user_id` debe provenir de esa resolución,
+    /// nunca de la entrada del cliente.
+    ///
+    /// # Errors
+    /// Devuelve [`AuditError`] si la razón, el instante o la atribución no cumplen
+    /// el contrato de auditoría.
+    pub fn authentication_failed(
+        id: AuditEventId,
+        organization_id: EntityId,
+        user_id: EntityId,
+        reason: AuditReason,
+        occurred_at: AuditOccurredAt,
+    ) -> Result<Self, AuditError> {
+        let event = Self {
+            id,
+            organization_id,
+            branch_id: None,
+            actor: AuditActor::user(user_id.clone()),
+            action: AuditAction::new("auth.login_failed")?,
+            entity_type: AuditEntityType::new("pos_user")?,
+            entity_id: Some(user_id),
+            reason: Some(reason),
+            session_id: None,
+            metadata_json: AuditMetadata::empty(),
+            occurred_at,
+            event_version: AuditEventVersion::INITIAL,
+        };
+        event.validate()?;
+        Ok(event)
+    }
+
     /// UUID estable del evento.
     pub fn id(&self) -> &AuditEventId {
         &self.id

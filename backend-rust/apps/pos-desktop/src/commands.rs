@@ -3,7 +3,8 @@ use crate::{
     composition::LocalState,
     dto::{
         BranchDto, CategoryDto, CreateProductRequest, CreatedProductDto, InstallationStatusDto,
-        IpcError, PageRequest, ProductDto,
+        IpcError, LoginRequestDto, LogoutAllDto, PageRequest, ProductDto, SelectBranchRequestDto,
+        SessionIdentityDto,
     },
 };
 use tauri::State;
@@ -54,6 +55,54 @@ pub fn installation_status(
     state.installation_status()
 }
 
+/// Autentica con email y contraseña; el handle queda en memoria nativa.
+#[tauri::command]
+#[specta::specta]
+pub async fn auth_login(
+    state: State<'_, LocalState>,
+    request: LoginRequestDto,
+) -> Result<SessionIdentityDto, IpcError> {
+    state.auth_login(request).await
+}
+
+/// Identidad y permisos de la sesión nativa vigente.
+#[tauri::command]
+#[specta::specta]
+pub async fn auth_me(state: State<'_, LocalState>) -> Result<SessionIdentityDto, IpcError> {
+    state.auth_me().await
+}
+
+/// Revoca la sesión actual.
+#[tauri::command]
+#[specta::specta]
+pub async fn auth_logout(state: State<'_, LocalState>) -> Result<(), IpcError> {
+    state.auth_logout().await
+}
+
+/// Revoca todas las sesiones del usuario autenticado.
+#[tauri::command]
+#[specta::specta]
+pub async fn auth_logout_all(state: State<'_, LocalState>) -> Result<LogoutAllDto, IpcError> {
+    state.auth_logout_all().await
+}
+
+/// Selecciona una sucursal activa del tenant y devuelve sus permisos.
+#[tauri::command]
+#[specta::specta]
+pub async fn auth_select_branch(
+    state: State<'_, LocalState>,
+    request: SelectBranchRequestDto,
+) -> Result<SessionIdentityDto, IpcError> {
+    state.auth_select_branch(request).await
+}
+
+/// Lista las sucursales descubribles por la sesión actual.
+#[tauri::command]
+#[specta::specta]
+pub async fn auth_list_branches(state: State<'_, LocalState>) -> Result<Vec<BranchDto>, IpcError> {
+    state.auth_list_branches().await
+}
+
 /// Registro único utilizado para el dispatcher real y la generación TypeScript.
 pub fn registry<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
     tauri_specta::Builder::<R>::new().commands(tauri_specta::collect_commands![
@@ -62,5 +111,11 @@ pub fn registry<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         lab_list_products,
         lab_create_product,
         installation_status,
+        auth_login,
+        auth_me,
+        auth_logout,
+        auth_logout_all,
+        auth_select_branch,
+        auth_list_branches,
     ])
 }

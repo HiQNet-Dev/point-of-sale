@@ -8,6 +8,12 @@ pub const COMMAND_NAMES: &[&str] = &[
     "lab_list_products",
     "lab_create_product",
     "installation_status",
+    "auth_login",
+    "auth_me",
+    "auth_logout",
+    "auth_logout_all",
+    "auth_select_branch",
+    "auth_list_branches",
 ];
 
 /// Comandos del laboratorio sintético; no existen en el modo instalación.
@@ -17,4 +23,15 @@ pub const LAB_COMMAND_NAMES: &[&str] = &[
     "lab_list_categories",
     "lab_list_products",
     "lab_create_product",
+];
+
+/// Comandos de autenticación; no existen en el laboratorio sintético.
+#[allow(dead_code)] // Consumido por las pruebas del dispatcher.
+pub const AUTH_COMMAND_NAMES: &[&str] = &[
+    "auth_login",
+    "auth_me",
+    "auth_logout",
+    "auth_logout_all",
+    "auth_select_branch",
+    "auth_list_branches",
 ];
