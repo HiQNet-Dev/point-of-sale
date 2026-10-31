@@ -179,6 +179,12 @@ jobs:
 
       # PostgreSQL 17.11 se compila desde fuente oficial con SHA-256 fijado.
       # No se usa el socket Docker ni un servidor PostgreSQL del sistema.
+      - name: Cache pinned PostgreSQL 17 build
+        uses: actions/cache@v4
+        with:
+          path: backend-rust/target/pg17-build
+          key: pg17-${{ runner.os }}-${{ hashFiles('backend-rust/tools/migration-lab/scripts/build_postgres.sh') }}
+
       - name: Build pinned PostgreSQL 17 for the native lab
         run: sh tools/migration-lab/scripts/build_postgres.sh
 
@@ -189,6 +195,12 @@ jobs:
 
       - name: Verify technical evidence and blocked normative gate
         run: python3 tools/migration-lab/scripts/verify_evidence.py --evidence target/migration-evidence --expect-exit 0
+
+      - name: Cache pinned Cargo audit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-0.22.2-${{ runner.os }}
 
       - name: Install pinned Cargo audit
         run: cargo install cargo-audit --version 0.22.2 --locked
@@ -271,7 +283,12 @@ jobs:
           rustc --version
           cargo --version
 
-      # PostgreSQL 17.11 se compila desde fuente oficial con SHA-256 fijado.
+      - name: Cache pinned PostgreSQL 17 build
+        uses: actions/cache@v4
+        with:
+          path: backend-rust/target/pg17-build
+          key: pg17-${{ runner.os }}-${{ hashFiles('backend-rust/tools/migration-lab/scripts/build_postgres.sh') }}
+
       - name: Build pinned PostgreSQL 17 for the native lab
         run: sh tools/migration-lab/scripts/build_postgres.sh
 

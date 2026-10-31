@@ -12,10 +12,7 @@ use pos_application::bootstrap::{
 };
 use pos_core::{
     audit::{AuditEventId, BootstrapProvisioning, BootstrapSecretVerifier, authorize_bootstrap},
-    identity::{
-        NormalizedEmail, ProvisioningAuthorization, ProvisioningPurpose, ProvisioningState,
-        UtcSeconds,
-    },
+    identity::{NormalizedEmail, ProvisioningPurpose, ProvisioningState, UtcSeconds},
     organization_branch::{
         BusinessCode, DisplayName, EntityId, IsoCurrency, LocaleTag, NewOrganization, Timezone,
     },
