@@ -2,6 +2,34 @@
 
 All notable changes to HiQNet POS are documented in this file.
 
+## [Unreleased] — 0.4.0-SNAPSHOT (Rust cutover)
+
+### Storage / migraciones
+
+- Promovido el esquema Local completo `0002`–`0017` al migrador productivo
+  (`backend-rust/migrations/local/`). `0001` permanece intacto y las migraciones
+  promovidas son inmutables. Decisión y evidencia en
+  `docs/01-architecture/adr/0026-local-schema-promotion-v040.md`.
+- `pos-local` y el escritorio aplican ahora 17 versiones; una instalación con
+  solo `0001` sube al conjunto aprobado y un binario anterior rechaza un esquema
+  posterior. Pruebas de instalación limpia, upgrade, checksum, backup y matriz de
+  dependencias por migración.
+
+### Provisioning
+
+- Emisor nativo de autorizaciones (`--provision-token-issue|status|revoke`) con
+  entrega por archivo privado y consumo atómico dentro de la UoW del bootstrap;
+  Windows falla cerrado hasta que exista un componente nativo de DACL.
+- Corregido el recorrido de consumo: la prueba usaba un instante congelado
+  anterior a la emisión y el dominio lo rechazaba con `ClockBeforeIssue`.
+
+### CI
+
+- La instalación de `cargo-audit` es idempotente cuando la caché ya contiene el
+  binario.
+- Las pruebas del escritorio comparan contra `approved_schema_version()` en lugar
+  de la versión fija `1`.
+
 ## [0.3.0] - 2026-10-14
 
 ### Ramas y release
