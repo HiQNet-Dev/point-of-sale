@@ -1,10 +1,9 @@
-//! Casos de uso candidatos de ventas sobre SQLite real.
+//! Casos de uso de ventas sobre SQLite real.
 //!
-//! No es código productivo: las tablas se aplican de modo explícito en pruebas
-//! desde `proposals/local-sales/`. Cada mutación usa una sola UoW `BEGIN
-//! IMMEDIATE`, conserva snapshots históricos y escribe auditoría antes del único
-//! commit. Checkout no se expone aquí porque todavía no hay pagos e inventario
-//! persistentes que puedan participar en su transacción atómica.
+//! Las tablas las crea el migrador aprobado (`0011`, `0012`). Cada mutación usa
+//! una sola UoW `BEGIN IMMEDIATE`, conserva snapshots históricos y escribe
+//! auditoría antes del único commit. Checkout vive en su propio módulo porque
+//! añade pagos, consumo de inventario y cierre atómico.
 
 use std::future::Future;
 

@@ -1,5 +1,5 @@
-// Valida las propuestas físicas fuera de producto: sintaxis, CHECK, FKs,
-// triggers, semántica RBAC y durabilidad. No las convierte en migraciones.
+// Valida el esquema físico productivo aprobado para v0.4.0: sintaxis, CHECK,
+// FKs, triggers, semántica RBAC y durabilidad. Las migraciones son inmutables.
 #![allow(clippy::panic)]
 
 use std::{collections::BTreeSet, time::Duration};
@@ -13,21 +13,6 @@ use pos_core::{
 };
 
 use super::*;
-
-const PROPOSAL_INSTALLATION: &str =
-    include_str!("../../../proposals/local-auth/0002_installation_identity.proposed.sql");
-const PROPOSAL_IDENTITY: &str =
-    include_str!("../../../proposals/local-auth/0003_user_credential_session.proposed.sql");
-const PROPOSAL_RBAC: &str =
-    include_str!("../../../proposals/local-auth/0004_rbac_catalog.proposed.sql");
-const PROPOSAL_MEMBERSHIP: &str =
-    include_str!("../../../proposals/local-auth/0005_branch_membership.proposed.sql");
-const PROPOSAL_AUDIT: &str =
-    include_str!("../../../proposals/local-auth/0006_audit_event.proposed.sql");
-const PROPOSAL_BOOTSTRAP: &str =
-    include_str!("../../../proposals/local-auth/0007_bootstrap_record.proposed.sql");
-const PROPOSAL_AUTHORIZATION: &str =
-    include_str!("../../../proposals/local-auth/0017_bootstrap_authorization.proposed.sql");
 
 const ORG: &str = "00000000-0000-0000-0000-000000000080";
 const ORG_TWO: &str = "00000000-0000-0000-0000-000000000081";
@@ -62,26 +47,58 @@ fn organization(value: &str, code: &str) -> Organization {
     )
 }
 
-async fn apply_proposals(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
-    for statement in [
-        PROPOSAL_INSTALLATION,
-        PROPOSAL_IDENTITY,
-        PROPOSAL_RBAC,
-        PROPOSAL_MEMBERSHIP,
-        PROPOSAL_AUDIT,
-        PROPOSAL_BOOTSTRAP,
-        PROPOSAL_AUTHORIZATION,
-    ] {
-        sqlx::raw_sql(statement).execute(pool).await?;
-    }
-    Ok(())
-}
-
-async fn open_proposed(path: &std::path::Path) -> Result<SqlitePool, Box<dyn std::error::Error>> {
+async fn open_schema(path: &std::path::Path) -> Result<SqlitePool, Box<dyn std::error::Error>> {
     let pool = open(path, Duration::from_millis(75)).await?;
     migrate(&pool).await?;
-    apply_proposals(&pool).await?;
     Ok(pool)
+}
+
+/// Un historial con solo `0001` (instalación anterior) sube al conjunto aprobado
+/// mediante el migrador productivo, sin perder datos ni saltarse checksums.
+#[tokio::test]
+async fn upgrade_from_the_previous_schema_applies_the_new_migrations()
+-> Result<(), Box<dyn std::error::Error>> {
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../migrations/local/0001_organization_branch.sql");
+    let previous = tempfile::tempdir()?;
+    std::fs::copy(source, previous.path().join("0001_organization_branch.sql"))?;
+
+    let temp = tempfile::tempdir()?;
+    let pool = open(
+        &temp.path().join("upgrade.sqlite"),
+        Duration::from_millis(75),
+    )
+    .await?;
+    sqlx::migrate::Migrator::new(previous.path())
+        .await?
+        .run(&pool)
+        .await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM _sqlx_migrations WHERE success")
+            .fetch_one(&pool)
+            .await?,
+        1
+    );
+
+    migrate(&pool).await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM _sqlx_migrations WHERE success")
+            .fetch_one(&pool)
+            .await?,
+        17
+    );
+    let present = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'sale'",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(present, 1);
+    let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(integrity, "ok");
+    pool.close().await;
+    Ok(())
 }
 
 async fn seed(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
@@ -305,19 +322,15 @@ async fn seed_rbac(pool: &SqlitePool) -> Result<(), sqlx::Error> {
 }
 
 #[tokio::test]
-async fn proposal_set_applies_from_empty_database_and_rejects_reapplication()
+async fn productive_schema_applies_from_empty_database_and_is_one_shot()
 -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("proposals.sqlite");
-    let pool = open_proposed(&path).await?;
+    let pool = open_schema(&path).await?;
     seed(&pool).await?;
-    // Reaplicar una migración ya ejecutada debe fallar: contrato one-shot.
-    assert!(
-        sqlx::raw_sql(PROPOSAL_IDENTITY)
-            .execute(&pool)
-            .await
-            .is_err()
-    );
+    // Reejecutar el migrador no reaplica nada ni falla: SQLx registra cada
+    // versión y una migración promovida es inmutable.
+    migrate(&pool).await?;
 
     pool.close().await;
     let reopened = open(&path, Duration::from_millis(75)).await?;
@@ -341,7 +354,7 @@ async fn proposal_set_applies_from_empty_database_and_rejects_reapplication()
 async fn catalog_matches_the_java_permission_list_exactly() -> Result<(), Box<dyn std::error::Error>>
 {
     let temp = tempfile::tempdir()?;
-    let pool = open_proposed(&temp.path().join("catalog.sqlite")).await?;
+    let pool = open_schema(&temp.path().join("catalog.sqlite")).await?;
     let mut stored = sqlx::query_scalar::<_, String>("SELECT code FROM permission ORDER BY code")
         .fetch_all(&pool)
         .await?;
@@ -372,7 +385,7 @@ async fn catalog_matches_the_java_permission_list_exactly() -> Result<(), Box<dy
 #[tokio::test]
 async fn normalization_uniqueness_and_uuid_rules_hold() -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
-    let pool = open_proposed(&temp.path().join("identity.sqlite")).await?;
+    let pool = open_schema(&temp.path().join("identity.sqlite")).await?;
     seed(&pool).await?;
 
     // Email único por organización.
@@ -430,7 +443,7 @@ async fn normalization_uniqueness_and_uuid_rules_hold() -> Result<(), Box<dyn st
 async fn session_state_is_coherent_and_expiry_is_derived() -> Result<(), Box<dyn std::error::Error>>
 {
     let temp = tempfile::tempdir()?;
-    let pool = open_proposed(&temp.path().join("session.sqlite")).await?;
+    let pool = open_schema(&temp.path().join("session.sqlite")).await?;
     seed(&pool).await?;
 
     // ACTIVE no puede llevar revoked_at.
@@ -509,7 +522,7 @@ async fn session_state_is_coherent_and_expiry_is_derived() -> Result<(), Box<dyn
 async fn bootstrap_is_one_shot_per_installation_and_complete()
 -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
-    let pool = open_proposed(&temp.path().join("bootstrap.sqlite")).await?;
+    let pool = open_schema(&temp.path().join("bootstrap.sqlite")).await?;
     seed(&pool).await?;
     seed_rbac(&pool).await?;
 
@@ -616,7 +629,7 @@ async fn bootstrap_is_one_shot_per_installation_and_complete()
 async fn rbac_catalog_resolution_preserves_java_semantics() -> Result<(), Box<dyn std::error::Error>>
 {
     let temp = tempfile::tempdir()?;
-    let pool = open_proposed(&temp.path().join("rbac.sqlite")).await?;
+    let pool = open_schema(&temp.path().join("rbac.sqlite")).await?;
     seed(&pool).await?;
     seed_rbac(&pool).await?;
 
@@ -695,7 +708,7 @@ async fn rbac_catalog_resolution_preserves_java_semantics() -> Result<(), Box<dy
 async fn audit_contract_enforces_actor_session_and_append_only()
 -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
-    let pool = open_proposed(&temp.path().join("audit.sqlite")).await?;
+    let pool = open_schema(&temp.path().join("audit.sqlite")).await?;
     seed(&pool).await?;
 
     let insert = |id_value: &'static str,
@@ -811,7 +824,7 @@ async fn audit_contract_enforces_actor_session_and_append_only()
 async fn integrity_errors_roll_back_and_survive_reopen() -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("integrity.sqlite");
-    let pool = open_proposed(&path).await?;
+    let pool = open_schema(&path).await?;
     seed(&pool).await?;
 
     // CAS sobre credencial.
@@ -887,7 +900,7 @@ async fn integrity_errors_roll_back_and_survive_reopen() -> Result<(), Box<dyn s
 async fn installation_identity_matches_the_canonical_section()
 -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
-    let pool = open_proposed(&temp.path().join("installation.sqlite")).await?;
+    let pool = open_schema(&temp.path().join("installation.sqlite")).await?;
     seed(&pool).await?;
 
     let row = sqlx::query_as::<_, (String, i64, String, String)>(
@@ -962,7 +975,7 @@ async fn installation_identity_matches_the_canonical_section()
 #[tokio::test]
 async fn permission_grammar_matches_rust_validation() -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
-    let pool = open_proposed(&temp.path().join("permission-grammar.sqlite")).await?;
+    let pool = open_schema(&temp.path().join("permission-grammar.sqlite")).await?;
 
     let invalid = [
         ".organization.read",
@@ -1002,7 +1015,7 @@ async fn permission_grammar_matches_rust_validation() -> Result<(), Box<dyn std:
 async fn audit_occurred_at_accepts_optional_fraction_and_rejects_junk()
 -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
-    let pool = open_proposed(&temp.path().join("audit-timestamp.sqlite")).await?;
+    let pool = open_schema(&temp.path().join("audit-timestamp.sqlite")).await?;
     seed(&pool).await?;
 
     let mut accepted = 0_u16;
@@ -1056,10 +1069,10 @@ async fn audit_occurred_at_accepts_optional_fraction_and_rejects_junk()
     Ok(())
 }
 
-/// `pos-local::migrate()` solo descubre `migrations/local`: las propuestas
-/// candidatas viven fuera y no pueden ejecutarse por accidente.
+/// El migrador productivo publica el conjunto aprobado completo (`0001`–`0017`)
+/// y el esquema resultante es coherente referencialmente.
 #[tokio::test]
-async fn productive_migrator_does_not_discover_candidate_proposals()
+async fn productive_migrator_publishes_the_approved_schema()
 -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
     let pool = open(
@@ -1069,12 +1082,13 @@ async fn productive_migrator_does_not_discover_candidate_proposals()
     .await?;
     migrate(&pool).await?;
 
+    assert_eq!(approved_schema_version(), 17);
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM _sqlx_migrations")
             .fetch_one(&pool)
             .await?,
-        1,
-        "solo 0001 está aplicada en el directorio productivo"
+        17,
+        "todas las migraciones aprobadas están aplicadas"
     );
     for table in [
         "pos_user",
@@ -1086,6 +1100,14 @@ async fn productive_migrator_does_not_discover_candidate_proposals()
         "audit_event",
         "bootstrap_record",
         "installation_identity",
+        "category",
+        "product",
+        "cash_register",
+        "cash_shift",
+        "sale",
+        "inventory_item",
+        "supplier",
+        "bootstrap_authorization",
     ] {
         let present = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
@@ -1093,11 +1115,17 @@ async fn productive_migrator_does_not_discover_candidate_proposals()
         .bind(table)
         .fetch_one(&pool)
         .await?;
-        assert_eq!(
-            present, 0,
-            "la tabla candidata {table} no existe en producto"
-        );
+        assert_eq!(present, 1, "la tabla {table} debe existir en producto");
     }
+    let violations: Vec<(String, String, String, String)> =
+        sqlx::query_as("PRAGMA foreign_key_check")
+            .fetch_all(&pool)
+            .await?;
+    assert!(violations.is_empty(), "FK violadas: {violations:?}");
+    let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(integrity, "ok");
     Ok(())
 }
 
@@ -1114,7 +1142,7 @@ async fn first_run_requires_organization_before_installation_and_commits_once()
 -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("first-run.sqlite");
-    let pool = open_proposed(&path).await?;
+    let pool = open_schema(&path).await?;
 
     // Sin organización no puede existir instalación: el owner es obligatorio.
     let orphan = sqlx::query(
@@ -1258,7 +1286,7 @@ async fn first_run_requires_organization_before_installation_and_commits_once()
 async fn first_run_rolls_back_everything_when_audit_fails() -> Result<(), Box<dyn std::error::Error>>
 {
     let temp = tempfile::tempdir()?;
-    let pool = open_proposed(&temp.path().join("first-run-rollback.sqlite")).await?;
+    let pool = open_schema(&temp.path().join("first-run-rollback.sqlite")).await?;
     let unit_of_work = SqliteUnitOfWork::new(pool.clone());
     let mut transaction = unit_of_work.begin().await?;
     sqlx::query(
@@ -1333,7 +1361,7 @@ async fn bootstrap_authorization_models_preauthorization_and_append_only_events(
 
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("authorization.sqlite");
-    let pool = open_proposed(&path).await?;
+    let pool = open_schema(&path).await?;
     seed(&pool).await?;
 
     // La preautorización existe antes de la organización y no depende de ella.

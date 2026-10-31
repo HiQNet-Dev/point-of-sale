@@ -142,8 +142,11 @@ fn installation_mode_exposes_only_its_status() -> Result<(), Box<dyn Error>> {
     let status = call(&window, &url, "installation_status", serde_json::json!({}))
         .map_err(|error| format!("installation_status rechazado: {error}"))?;
     assert_eq!(status["state"], "FIRST_INSTALL");
-    assert_eq!(status["schemaVersion"], 1);
-    assert_eq!(status["appliedMigrations"], 1);
+    assert_eq!(
+        status["schemaVersion"],
+        pos_storage_sqlite::approved_schema_version()
+    );
+    assert_eq!(status["appliedMigrations"], 17);
     assert!(status.get("databasePath").is_none());
 
     for command in crate::command_names::LAB_COMMAND_NAMES {

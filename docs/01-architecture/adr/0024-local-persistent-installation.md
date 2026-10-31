@@ -38,7 +38,8 @@ y no invente identidad** mientras las decisiones físicas siguen pendientes.
    Una combinación ambigua se rechaza.
 3. El modo instalación aplica **exclusivamente** el migrador aprobado embebido
    (`migrations/local`) y clasifica el resultado con un caso de uso de aplicación:
-   `pos-application::installation`. Nunca carga `proposals/`.
+   `pos-application::installation`. El único cargador de DDL es
+   `migrations/local` (`0001`–`0017`).
 4. Política de apertura: historial vacío ⇒ primera instalación con migración;
    versión aplicada igual al build ⇒ instalación reabierta; versión aplicada
    posterior al build ⇒ **se rechaza el arranque**. Operar sobre un esquema

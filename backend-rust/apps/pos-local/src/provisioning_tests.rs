@@ -1,4 +1,4 @@
-//! Pruebas del emisor nativo y del recorrido completo sobre esquema candidato.
+//! Pruebas del emisor nativo y del recorrido completo sobre el esquema productivo.
 
 #![cfg(unix)]
 #![allow(clippy::panic)]
@@ -21,16 +21,6 @@ use pos_credentials::ProvisioningToken;
 use pos_storage_sqlite::{SqliteUnitOfWork, migrate, open, provisioning::SqliteProvisioningStore};
 
 use crate::provisioning::{AUTHORIZATION_FILE, DATABASE_FILE, ProvisioningCommand, execute};
-
-const PROPOSALS: [&str; 7] = [
-    include_str!("../../../proposals/local-auth/0002_installation_identity.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0003_user_credential_session.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0004_rbac_catalog.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0005_branch_membership.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0006_audit_event.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0007_bootstrap_record.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0017_bootstrap_authorization.proposed.sql"),
-];
 
 const ORG: &str = "00000000-0000-0000-0000-0000000000a0";
 const ADMIN: &str = "00000000-0000-0000-0000-0000000000a1";
@@ -65,9 +55,6 @@ async fn candidate_directory()
     let database = temp.path().join(DATABASE_FILE);
     let pool = open(&database, Duration::from_millis(75)).await?;
     migrate(&pool).await?;
-    for statement in PROPOSALS {
-        sqlx::raw_sql(statement).execute(&pool).await?;
-    }
     pool.close().await;
     Ok((temp, database))
 }

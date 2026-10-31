@@ -1,4 +1,5 @@
--- PROPUESTA D-CASH-02. No ejecutar ni promover sin aceptación formal.
+-- Aprobada para v0.4.0 (ADR-0026). Inmutable: toda corrección posterior exige
+-- una migración nueva.
 -- Turno histórico de una caja. Depende de 0003 (pos_user) y 0009 (cash_register).
 -- Los importes son TEXT decimal canónico escala 4 para conservar NUMERIC(19,4)
 -- sin REAL ni el límite de i64 de SQLite. Son declaraciones del operador, no

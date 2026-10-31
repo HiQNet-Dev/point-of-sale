@@ -1,6 +1,6 @@
 #![allow(clippy::panic)]
 
-//! Pruebas del adaptador candidato de provisioning (propuesta 0017).
+//! Pruebas del adaptador de provisioning sobre la migración productiva `0017`.
 
 use std::{path::Path, time::Duration};
 
@@ -13,10 +13,6 @@ use pos_credentials::ProvisioningToken;
 use super::*;
 use crate::provisioning::{ProvisioningStorageError, SqliteProvisioningStore};
 
-const PROPOSAL_INSTALLATION: &str =
-    include_str!("../../../proposals/local-auth/0002_installation_identity.proposed.sql");
-const PROPOSAL_AUTHORIZATION: &str =
-    include_str!("../../../proposals/local-auth/0017_bootstrap_authorization.proposed.sql");
 const PROVISIONAL: &str = "00000000-0000-0000-0000-0000000002b0";
 
 fn id(value: u128) -> EntityId {
@@ -31,9 +27,6 @@ fn provisional() -> EntityId {
 async fn open_candidate(path: &Path) -> Result<SqlitePool, Box<dyn std::error::Error>> {
     let pool = open(path, Duration::from_millis(75)).await?;
     migrate(&pool).await?;
-    for statement in [PROPOSAL_INSTALLATION, PROPOSAL_AUTHORIZATION] {
-        sqlx::raw_sql(statement).execute(&pool).await?;
-    }
     sqlx::query(
         "INSERT INTO provisional_installation (id, fingerprint, created_at) \
          VALUES (?, 'ed25519:test-provisional', 900)",

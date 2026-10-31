@@ -1,4 +1,5 @@
--- PROPUESTA 2B. No ejecutar: requiere aprobación física completa.
+-- Aprobada para v0.4.0 (ADR-0026). Inmutable: toda corrección posterior exige
+-- una migración nueva.
 --
 -- Compras: proveedores, órdenes, partidas y recepciones.
 --

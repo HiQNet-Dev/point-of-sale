@@ -1,10 +1,7 @@
-//! Compras persistentes sobre el esquema candidato `0016`.
+//! Compras persistentes sobre el esquema productivo `0016`.
 //!
-//! **No productivo todavía.** Las tablas viven en
-//! `proposals/local-purchasing/` y `pos-local` no las carga. El adaptador existe
-//! para que la activación aprobada solo requiera promover la migración y conectar
-//! la composición: las reglas, la autorización y la auditoría ya viven en
-//! `pos-core` y `pos-application`.
+//! Las reglas, la autorización y la auditoría viven en `pos-core` y
+//! `pos-application`; este adaptador solo traduce a SQL.
 //!
 //! # Garantías
 //!

@@ -1,10 +1,8 @@
-//! Catálogo persistente sobre el esquema **candidato** y SQLite real.
+//! Catálogo persistente sobre el esquema productivo y SQLite real.
 //!
-//! Las tablas vienen de `proposals/local-catalog/0008_catalog.proposed.sql`; la
-//! auditoría y el principal verificado, de `proposals/local-auth/`. Nada de esto
-//! está cargado por `pos-local`: la prueba demuestra que la composición
-//! (autorización DB-authoritative + UoW + CAS + auditoría) es correcta para que,
-//! una vez aprobado el DDL, la promoción no requiera reescribir lógica.
+//! Las tablas las crea el migrador aprobado. La prueba demuestra que la
+//! composición (autorización DB-authoritative + UoW + CAS + auditoría) es
+//! correcta de extremo a extremo.
 #![allow(clippy::panic)]
 
 use std::time::Duration;
@@ -31,16 +29,6 @@ use crate::{
     },
     identity::SqliteIdentityLab,
 };
-
-const PROPOSALS: [&str; 7] = [
-    include_str!("../../../proposals/local-auth/0002_installation_identity.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0003_user_credential_session.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0004_rbac_catalog.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0005_branch_membership.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0006_audit_event.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0007_bootstrap_record.proposed.sql"),
-    include_str!("../../../proposals/local-catalog/0008_catalog.proposed.sql"),
-];
 
 const ORG_A: &str = "00000000-0000-0000-0000-000000000080";
 const ORG_B: &str = "00000000-0000-0000-0000-000000000081";
@@ -103,9 +91,6 @@ async fn open_candidate() -> Result<(tempfile::TempDir, SqlitePool), Box<dyn std
     )
     .await?;
     migrate(&pool).await?;
-    for statement in PROPOSALS {
-        sqlx::raw_sql(statement).execute(&pool).await?;
-    }
     let store = SqliteOrganizationBranchStore::new(pool.clone());
     store
         .insert_organization(&organization(ORG_A, "catalog-a"), TIME, TIME)

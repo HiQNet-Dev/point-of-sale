@@ -1,6 +1,7 @@
--- PROPUESTA D-SALES-01. No ejecutar ni promover sin aceptación formal.
+-- Aprobada para v0.4.0 (ADR-0026). Inmutable: toda corrección posterior exige
+-- una migración nueva.
 -- Catálogo de modificadores Local necesario para cotizar partidas y congelar sus
--- snapshots. Depende de 0008_catalog.proposed.sql; conserva ownership por
+-- snapshots. Depende de 0008_catalog.sql; conserva ownership por
 -- organización y no usa REAL para el delta monetario.
 
 CREATE TABLE modifier_group (

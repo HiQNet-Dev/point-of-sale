@@ -1,5 +1,6 @@
--- PROPUESTA D-SALES-02. No ejecutar ni promover sin aceptación formal.
--- Ventas Local candidatas: OPEN, CANCELLED y COMPLETED ya están representados
+-- Aprobada para v0.4.0 (ADR-0026). Inmutable: toda corrección posterior exige
+-- una migración nueva.
+-- Ventas Local: OPEN, CANCELLED y COMPLETED ya están representados
 -- para que pagos/checkout sean aditivos. Este incremento solo autoriza OPEN y
 -- CANCELLED: no existe una ruta que pueda completar sin pagos e inventario.
 --

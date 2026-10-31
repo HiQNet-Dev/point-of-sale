@@ -1,9 +1,8 @@
 //! Arnés de integración **sintético** del backend Local.
 //!
-//! **No productivo.** Aplica `0001` mediante el migrador y, de forma explícita,
-//! las propuestas candidatas `0002`–`0015` desde `backend-rust/proposals/`. No
-//! promueve DDL: las propuestas siguen fuera de `migrations/local/` y este
-//! binario no se conecta desde `pos-local`.
+//! Aplica el esquema productivo completo (`0001`–`0017`) con el migrador
+//! aprobado. Este binario no se conecta desde `pos-local` y no sustituye una
+//! prueba E2E de escritorio.
 //!
 //! # Qué demuestra
 //!
@@ -73,26 +72,75 @@ use pos_storage_sqlite::{
 use serde_json::{Value, json};
 use sqlx::SqlitePool;
 
-/// Propuestas candidatas aplicadas en orden de dependencia.
+/// Migraciones productivas posteriores a `0001`, en orden de dependencia.
 ///
-/// Permanecen fuera de `migrations/local/`: este arnés no las convierte en DDL
-/// aprobado, solo las evalúa sobre SQLite sintético.
-const PROPOSALS: [&str; 15] = [
-    include_str!("../../../proposals/local-auth/0002_installation_identity.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0003_user_credential_session.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0004_rbac_catalog.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0005_branch_membership.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0006_audit_event.proposed.sql"),
-    include_str!("../../../proposals/local-auth/0007_bootstrap_record.proposed.sql"),
-    include_str!("../../../proposals/local-catalog/0008_catalog.proposed.sql"),
-    include_str!("../../../proposals/local-cash/0009_cash_register.proposed.sql"),
-    include_str!("../../../proposals/local-cash/0010_cash_shift.proposed.sql"),
-    include_str!("../../../proposals/local-sales/0011_modifier_catalog.proposed.sql"),
-    include_str!("../../../proposals/local-sales/0012_sales_foundation.proposed.sql"),
-    include_str!("../../../proposals/local-inventory/0013_inventory.proposed.sql"),
-    include_str!("../../../proposals/local-inventory/0014_inventory_recipes.proposed.sql"),
-    include_str!("../../../proposals/local-sales/0015_checkout.proposed.sql"),
-    include_str!("../../../proposals/local-purchasing/0016_purchasing.proposed.sql"),
+/// Se leen del migrador aprobado para la matriz ejecutable de dependencias.
+#[cfg(test)]
+const MIGRATIONS: [(&str, &str); 16] = [
+    (
+        "0002",
+        include_str!("../../../migrations/local/0002_installation_identity.sql"),
+    ),
+    (
+        "0003",
+        include_str!("../../../migrations/local/0003_user_credential_session.sql"),
+    ),
+    (
+        "0004",
+        include_str!("../../../migrations/local/0004_rbac_catalog.sql"),
+    ),
+    (
+        "0005",
+        include_str!("../../../migrations/local/0005_branch_membership.sql"),
+    ),
+    (
+        "0006",
+        include_str!("../../../migrations/local/0006_audit_event.sql"),
+    ),
+    (
+        "0007",
+        include_str!("../../../migrations/local/0007_bootstrap_record.sql"),
+    ),
+    (
+        "0008",
+        include_str!("../../../migrations/local/0008_catalog.sql"),
+    ),
+    (
+        "0009",
+        include_str!("../../../migrations/local/0009_cash_register.sql"),
+    ),
+    (
+        "0010",
+        include_str!("../../../migrations/local/0010_cash_shift.sql"),
+    ),
+    (
+        "0011",
+        include_str!("../../../migrations/local/0011_modifier_catalog.sql"),
+    ),
+    (
+        "0012",
+        include_str!("../../../migrations/local/0012_sales_foundation.sql"),
+    ),
+    (
+        "0013",
+        include_str!("../../../migrations/local/0013_inventory.sql"),
+    ),
+    (
+        "0014",
+        include_str!("../../../migrations/local/0014_inventory_recipes.sql"),
+    ),
+    (
+        "0015",
+        include_str!("../../../migrations/local/0015_checkout.sql"),
+    ),
+    (
+        "0016",
+        include_str!("../../../migrations/local/0016_purchasing.sql"),
+    ),
+    (
+        "0017",
+        include_str!("../../../migrations/local/0017_bootstrap_authorization.sql"),
+    ),
 ];
 
 const ORG: &str = "00000000-0000-0000-0000-0000000007a0";
@@ -181,12 +229,9 @@ fn bootstrap_request() -> BootstrapRequest {
     }
 }
 
-/// Aplica `0001` y las propuestas candidatas sobre una base vacía.
+/// Aplica el esquema productivo aprobado sobre una base vacía.
 async fn prepare_database(pool: &SqlitePool) -> Result<(), Box<dyn Error>> {
     migrate(pool).await?;
-    for statement in PROPOSALS {
-        sqlx::raw_sql(statement).execute(pool).await?;
-    }
     Ok(())
 }
 
@@ -566,14 +611,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn proposed_migrations_are_outside_the_productive_migrator() {
-        // Guard: el arnés no debe depender de `migrations/local/`.
-        for proposal in PROPOSALS {
-            assert!(proposal.contains("CREATE TABLE") || proposal.contains("CREATE INDEX"));
+    fn approved_migrations_are_create_only() {
+        // Guard: la matriz solo aplica DDL de creación del migrador aprobado.
+        for (version, statement) in MIGRATIONS {
+            assert!(version.starts_with('0'));
+            assert!(statement.contains("CREATE TABLE") || statement.contains("CREATE INDEX"));
         }
     }
 
-    /// Matriz ejecutable de dependencias de las propuestas `0002`–`0015`.
+    /// Matriz ejecutable de dependencias del esquema productivo `0002`–`0017`.
     ///
     /// Aplica una migración a la vez sobre una base vacía y comprueba, tras cada
     /// una, que la integridad referencial es válida y que toda FK apunta a una
@@ -589,11 +635,17 @@ mod tests {
             Duration::from_millis(500),
         )
         .await?;
-        migrate(&pool).await?;
+        // `0001` se aplica sin el historial de SQLx para poder medir el delta de
+        // cada migración posterior. Todas las demás se aplican una a una.
+        sqlx::raw_sql(include_str!(
+            "../../../migrations/local/0001_organization_branch.sql"
+        ))
+        .execute(&pool)
+        .await?;
 
         let mut previous = objects(&pool).await?;
-        for (index, statement) in PROPOSALS.iter().enumerate() {
-            sqlx::raw_sql(*statement).execute(&pool).await?;
+        for (version, statement) in MIGRATIONS {
+            sqlx::raw_sql(statement).execute(&pool).await?;
             let current = objects(&pool).await?;
             let created: Vec<&String> = current
                 .iter()
@@ -601,11 +653,10 @@ mod tests {
                 .collect();
             assert!(
                 !created.is_empty(),
-                "la propuesta {} no creó ningún objeto",
-                index + 2
+                "la migración {version} no creó ningún objeto"
             );
             assert_referential_integrity(&pool).await?;
-            println!("migration={:04} objects={created:?}", index + 2);
+            println!("migration={version} objects={created:?}");
             previous = current;
         }
         pool.close().await;

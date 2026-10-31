@@ -203,7 +203,11 @@ jobs:
           key: cargo-audit-0.22.2-${{ runner.os }}
 
       - name: Install pinned Cargo audit
-        run: cargo install cargo-audit --version 0.22.2 --locked
+        run: |
+          if ! command -v cargo-audit >/dev/null 2>&1; then
+            cargo install cargo-audit --version 0.22.2 --locked
+          fi
+          cargo audit --version
 
       - name: Audit committed Cargo lockfile
         run: cargo audit --file Cargo.lock --json > target/cargo-audit.json

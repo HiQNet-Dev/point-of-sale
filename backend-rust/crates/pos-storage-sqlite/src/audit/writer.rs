@@ -1,10 +1,7 @@
-//! Escritor de auditoría sobre la tabla candidata `audit_event`.
+//! Escritor de auditoría sobre la tabla productiva `audit_event`.
 //!
-//! **No productivo.** La tabla `audit_event` vive todavía en
-//! `backend-rust/proposals/local-auth/0006_audit_event.proposed.sql` y no está
-//! cargada por `pos-local` ni por SQLx. Este módulo escribe contra ese esquema
-//! candidato para que, una vez aprobado D-AUTH-07/08, la promoción consista en
-//! mover la migración y activar el writer, sin reescribir lógica.
+//! La tabla la crea la migración aprobada `0006_audit_event.sql`. El writer
+//! escribe dentro de la UoW del llamador y nunca abre una transacción propia.
 //!
 //! # Frontera transaccional
 //!

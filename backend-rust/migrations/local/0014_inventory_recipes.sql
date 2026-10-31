@@ -1,4 +1,5 @@
--- PROPUESTA D-INV-02. No ejecutar ni promover sin aceptación formal.
+-- Aprobada para v0.4.0 (ADR-0026). Inmutable: toda corrección posterior exige
+-- una migración nueva.
 -- Recetas de producto y efectos de modificadores sobre inventario.
 -- Depende de 0008 (product), 0011 (modifier_option) y 0013 (inventory_item).
 --
