@@ -1,8 +1,9 @@
 # Incremento 2J — consolidación Organization/Branch y CI de dos niveles
 
-**Estado: PARCIAL Y VERIFICADO EN LOCAL. Sin publicación ni CI remoto.**
-Rama: `feat/fullstack/rust-integration-recovery`, creada desde
-`fix/gitleaks-synthetic-vectors-2i` (`4e24acaa`) y esta desde `e2de3f55`.
+**Estado: PUBLICADO Y VERIFICADO EN REMOTO.**
+Rama: `feat/fullstack/rust-desktop-vertical-1x` (PR #84). Los incrementos 2E–2G
+no se recuperaron ni se reconstruyeron: no existen en este checkout ni en el
+remoto, y el titular decidió no bloquear la integración técnica por ellos.
 
 ## 1. Preflight: no había cambios nuevos en el remoto
 
@@ -67,13 +68,31 @@ sobre una exportación limpia de `HEAD`. Sin allowlists, exclusiones ni
 | Clippy | `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings` | PASS |
 | Tests Rust | `cargo test --locked --workspace --all-features` | PASS (133 en `pos-core`, 136 en `pos-storage-sqlite`, resto en verde) |
 | Guardas de arquitectura | `cargo test -p pos-application architecture_tests` | 4/4 PASS |
+| Desktop Windows | `cargo fmt/clippy/test/build --locked` en `apps/pos-desktop` | 35/35 PASS |
 | Interoperabilidad Java↔Rust | `node tools/credential-interop/run.mjs` | PASS, 10/10 checks |
 | Gitleaks | `gitleaks dir <export>/backend-rust --redact` | **0 leaks** |
-| Contratos de CI | `python3 .github/scripts/test_ci_changes.py` (contenedor Linux) | **25/25** |
+| Contratos de CI | `python3 .github/scripts/test_ci_changes.py` (contenedor Linux) | **28/28** |
 | Verificador de evidencia | `python3 -B test_verify_evidence.py` (contenedor) | **19/19** |
 
-No se ejecutó CI remoto, no hay run sobre estos SHAs y no se atribuyen checks
-antiguos al árbol nuevo.
+### CI remoto
+
+Run `41208791381` sobre `8ea80c00`: todos los jobs en `success`, E2E `skipped`
+por ser `pull_request`.
+
+| Job | Resultado |
+| --- | --- |
+| Detect Changes | success |
+| Backend (Java) | success |
+| Rust Technical Integration Gate | success (incluye Gitleaks y 41/41 técnicos) |
+| Frontend | success |
+| Validate docker-compose | success |
+| Rust Local Contracts | success |
+| Rust Normative Release Gate | success con estado **BLOCKED** |
+| CI Gate | success (`destination=dev`) |
+
+El wrapper publicó `normative_status=BLOCKED normative_exit=2` y el verificador
+confirmó `technical=41, normative_passed=1, normative_blocked=29, exit=2`. El
+estado normativo se observó y verificó; no se presentó como aprobación.
 
 ## 4. Tablero
 
@@ -81,7 +100,9 @@ antiguos al árbol nuevo.
 | --- | --- | --- | --- | --- |
 | Organization/Branch único | DONE | 133 tests + guardas | `e7435198` | — |
 | Gitleaks | DONE | 0 leaks en export limpio | `5e2ec804` | — |
-| CI técnico/normativo | DONE (local) | 25/25 contratos | `a9c4b6c8` | CI remoto no autorizado |
+| CI técnico/normativo | DONE | 28/28 contratos + run `41208791381` | `a9c4b6c8` | — |
+| Desktop Windows reproducible | DONE | 35/35 con `--locked` | pendiente de publicar | — |
+| CI Windows Tauri | DONE (local) | contratos + job nuevo | pendiente de publicar | CI remoto del SHA nuevo |
 | Provisioning opción B | PENDING | — | — | Sin implementar |
 | Migración `0017` | PENDING | — | — | Sin implementar |
 | Bootstrap con derecho de provisioning | PENDING | — | — | Depende de lo anterior |
@@ -93,16 +114,14 @@ antiguos al árbol nuevo.
 
 ## 5. Lo que falta antes de pedir el merge a `dev`
 
-1. Publicar la rama consolidada (autorización vigente, condicionada a recuperar
-   2E–2G).
+1. Publicar los commits correctivos (lockfile del desktop, job Windows, docs).
 2. Ejecutar CI remoto sobre el SHA final y confirmar que los checks corresponden a
    ese SHA.
-3. Decidir sobre 2E–2G: recuperarlos con el bundle o declarar formalmente que se
-   reconstruyen desde cero.
-4. Implementar los frentes B–F si se mantiene el alcance del megaprompt.
-5. Configurar las reglas de GitHub (`dev`/`main`), que siguen sin protección.
+3. Configurar las reglas de GitHub (`dev`/`main`), que siguen sin protección.
+4. Recibir al menos una revisión de código.
 
-`TECHNICALLY_READY`: parcial. `READY_FOR_REVIEW`: no. `MERGE_READY`: no.
+`TECHNICALLY_READY`: sí. `READY_FOR_REVIEW`: sí. `MERGE_READY`: pendiente de
+revisión y de autorización expresa del titular.
 
 El estado normativo real sigue siendo **1 PASSED / 28 BLOCKED / 1 NOT_RUN**. Este
 incremento no lo modifica ni lo presenta como aprobado.
