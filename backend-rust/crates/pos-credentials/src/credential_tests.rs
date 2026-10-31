@@ -37,6 +37,15 @@ fn verify(
 }
 
 #[test]
+fn proposed_commercial_policy_is_not_an_activatable_crypto_policy() {
+    // Versión propuesta en ADR-0025: no se registra por desarrollar bootstrap.
+    assert_eq!(Argon2Policy::from_id("free-local-argon2id-v1"), None);
+    assert_eq!(Argon2Policy::LAB_V1.memory_kib(), 19_456);
+    assert_eq!(Argon2Policy::LAB_V1.iterations(), 2);
+    assert_eq!(Argon2Policy::LAB_V1.lanes(), 1);
+}
+
+#[test]
 fn spring_bcrypt_vectors_verify_only_with_their_own_password() {
     let parsed: serde_json::Value =
         serde_json::from_str(SPRING_VECTORS).unwrap_or_else(|error| panic!("vectors: {error}"));

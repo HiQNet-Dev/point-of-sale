@@ -247,12 +247,25 @@ pub struct AppliedCredential {
 /// Adaptador de credenciales ligado a una conexión SQLite concreta.
 pub struct SqliteCredentialLab<'a> {
     connection: &'a mut SqliteConnection,
+    queries: &'static super::queries::CredentialQueries,
 }
 
 impl<'a> SqliteCredentialLab<'a> {
     /// Enlaza el adaptador a una conexión; puede ser la de una UoW activa.
     pub fn new(connection: &'a mut SqliteConnection) -> Self {
-        Self { connection }
+        Self {
+            connection,
+            queries: &super::queries::LAB,
+        }
+    }
+
+    /// Enlaza la misma implementación con local_credential/pos_user candidatos.
+    /// No migra ni activa este esquema; conserva sus timestamps y catálogo físico.
+    pub fn canonical(connection: &'a mut SqliteConnection) -> Self {
+        Self {
+            connection,
+            queries: &super::queries::CANONICAL,
+        }
     }
 
     /// Carga la credencial de un usuario para una finalidad concreta.
@@ -262,19 +275,13 @@ impl<'a> SqliteCredentialLab<'a> {
         user_id: &EntityId,
         kind: CredentialKind,
     ) -> Result<Option<LocalCredential>, IdentityError> {
-        let row = sqlx::query_as::<_, CredentialRow>(
-            "SELECT id, user_id, credential_kind, algorithm, secret_hash, \
-                    params_json, policy_id, state, credential_version, failed_login_attempts, \
-                    locked_until, created_at, updated_at \
-             FROM identity_credential_lab \
-             WHERE organization_id = ? AND user_id = ? AND credential_kind = ?",
-        )
-        .bind(organization_id.as_str())
-        .bind(user_id.as_str())
-        .bind(kind_code(kind))
-        .fetch_optional(&mut *self.connection)
-        .await
-        .map_err(|_| IdentityError::StorageUnavailable)?;
+        let row = sqlx::query_as::<_, CredentialRow>(self.queries.load)
+            .bind(organization_id.as_str())
+            .bind(user_id.as_str())
+            .bind(kind_code(kind))
+            .fetch_optional(&mut *self.connection)
+            .await
+            .map_err(|_| IdentityError::StorageUnavailable)?;
         row.map(CredentialRow::into_domain).transpose()
     }
 
@@ -293,14 +300,12 @@ impl<'a> SqliteCredentialLab<'a> {
         now: UtcSeconds,
         lockout: LockoutPolicy,
     ) -> Result<AppliedCredential, IdentityError> {
-        let active_user = sqlx::query_scalar::<_, String>(
-            "SELECT status FROM identity_user_lab WHERE organization_id = ? AND id = ?",
-        )
-        .bind(organization_id.as_str())
-        .bind(user_id.as_str())
-        .fetch_optional(&mut *self.connection)
-        .await
-        .map_err(|_| IdentityError::StorageUnavailable)?;
+        let active_user = sqlx::query_scalar::<_, String>(self.queries.active_user)
+            .bind(organization_id.as_str())
+            .bind(user_id.as_str())
+            .fetch_optional(&mut *self.connection)
+            .await
+            .map_err(|_| IdentityError::StorageUnavailable)?;
         if active_user.as_deref() != Some("ACTIVE") {
             return Ok(AppliedCredential {
                 transition: CredentialTransition::Rejected,
@@ -409,29 +414,26 @@ impl<'a> SqliteCredentialLab<'a> {
         let version = i64::try_from(credential.credential_version())
             .map_err(|_| IdentityError::StorageUnavailable)?;
         let attempts = i64::from(credential.failed_login_attempts());
-        let result = sqlx::query(
-            "UPDATE identity_credential_lab \
-             SET algorithm = ?, secret_hash = ?, params_json = ?, policy_id = ?, state = ?, \
-                 credential_version = ?, failed_login_attempts = ?, locked_until = ?, updated_at = ? \
-             WHERE organization_id = ? AND user_id = ? AND credential_kind = ? \
-               AND credential_version = ?",
-        )
-        .bind(algorithm_code(credential.algorithm()))
-        .bind(credential.secret_hash().expose_to_verifier())
-        .bind(credential.parameters().canonical_json())
-        .bind(credential.policy_id())
-        .bind(state_code(credential.state()))
-        .bind(version)
-        .bind(attempts)
-        .bind(credential.locked_until().map(UtcSeconds::get))
-        .bind(credential.updated_at().get())
-        .bind(organization_id.as_str())
-        .bind(credential.user_id().as_str())
-        .bind(kind_code(credential.kind()))
-        .bind(expected)
-        .execute(&mut *self.connection)
-        .await
-        .map_err(|_| IdentityError::StorageUnavailable)?;
+        let result = sqlx::query(self.queries.persist)
+            .bind(algorithm_code(credential.algorithm()))
+            .bind(credential.secret_hash().expose_to_verifier())
+            .bind(credential.parameters().canonical_json())
+            .bind(credential.policy_id())
+            .bind(match credential.state() {
+                CredentialState::ResetRequired => self.queries.reset_state,
+                state => state_code(state),
+            })
+            .bind(version)
+            .bind(attempts)
+            .bind(credential.locked_until().map(UtcSeconds::get))
+            .bind(credential.updated_at().get())
+            .bind(organization_id.as_str())
+            .bind(credential.user_id().as_str())
+            .bind(kind_code(credential.kind()))
+            .bind(expected)
+            .execute(&mut *self.connection)
+            .await
+            .map_err(|_| IdentityError::StorageUnavailable)?;
         Ok(if result.rows_affected() == 1 {
             CasOutcome::Updated
         } else {
@@ -743,7 +745,7 @@ impl CredentialRow {
         };
         let state = match self.state.as_str() {
             "ACTIVE" => CredentialState::Active,
-            "RESET_REQUIRED" => CredentialState::ResetRequired,
+            "RESET_REQUIRED" | "PASSWORD_RESET_REQUIRED" => CredentialState::ResetRequired,
             "DISABLED" => CredentialState::Disabled,
             _ => return Err(IdentityError::StorageUnavailable),
         };
