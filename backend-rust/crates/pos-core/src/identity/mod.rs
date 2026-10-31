@@ -7,13 +7,14 @@
 //! # Organización
 //!
 //! Por responsabilidad: [`errors`], [`user`], [`credential`], [`session`],
-//! [`principal`] y [`service`]. La API pública se reexporta aquí.
+//! [`principal`], [`service`] y [`provisioning`]. La API pública se reexporta aquí.
 
 use serde_json::Value;
 
 mod credential;
 mod errors;
 mod principal;
+mod provisioning;
 mod service;
 mod session;
 mod user;
@@ -33,6 +34,10 @@ pub use errors::IdentityError;
 pub use principal::{
     AuthorizationError, PERMISSION_CATALOG, PermissionCode, PrincipalScope, ScopeMode,
     VerifiedPrincipal,
+};
+pub use provisioning::{
+    MAX_PROVISIONING_TTL_SECONDS, MIN_PROVISIONING_TTL_SECONDS, ProvisioningAuthorization,
+    ProvisioningError, ProvisioningPurpose, ProvisioningState, TOKEN_DIGEST_HEX_LEN,
 };
 pub use service::{LocalIdentityRepository, LocalPrincipalService, PermissionAuthority};
 pub use session::{LocalSession, LocalSessionState, SessionHash, UtcSeconds};

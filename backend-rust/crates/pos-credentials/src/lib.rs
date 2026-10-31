@@ -22,6 +22,7 @@
 use std::fmt;
 
 mod policy;
+mod provisioning;
 mod session;
 mod verify;
 
@@ -29,6 +30,9 @@ pub use policy::{
     ARGON2_OUTPUT_BYTES, ARGON2_SALT_BYTES, Argon2Policy, MAX_ARGON2_ITERATIONS, MAX_ARGON2_LANES,
     MAX_ARGON2_MEMORY_KIB, MAX_BCRYPT_COST, MAX_BCRYPT_PASSWORD_BYTES, MAX_PASSWORD_BYTES,
     MAX_PHC_BYTES,
+};
+pub use provisioning::{
+    PROVISIONING_TOKEN_BYTES, PROVISIONING_TOKEN_HEX_LEN, ProvisioningToken, TokenDigest,
 };
 pub use session::{SESSION_HANDLE_BYTES, SessionHandle};
 pub use verify::{VerificationOutcome, VerifyRequest, hash_password, verify_credential};
@@ -61,5 +65,7 @@ impl std::error::Error for CredentialError {}
 
 #[cfg(test)]
 mod credential_tests;
+#[cfg(test)]
+mod provisioning_tests;
 #[cfg(test)]
 mod session_tests;

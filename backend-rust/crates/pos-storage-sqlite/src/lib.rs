@@ -33,6 +33,8 @@ mod organization_branch;
 mod prelude;
 /// Compras persistentes sobre el esquema candidato `0016`. No productivo.
 pub mod purchasing;
+
+pub mod provisioning;
 /// Ventas y snapshots persistentes sobre el esquema candidato. No productivo.
 pub mod sales;
 mod transaction;
@@ -70,6 +72,8 @@ mod identity_lab_tests;
 mod inventory_store_tests;
 #[cfg(test)]
 mod proposals_tests;
+#[cfg(test)]
+mod provisioning_store_tests;
 #[cfg(test)]
 mod purchasing_store_tests;
 #[cfg(test)]
