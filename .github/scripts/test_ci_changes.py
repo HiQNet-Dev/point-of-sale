@@ -169,12 +169,24 @@ class RustWorkflowTest(unittest.TestCase):
     jobs = WORKFLOW["jobs"]
 
     def gate_result(
-        self, rust_run, rust_result, changes_result="success", backend_result="skipped"
+        self,
+        rust_run,
+        rust_result,
+        normative_result="success",
+        normative_status="BLOCKED",
+        destination="dev",
+        changes_result="success",
+        backend_result="skipped",
+        event_name="pull_request",
     ):
         needs = {
             "changes": {"result": changes_result, "outputs": {"rust_run": rust_run}},
             "backend": {"result": backend_result},
             "rust": {"result": rust_result},
+            "rust-normative": {
+                "result": normative_result,
+                "outputs": {"status": normative_status, "exit_code": "2"},
+            },
             "frontend": {"result": "skipped"},
             "compose": {"result": "skipped"},
             "e2e": {"result": "skipped"},
@@ -187,7 +199,13 @@ class RustWorkflowTest(unittest.TestCase):
         return (
             subprocess.run(
                 ["bash", "-euo", "pipefail", "-c", script],
-                env=dict(os.environ, NEEDS=json.dumps(needs)),
+                env=dict(
+                    os.environ,
+                    NEEDS=json.dumps(needs),
+                    EVENT_NAME=event_name,
+                    BASE_REF=destination,
+                    REF=f"refs/heads/{destination}",
+                ),
                 capture_output=True,
                 check=False,
             ).returncode
@@ -203,13 +221,16 @@ class RustWorkflowTest(unittest.TestCase):
         for result in ("success", "skipped", "failure", "cancelled"):
             with self.subTest(result=result):
                 self.assertEqual(
-                    result in ("success", "skipped"), self.gate_result("false", result)
+                    result in ("success", "skipped"),
+                    self.gate_result("false", result, normative_result="skipped"),
                 )
 
     def test_missing_or_invalid_detection_cannot_approve_gate(self):
         for flag in (None, "", "unexpected"):
             with self.subTest(flag=flag):
-                self.assertFalse(self.gate_result(flag, "skipped"))
+                self.assertFalse(
+                    self.gate_result(flag, "skipped", normative_result="skipped")
+                )
         for result in ("failure", "cancelled", "skipped"):
             with self.subTest(result=result):
                 self.assertFalse(
@@ -223,8 +244,79 @@ class RustWorkflowTest(unittest.TestCase):
                     self.gate_result("true", "success", backend_result=result)
                 )
 
-    def test_rust_job_contract_and_partial_evidence(self):
+    def test_dev_accepts_a_declared_blocked_normative_state(self):
+        self.assertTrue(self.gate_result("true", "success", normative_status="PASSED"))
+        self.assertTrue(
+            self.gate_result("true", "success", normative_status="BLOCKED")
+        )
+        for status in (None, "", "FAILED", "SKIPPED"):
+            with self.subTest(status=status):
+                self.assertFalse(
+                    self.gate_result("true", "success", normative_status=status)
+                )
+        for result in ("failure", "cancelled", "skipped"):
+            with self.subTest(result=result):
+                self.assertFalse(
+                    self.gate_result("true", "success", normative_result=result)
+                )
+
+    def test_main_rejects_a_blocked_normative_state(self):
+        for event_name in ("pull_request", "push"):
+            with self.subTest(event=event_name):
+                self.assertTrue(
+                    self.gate_result(
+                        "true",
+                        "success",
+                        normative_status="PASSED",
+                        destination="main",
+                        event_name=event_name,
+                    )
+                )
+                self.assertFalse(
+                    self.gate_result(
+                        "true",
+                        "success",
+                        normative_status="BLOCKED",
+                        destination="main",
+                        event_name=event_name,
+                    )
+                )
+
+    def test_manual_dispatch_uses_the_release_policy(self):
+        self.assertFalse(
+            self.gate_result(
+                "true",
+                "success",
+                normative_status="BLOCKED",
+                destination="main",
+                event_name="workflow_dispatch",
+            )
+        )
+
+    def test_docs_only_is_accepted_on_dev_but_main_still_needs_passed(self):
+        self.assertTrue(
+            self.gate_result("false", "skipped", normative_result="skipped")
+        )
+        self.assertTrue(
+            self.gate_result(
+                "false",
+                "skipped",
+                normative_status="PASSED",
+                destination="main",
+            )
+        )
+        self.assertFalse(
+            self.gate_result(
+                "false",
+                "skipped",
+                normative_status="BLOCKED",
+                destination="main",
+            )
+        )
+
+    def test_technical_gate_has_no_normative_execution(self):
         rust = self.jobs["rust"]
+        self.assertEqual("Rust Technical Integration Gate", rust["name"])
         self.assertEqual("needs.changes.outputs.rust_run == 'true'", rust["if"])
         self.assertEqual("backend-rust", rust["defaults"]["run"]["working-directory"])
         steps = rust["steps"]
@@ -243,85 +335,94 @@ class RustWorkflowTest(unittest.TestCase):
         ):
             self.assertIn(command, commands)
         self.assertIn("rustup toolchain install 1.99.1", commands)
-        self.assertTrue(
-            any(step.get("uses") == "actions/setup-java@v4" for step in steps)
-        )
-        self.assertIn("--require-complete", commands)
+        self.assertNotIn("--require-complete", commands)
         self.assertNotIn("--ignore", commands)
         self.assertFalse(any(step.get("continue-on-error") for step in steps))
         upload = next(
             step for step in steps if step.get("uses") == "actions/upload-artifact@v4"
         )
         self.assertEqual("always()", upload["if"])
+        self.assertEqual("rust-technical-evidence", upload["with"]["name"])
         self.assertIn("backend-rust/target/migration-evidence", upload["with"]["path"])
+        self.assertNotIn("migration-gate-evidence", upload["with"]["path"])
         self.assertIn("rust", self.jobs["ci-gate"]["needs"])
+        self.assertIn("rust-normative", self.jobs["ci-gate"]["needs"])
         self.assertEqual(
             "${{ steps.detect.outputs.rust_run }}",
             self.jobs["changes"]["outputs"]["rust_run"],
         )
 
-    def test_normative_gate_is_last_blocking_check_and_uploads_both_outputs(self):
-        rust = self.jobs["rust"]
-        self.assertEqual("Rust (technical checks + mandatory DDL13 gate)", rust["name"])
-        self.assertNotIn("continue-on-error", rust)
-        self.assertTrue(all("continue-on-error" not in step for step in rust["steps"]))
-        steps = rust["steps"]
-        audit = next(
+    def test_normative_gate_is_an_independent_required_level(self):
+        normative = self.jobs["rust-normative"]
+        self.assertEqual("Rust Normative Release Gate", normative["name"])
+        self.assertIn("changes", normative["needs"])
+        self.assertIn("rust", normative["needs"])
+        self.assertIn("always()", normative["if"])
+        self.assertEqual(
+            "${{ steps.gate.outputs.status }}", normative["outputs"]["status"]
+        )
+        self.assertEqual(
+            "${{ steps.gate.outputs.exit_code }}", normative["outputs"]["exit_code"]
+        )
+        steps = normative["steps"]
+        self.assertFalse(normative.get("continue-on-error"))
+        self.assertFalse(any(step.get("continue-on-error") for step in steps))
+        gate = next(step for step in steps if step.get("id") == "gate")
+        self.assertEqual(
+            "bash ../.github/scripts/rust-normative-gate.sh", gate["run"]
+        )
+        verify = next(
             step
             for step in steps
-            if step.get("name") == "Audit committed Cargo lockfile"
+            if step.get("name") == "Verify published normative evidence"
         )
-        gate = next(
-            step
-            for step in steps
-            if step.get("name")
-            == "Require complete normative migration evidence (blocks merge)"
-        )
+        self.assertIn("--expect-exit", verify["run"])
+        self.assertIn("steps.gate.outputs.exit_code", verify["run"])
         upload = next(
             step for step in steps if step.get("uses") == "actions/upload-artifact@v4"
         )
-        self.assertLess(steps.index(audit), steps.index(gate))
-        self.assertLess(steps.index(gate), steps.index(upload))
-        self.assertEqual(
-            "cargo run --locked -p migration-lab -- --output target/migration-gate-evidence --postgres-bin target/pg17-build/install/bin --java-source --require-complete",
-            gate["run"],
-        )
-        self.assertEqual("always()", gate["if"])
-        verify = next(
-            step
-            for step in rust["steps"]
-            if step.get("name") == "Verify blocked gate evidence"
-        )
-        self.assertEqual("always()", verify["if"])
-        self.assertIn("--expect-exit 2", verify["run"])
-        self.assertEqual("actions/upload-artifact@v4", upload["uses"])
         self.assertEqual("always()", upload["if"])
+        self.assertEqual("rust-normative-evidence", upload["with"]["name"])
         self.assertEqual(
-            "rust-migration-technical-and-normative-evidence", upload["with"]["name"]
-        )
-        self.assertEqual(
-            {
-                "backend-rust/target/migration-evidence",
-                "backend-rust/target/migration-gate-evidence",
-                "backend-rust/target/cargo-audit.json",
-            },
+            {"backend-rust/target/migration-gate-evidence"},
             set(upload["with"]["path"].splitlines()),
         )
 
-    def test_normative_exit_two_propagates_and_ci_gate_blocks_failure(self):
-        script = next(
-            step["run"]
-            for step in self.jobs["rust"]["steps"]
-            if "--require-complete" in step.get("run", "")
-        )
-        # Simulate the process boundary, not a successful normative lab result.
-        result = subprocess.run(
-            ["bash", "-euo", "pipefail", "-c", "cargo() { return 2; }\n" + script],
-            capture_output=True,
-            check=False,
-        )
-        self.assertEqual(2, result.returncode)
-        self.assertFalse(self.gate_result("true", "failure"))
+    def test_normative_wrapper_preserves_the_real_exit_code(self):
+        script = (ROOT / ".github/scripts/rust-normative-gate.sh").read_text()
+        for mock_exit, expected_status, expected_result in (
+            (0, "PASSED", 0),
+            (2, "BLOCKED", 0),
+            (1, "FAILED", 1),
+            (137, "FAILED", 1),
+        ):
+            with self.subTest(exit=mock_exit), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / "github-output"
+                output.write_text("")
+                result = subprocess.run(
+                    [
+                        "bash",
+                        "-euo",
+                        "pipefail",
+                        "-c",
+                        f"cargo() {{ return {mock_exit}; }}\n{script}",
+                    ],
+                    env=dict(
+                        os.environ,
+                        GITHUB_OUTPUT=str(output),
+                        GITHUB_STEP_SUMMARY=str(Path(directory) / "summary"),
+                    ),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(expected_result, result.returncode)
+                self.assertIn(f"normative_status={expected_status}", result.stdout)
+                recorded = dict(
+                    line.split("=", 1) for line in output.read_text().splitlines()
+                )
+                self.assertEqual(expected_status, recorded["status"])
+                self.assertEqual(str(mock_exit), recorded["exit_code"])
 
     def test_security_scans_are_pinned_and_blocking(self):
         rust = self.jobs["rust"]
@@ -349,13 +450,7 @@ class RustWorkflowTest(unittest.TestCase):
             for step in rust["steps"]
             if "run" in step and step.get("if") == "always()"
         }
-        self.assertEqual(
-            {
-                "Require complete normative migration evidence (blocks merge)",
-                "Verify blocked gate evidence",
-            },
-            always_run,
-        )
+        self.assertEqual(set(), always_run)
 
     def test_legacy_execution_policy_and_commands(self):
         for job in ("backend", "frontend", "compose"):

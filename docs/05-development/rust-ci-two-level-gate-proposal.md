@@ -1,14 +1,14 @@
-# CI de dos niveles para Rust — propuesta 2H
+# CI de dos niveles para Rust — diseño e implementación
 
-**Estado: PROPUESTO. Sin cambios aplicados.**
-Los workflows activos (`.github/workflows/ci.yml`,
-`.github/workflows/rust-contracts.yml`) permanecen intactos. El incremento 2I
-autorizó preparar esta separación como propuesta, pero **no** aplicar cambios de
-política CI ni ejecutar Actions. Este documento debe revisarse y aprobarse antes
-de editar workflows o publicar con ejecución de Actions.
+**Estado: IMPLEMENTADO en la rama `feat/fullstack/rust-integration-recovery`.**
+Los workflows ya distinguen el nivel técnico (`rust`) del normativo
+(`rust-normative`). El cambio está validado en local con los tests de contrato;
+**no se ha publicado ni ejecutado CI remoto**, y el merge a `dev` sigue sin
+autorizar. Este documento describe el diseño aprobado y su correspondencia con
+el workflow real.
 
 Fecha de redacción: 2026-10-31.
-SHA evaluado: `e2de3f554e4c6958adbf8eaf65431334ee0cb1f4`.
+SHA base evaluado: `e2de3f554e4c6958adbf8eaf65431334ee0cb1f4`.
 
 ## 1. Motivo
 
@@ -99,7 +99,9 @@ Contrato de códigos de salida (sin `continue-on-error`, sin `|| true`):
 | `2` | BLOCKED | éxito declarado | permitido (incompletitud declarada) | **rechazado** |
 | `1` | FAILED | fallo | fallo | fallo |
 
-Implementación sugerida del step (el exit se publica como output, no se oculta):
+Implementación sugerida del step (el exit se publica como output, no se oculta).
+La versión aplicada vive en `.github/scripts/rust-normative-gate.sh` y coincide
+con este contrato:
 
 ```bash
 set +e
@@ -208,12 +210,12 @@ reporta 9 coincidencias en `backend/src` (`application-dev-local.yml` y tests de
 Java). El escaneo de CI solo cubre `backend-rust`; deben confirmarse como valores
 de desarrollo/prueba antes de ampliar el alcance del escáner.
 
-## 7. Autorizaciones necesarias antes de aplicar
+## 7. Autorizaciones
 
-- [ ] Aprobar la separación de controles técnicos y normativos.
-- [ ] Aprobar la modificación de los workflows y de sus tests de contrato.
-- [ ] Aprobar la resolución de la falsa positiva de gitleaks.
-- [ ] Aprobar la publicación de la rama consolidada.
+- [x] Aprobar la separación de controles técnicos y normativos.
+- [x] Aprobar la modificación de los workflows y de sus tests de contrato.
+- [x] Aprobar la resolución de la falsa positiva de gitleaks (opción B).
+- [x] Preparar y publicar la rama consolidada (condicionado a recuperar 2E–2G).
 - [ ] Aprobar la ejecución de CI remoto sobre el SHA final.
 - [ ] Aprobar (por separado) el merge a `dev`.
 
