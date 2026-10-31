@@ -123,8 +123,11 @@ fn installation_persists_across_reopen() -> Result<(), Box<dyn Error>> {
         let first = LocalState::open_installation(directory.path()).await?;
         let created = first.installation_status()?;
         assert_eq!(created.state, "FIRST_INSTALL");
-        assert_eq!(created.schema_version, 1);
-        assert_eq!(created.applied_migrations, 1);
+        assert_eq!(
+            created.schema_version,
+            u32::try_from(pos_storage_sqlite::approved_schema_version())?
+        );
+        assert_eq!(created.applied_migrations, 17);
         first.shutdown().await;
 
         // El archivo debe existir después del cierre: la instalación es durable.
@@ -204,7 +207,7 @@ fn newer_schema_is_rejected_at_startup() -> Result<(), Box<dyn Error>> {
             LocalState::open_installation(directory.path()).await,
             Err(StartupError::Installation(InstallationError::SchemaAhead {
                 found: 99,
-                approved: 1
+                approved: 17
             }))
         ));
         Ok(())
