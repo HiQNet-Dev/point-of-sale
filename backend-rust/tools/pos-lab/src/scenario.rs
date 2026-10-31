@@ -195,13 +195,7 @@ async fn provision(pool: &SqlitePool) -> Result<(EntityId, BootstrapProvisioning
         OPENED_AT,
     )
     .await?;
-    // Java concede al rol administrador todo el catálogo vigente en el bootstrap.
-    sqlx::query(
-        "INSERT INTO role_permission (role_id, permission_code) SELECT ?, code FROM permission",
-    )
-    .bind(ROLE)
-    .execute(&mut *transaction.connection())
-    .await?;
+    // El caso de uso canónico ya asignó al administrador el catálogo vigente.
 
     let branch = Branch::create(
         id(BRANCH),

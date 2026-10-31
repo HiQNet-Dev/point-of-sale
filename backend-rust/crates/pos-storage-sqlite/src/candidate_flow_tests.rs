@@ -127,14 +127,19 @@ async fn administrative_flow_bootstraps_authorizes_audits_and_revokes()
         provision_initial_installation(&mut transaction, &capability, &request(), TIME).await?;
     assert_eq!(organization.id(), &id(ORG));
 
-    // El rol administrador recibe permisos reales del catálogo.
-    for code in ["organization.read", "branch.create", "branch.read"] {
-        sqlx::query("INSERT INTO role_permission (role_id, permission_code) VALUES (?, ?)")
-            .bind(ROLE)
-            .bind(code)
-            .execute(&mut *transaction.connection())
-            .await?;
-    }
+    // El provisioning canónico concede el catálogo vigente sin SQL del llamador.
+    let grants: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM role_permission WHERE role_id = ?")
+        .bind(ROLE)
+        .fetch_one(&mut *transaction.connection())
+        .await?;
+    assert_eq!(grants, 59);
+    // La autoridad sigue siendo DB: retiramos un grant antes de autenticar.
+    sqlx::query(
+        "DELETE FROM role_permission WHERE role_id = ? AND permission_code = 'sale.checkout'",
+    )
+    .bind(ROLE)
+    .execute(&mut *transaction.connection())
+    .await?;
 
     // Sucursal creada con el adaptador de Organization/Branch ya existente.
     let branch = Branch::create(
@@ -258,7 +263,7 @@ async fn second_bootstrap_attempt_is_rejected_and_leaves_no_partial_rows()
     provision_initial_installation(&mut transaction, &capability, &request(), TIME).await?;
     transaction.commit().await?;
 
-    // Segundo intento sobre la misma instalación: el UPDATE no afecta filas.
+    // Segundo intento: Application rechaza antes de crear cualquier fila.
     let mut transaction = unit_of_work.begin().await?;
     let second = provision_initial_installation(
         &mut transaction,
@@ -294,5 +299,120 @@ async fn second_bootstrap_attempt_is_rejected_and_leaves_no_partial_rows()
             .await?,
         1
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn bootstrap_rejects_new_ids_after_reopen() -> Result<(), Box<dyn std::error::Error>> {
+    use pos_application::bootstrap::requires_provisioning;
+    let (temp, pool) = open_candidate().await?;
+    let capability = authorize_bootstrap(&TestVerifier, b"secreto-de-prueba")?;
+    let mut transaction = SqliteUnitOfWork::new(pool.clone()).begin().await?;
+    assert!(requires_provisioning(&mut transaction).await?);
+    provision_initial_installation(&mut transaction, &capability, &request(), TIME).await?;
+    transaction.commit().await?;
+    pool.close().await;
+
+    let reopened = open(&temp.path().join("flow.sqlite"), Duration::from_secs(5)).await?;
+    let mut transaction = SqliteUnitOfWork::new(reopened.clone()).begin().await?;
+    assert!(!requires_provisioning(&mut transaction).await?);
+    let mut other = request();
+    other.installation_id = id("00000000-0000-0000-0000-0000000010f0");
+    other.organization_id = id("00000000-0000-0000-0000-0000000010a0");
+    other.organization.code = BusinessCode::new("segunda")?;
+    other.administrator_id = id("00000000-0000-0000-0000-0000000010a1");
+    other.administrator_role_id = id("00000000-0000-0000-0000-0000000010b0");
+    other.audit_event_id = AuditEventId::new(id("00000000-0000-0000-0000-0000000010e0"));
+    assert!(
+        provision_initial_installation(&mut transaction, &capability, &other, LATER)
+            .await
+            .is_err()
+    );
+    transaction.rollback().await?;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM organization")
+            .fetch_one(&reopened)
+            .await?,
+        1
+    );
+    reopened.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn concurrent_bootstraps_with_distinct_ids_only_commit_once()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (_temp, pool) = open_candidate().await?;
+    let capability = authorize_bootstrap(&TestVerifier, b"secreto-de-prueba")?;
+    let first = request();
+    let mut second = request();
+    second.installation_id = id("00000000-0000-0000-0000-0000000020f0");
+    second.organization_id = id("00000000-0000-0000-0000-0000000020a0");
+    second.organization.code = BusinessCode::new("concurrente")?;
+    second.administrator_id = id("00000000-0000-0000-0000-0000000020a1");
+    second.administrator_role_id = id("00000000-0000-0000-0000-0000000020b0");
+    second.audit_event_id = AuditEventId::new(id("00000000-0000-0000-0000-0000000020e0"));
+    async fn attempt(
+        pool: SqlitePool,
+        capability: &BootstrapProvisioning,
+        request: &BootstrapRequest,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let mut transaction = SqliteUnitOfWork::new(pool).begin().await?;
+        if provision_initial_installation(&mut transaction, capability, request, TIME)
+            .await
+            .is_ok()
+        {
+            transaction.commit().await?;
+            Ok(true)
+        } else {
+            transaction.rollback().await?;
+            Ok(false)
+        }
+    }
+    let (a, b) = tokio::join!(
+        attempt(pool.clone(), &capability, &first),
+        attempt(pool.clone(), &capability, &second)
+    );
+    assert_ne!(a?, b?, "debe confirmar exactamente un provisioning");
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM installation_identity")
+            .fetch_one(&pool)
+            .await?,
+        1
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM audit_event")
+            .fetch_one(&pool)
+            .await?,
+        1
+    );
+    pool.close().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn bootstrap_audit_failure_rolls_back_every_initial_row()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (_temp, pool) = open_candidate().await?;
+    sqlx::raw_sql("CREATE TRIGGER reject_bootstrap_audit BEFORE INSERT ON audit_event BEGIN SELECT RAISE(ABORT, 'test audit failure'); END;")
+        .execute(&pool).await?;
+    let capability = authorize_bootstrap(&TestVerifier, b"secreto-de-prueba")?;
+    let mut transaction = SqliteUnitOfWork::new(pool.clone()).begin().await?;
+    assert!(
+        provision_initial_installation(&mut transaction, &capability, &request(), TIME)
+            .await
+            .is_err()
+    );
+    transaction.rollback().await?;
+    let count: i64 = sqlx::query_scalar(
+        "SELECT (SELECT COUNT(*) FROM organization) + (SELECT COUNT(*) FROM installation_identity) \
+         + (SELECT COUNT(*) FROM bootstrap_record) + (SELECT COUNT(*) FROM pos_user) \
+         + (SELECT COUNT(*) FROM role) + (SELECT COUNT(*) FROM user_organization_role) \
+         + (SELECT COUNT(*) FROM role_permission) + (SELECT COUNT(*) FROM audit_event)",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(count, 0, "rollback incompleto del provisioning");
+    pool.close().await;
     Ok(())
 }

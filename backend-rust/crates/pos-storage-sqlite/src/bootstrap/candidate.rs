@@ -1,96 +1,57 @@
-//! Provisioning inicial sobre el esquema candidato `0002`–`0007`.
+//! Adaptador de provisioning sobre el esquema candidato `0002`–`0007`.
 //!
-//! **No productivo.** Las tablas viven en `proposals/local-auth/` y `pos-local`
-//! no las carga. La función existe para que, tras la aprobación normativa, la
-//! activación sea trasladar la migración y conectar este caso de uso.
-//!
-//! # Frontera de seguridad
-//!
-//! El evento `bootstrap.completed` exige [`BootstrapProvisioning`], que solo se
-//! emite mediante [`pos_core::audit::authorize_bootstrap`] tras validar el
-//! secreto de despliegue. Sin capacidad no se puede auditar el provisioning, y
-//! sin auditoría la transacción se revierte: no queda una instalación parcial.
-//!
-//! # Orden
-//!
-//! `organization → installation_identity → bootstrap PENDING → pos_user → role →
-//! user_organization_role → bootstrap COMPLETED → audit SYSTEM → COMMIT`.
+//! La coordinación y atribución SYSTEM pertenecen a Application. Este adaptador
+//! solo persiste en la UoW existente, nunca confirma ni carga propuestas.
 
-use pos_core::{
-    audit::{AuditEventId, AuditEventRecord, AuditOccurredAt, BootstrapProvisioning},
-    identity::NormalizedEmail,
-    organization_branch::{
-        ApplicationError, BusinessCode, DisplayName, EntityId, NewOrganization, Organization,
-    },
-};
+use pos_application::bootstrap::BootstrapTransaction;
+pub use pos_application::bootstrap::{BootstrapRequest, provision_initial_installation};
+use pos_core::organization_branch::{ApplicationError, Organization};
 use sqlx::SqliteConnection;
 
-use crate::{SqliteTransaction, audit::SqliteAuditWriter};
+use crate::SqliteTransaction;
 
-/// Datos del provisioning inicial.
-#[derive(Clone, Debug)]
-pub struct BootstrapRequest {
-    /// Instalación que se está provisionando.
-    pub installation_id: EntityId,
-    /// Evento de auditoría del bootstrap.
-    pub audit_event_id: AuditEventId,
-    /// Identificador de la organización inicial.
-    pub organization_id: EntityId,
-    /// Organización inicial.
-    pub organization: NewOrganization,
-    /// Identificador del administrador inicial.
-    pub administrator_id: EntityId,
-    /// Nombre visible del administrador.
-    pub administrator_name: DisplayName,
-    /// Email normalizado del administrador.
-    pub administrator_email: NormalizedEmail,
-    /// Rol administrador de la organización.
-    pub administrator_role_id: EntityId,
-    /// Código del rol administrador (slug).
-    pub administrator_role_code: BusinessCode,
-    /// Huella pública de la instalación (la clave privada nunca se persiste).
-    pub installation_fingerprint: String,
-}
+impl BootstrapTransaction for SqliteTransaction {
+    async fn has_initial_identity(&mut self) -> Result<bool, ApplicationError> {
+        sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM organization) OR EXISTS(SELECT 1 FROM installation_identity) \
+             OR EXISTS(SELECT 1 FROM bootstrap_record) OR EXISTS(SELECT 1 FROM pos_user)",
+        )
+        .fetch_one(self.connection())
+        .await
+        .map_err(|_| ApplicationError::Storage)
+    }
 
-/// Provisiona la instalación completa dentro de la transacción abierta.
-///
-/// # Errors
-/// Devuelve [`ApplicationError::Storage`] si SQLite rechaza cualquier paso y
-/// [`ApplicationError::Audit`] si la auditoría no puede escribirse. El llamador
-/// debe revertir en ambos casos.
-pub async fn provision_initial_installation(
-    transaction: &mut SqliteTransaction,
-    capability: &BootstrapProvisioning,
-    request: &BootstrapRequest,
-    occurred_at: &str,
-) -> Result<Organization, ApplicationError> {
-    let organization = Organization::create(
-        request.organization_id.clone(),
-        request.organization.clone(),
-    );
-    // La organización se crea primero: la instalación la referencia.
-    transaction
-        .insert_organization(&organization, occurred_at)
+    async fn grant_administrator_catalog(
+        &mut self,
+        request: &BootstrapRequest,
+    ) -> Result<(), ApplicationError> {
+        sqlx::query(
+            "INSERT INTO role_permission (role_id, permission_code) SELECT ?, code FROM permission",
+        )
+        .bind(request.administrator_role_id.as_str())
+        .execute(self.connection())
         .await
         .map_err(|_| ApplicationError::Storage)?;
-    let connection = transaction.connection();
-    insert_installation(connection, request, occurred_at).await?;
-    insert_pending_bootstrap(connection, request, occurred_at).await?;
-    insert_administrator(connection, request, occurred_at).await?;
-    insert_role(connection, request, occurred_at).await?;
-    assign_role(connection, request, occurred_at).await?;
-    complete_bootstrap(connection, request, occurred_at).await?;
+        Ok(())
+    }
 
-    let event = AuditEventRecord::bootstrap_completed(
-        capability,
-        request.audit_event_id.clone(),
-        organization.id().clone(),
-        request.installation_id.clone(),
-        AuditOccurredAt::new(occurred_at).map_err(|_| ApplicationError::Audit)?,
-    )
-    .map_err(|_| ApplicationError::Audit)?;
-    SqliteAuditWriter::append(transaction, &event).await?;
-    Ok(organization)
+    async fn insert_initial_identity(
+        &mut self,
+        organization: &Organization,
+        request: &BootstrapRequest,
+        occurred_at: &str,
+    ) -> Result<(), ApplicationError> {
+        self.insert_organization(organization, occurred_at)
+            .await
+            .map_err(|_| ApplicationError::Storage)?;
+        let connection = self.connection();
+        insert_installation(connection, request, occurred_at).await?;
+        insert_pending_bootstrap(connection, request, occurred_at).await?;
+        insert_administrator(connection, request, occurred_at).await?;
+        insert_role(connection, request, occurred_at).await?;
+        assign_role(connection, request, occurred_at).await?;
+        complete_bootstrap(connection, request, occurred_at).await
+    }
 }
 
 async fn insert_installation(
@@ -209,7 +170,6 @@ async fn complete_bootstrap(
     .await
     .map_err(|_| ApplicationError::Storage)?;
     if updated.rows_affected() != 1 {
-        // Un segundo intento no puede reabrir ni completar de nuevo.
         return Err(ApplicationError::Storage);
     }
     Ok(())

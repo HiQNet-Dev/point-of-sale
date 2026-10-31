@@ -26,6 +26,8 @@
 pub mod audit;
 /// Comprobaciones de scope y permiso previas a cualquier caso de uso.
 pub mod authorization;
+/// Aprovisionamiento inicial SYSTEM mediante capacidad autorizada.
+pub mod bootstrap;
 /// Casos de uso, DTOs y puertos de cajas y turnos.
 pub mod cash;
 /// Casos de uso, DTOs y puertos del catálogo.
