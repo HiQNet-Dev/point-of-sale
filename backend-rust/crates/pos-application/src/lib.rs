@@ -39,6 +39,8 @@ pub mod organization;
 
 /// Casos de uso, DTOs y puertos de inventario.
 pub mod inventory;
+/// Casos de uso, DTOs y puertos de compras (proveedores, órdenes y recepciones).
+pub mod purchasing;
 /// Contexto operativo de una venta (sucursal, caja y turno vigentes).
 pub mod sales;
 pub mod sales_context;
