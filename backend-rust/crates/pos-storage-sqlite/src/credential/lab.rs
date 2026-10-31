@@ -16,7 +16,14 @@
 //! Ninguna transición se anuncia como persistida si el CAS no confirmó la fila.
 //! No es autenticación productiva: no emite sesiones ni entrega handles.
 
-use std::{future::Future, sync::Arc};
+use std::{
+    future::Future,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use pos_core::{
     identity::{
@@ -30,7 +37,7 @@ use pos_credentials::{
 };
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, SqliteConnection, SqlitePool};
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use zeroize::Zeroizing;
 
 use crate::{CasOutcome, SqliteTransaction, SqliteUnitOfWork};
@@ -438,13 +445,72 @@ impl<'a> SqliteCredentialLab<'a> {
 /// El permiso se mueve al trabajo bloqueante: cancelar el future que espera no
 /// libera el slot mientras el cálculo siga en ejecución, y nunca se retiene un
 /// lock de SQLite esperando capacidad.
+///
+/// Una verificación Argon2id con `m=19456 KiB` reserva ~19 MiB por operación,
+/// pero el asignador retiene bloques por hilo: ocho verificaciones simultáneas
+/// midieron ~1.4 GiB de RSS en un equipo de 2 vCPU (ver
+/// `docs/05-development/rust-auth-benchmark-2a.md`). Por eso el límite no es solo
+/// un semáforo: admite una cola acotada y un tiempo máximo de espera.
 #[derive(Clone)]
 pub struct VerificationGate {
     permits: Arc<Semaphore>,
+    admission: Option<Arc<Admission>>,
+    max_wait: Option<Duration>,
+}
+
+/// Política de admisión de verificaciones simultáneas.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AdmissionPolicy {
+    /// Verificaciones criptográficas simultáneas.
+    pub max_concurrent: usize,
+    /// Intentos que pueden esperar un slot antes de rechazar con saturación.
+    pub queue_capacity: usize,
+    /// Espera máxima antes de responder con saturación.
+    pub max_wait: Duration,
+}
+
+/// Contador de intentos en espera; se libera al salir del ámbito.
+struct Admission {
+    capacity: usize,
+    waiting: AtomicUsize,
+}
+
+/// Guardia de un intento encolado.
+struct Waiting<'a>(&'a Admission);
+
+impl Drop for Waiting<'_> {
+    fn drop(&mut self) {
+        self.0.waiting.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+impl Admission {
+    /// Reserva un lugar en la cola o falla de inmediato si está llena.
+    fn join(&self) -> Result<Waiting<'_>, IdentityError> {
+        let mut current = self.waiting.load(Ordering::Acquire);
+        loop {
+            if current >= self.capacity {
+                return Err(IdentityError::VerificationSaturated);
+            }
+            match self.waiting.compare_exchange_weak(
+                current,
+                current + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return Ok(Waiting(self)),
+                Err(observed) => current = observed,
+            }
+        }
+    }
 }
 
 impl VerificationGate {
     /// Crea un límite explícito de verificaciones concurrentes.
+    ///
+    /// Sin cola acotada: los intentos esperan el slot tanto como haga falta. Es
+    /// el comportamiento histórico del laboratorio y **no** debe usarse en
+    /// producto; para eso existe [`Self::with_admission`].
     ///
     /// # Errors
     /// Devuelve [`IdentityError::StorageUnavailable`] si el límite es cero.
@@ -454,6 +520,27 @@ impl VerificationGate {
         }
         Ok(Self {
             permits: Arc::new(Semaphore::new(max_concurrent)),
+            admission: None,
+            max_wait: None,
+        })
+    }
+
+    /// Crea un límite con cola acotada y espera máxima.
+    ///
+    /// # Errors
+    /// Devuelve [`IdentityError::StorageUnavailable`] si algún valor es cero o
+    /// la espera es nula.
+    pub fn with_admission(policy: AdmissionPolicy) -> Result<Self, IdentityError> {
+        if policy.max_concurrent == 0 || policy.queue_capacity == 0 || policy.max_wait.is_zero() {
+            return Err(IdentityError::StorageUnavailable);
+        }
+        Ok(Self {
+            permits: Arc::new(Semaphore::new(policy.max_concurrent)),
+            admission: Some(Arc::new(Admission {
+                capacity: policy.queue_capacity,
+                waiting: AtomicUsize::new(0),
+            })),
+            max_wait: Some(policy.max_wait),
         })
     }
 
@@ -462,17 +549,42 @@ impl VerificationGate {
         self.permits.available_permits()
     }
 
+    /// Intentos actualmente en cola.
+    pub fn queued_permits(&self) -> usize {
+        self.admission
+            .as_ref()
+            .map_or(0, |admission| admission.waiting.load(Ordering::Acquire))
+    }
+
+    /// Obtiene capacidad de verificación o falla con saturación.
+    ///
+    /// Un slot libre no cuenta como espera: la cola solo mide a quienes no
+    /// pueden verificar de inmediato.
+    async fn acquire(&self) -> Result<OwnedSemaphorePermit, IdentityError> {
+        if let Ok(permit) = self.permits.clone().try_acquire_owned() {
+            return Ok(permit);
+        }
+        // La reserva de cola se libera al terminar la espera, con éxito o error.
+        let _waiting = match &self.admission {
+            Some(admission) => Some(admission.join()?),
+            None => None,
+        };
+        let pending = self.permits.clone().acquire_owned();
+        let permit = match self.max_wait {
+            Some(limit) => tokio::time::timeout(limit, pending)
+                .await
+                .map_err(|_| IdentityError::VerificationSaturated)?,
+            None => pending.await,
+        };
+        permit.map_err(|_| IdentityError::StorageUnavailable)
+    }
+
     async fn run<T, F>(&self, work: F) -> Result<T, IdentityError>
     where
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
     {
-        let permit = self
-            .permits
-            .clone()
-            .acquire_owned()
-            .await
-            .map_err(|_| IdentityError::StorageUnavailable)?;
+        let permit = self.acquire().await?;
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
             work()
@@ -660,5 +772,101 @@ impl CredentialRow {
             UtcSeconds::new(self.updated_at)?,
         )
         .map_err(|_| IdentityError::StorageUnavailable)
+    }
+}
+
+#[cfg(test)]
+mod admission_tests {
+    // Las fixtures verifican la política de admisión; los panics no son de producto.
+    #![allow(clippy::panic, clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+
+    fn policy(queue_capacity: usize, max_wait_millis: u64) -> AdmissionPolicy {
+        AdmissionPolicy {
+            max_concurrent: 1,
+            queue_capacity,
+            max_wait: Duration::from_millis(max_wait_millis),
+        }
+    }
+
+    #[test]
+    fn admission_queue_is_bounded_and_releases_its_slot() {
+        let admission = Admission {
+            capacity: 1,
+            waiting: AtomicUsize::new(0),
+        };
+        let first = admission.join().expect("primer intento admitido");
+        assert_eq!(admission.waiting.load(Ordering::Acquire), 1);
+        assert!(matches!(
+            admission.join(),
+            Err(IdentityError::VerificationSaturated)
+        ));
+        drop(first);
+        assert_eq!(admission.waiting.load(Ordering::Acquire), 0);
+        assert!(admission.join().is_ok());
+    }
+
+    #[test]
+    fn admission_policy_rejects_degenerate_limits() {
+        assert!(VerificationGate::with_admission(policy(0, 50)).is_err());
+        assert!(
+            VerificationGate::with_admission(AdmissionPolicy {
+                max_concurrent: 0,
+                queue_capacity: 1,
+                max_wait: Duration::from_millis(50),
+            })
+            .is_err()
+        );
+        assert!(
+            VerificationGate::with_admission(AdmissionPolicy {
+                max_concurrent: 1,
+                queue_capacity: 1,
+                max_wait: Duration::ZERO,
+            })
+            .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn saturated_queue_and_expired_waiters_get_a_safe_error() {
+        let gate = VerificationGate::with_admission(policy(1, 30)).expect("política válida");
+        let held = gate.acquire().await.expect("slot libre");
+
+        let waiter = tokio::spawn({
+            let gate = gate.clone();
+            async move { gate.acquire().await.map(|_| ()) }
+        });
+        for _ in 0..1_000 {
+            if gate.queued_permits() == 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(gate.queued_permits(), 1, "el segundo intento debe esperar");
+
+        // Tercer intento con la cola llena: respuesta inmediata y segura.
+        assert!(matches!(
+            gate.acquire().await,
+            Err(IdentityError::VerificationSaturated)
+        ));
+        assert!(matches!(
+            waiter.await.expect("tarea de espera"),
+            Err(IdentityError::VerificationSaturated)
+        ));
+        // Ni la cola ni los permisos quedan retenidos tras la saturación.
+        assert_eq!(gate.queued_permits(), 0);
+
+        drop(held);
+        assert_eq!(gate.available_permits(), 1);
+        assert!(gate.acquire().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_free_slot_never_counts_as_queue() {
+        let gate = VerificationGate::with_admission(policy(1, 1_000)).expect("política válida");
+        let permit = gate.acquire().await.expect("slot libre");
+        assert_eq!(gate.queued_permits(), 0);
+        drop(permit);
     }
 }

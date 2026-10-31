@@ -18,6 +18,9 @@
 //! 3. Carga concurrente y una ráfaga de intentos simultáneos, que modela una
 //!    avalancha de logins; el benchmark informa saturación, no aplica límites.
 //! 4. Pico de RSS cuando el sistema expone `/proc`.
+//! 5. Aislamiento de memoria por proceso (`--memory-isolation`): ejecuta cada
+//!    escenario en un proceso hijo nuevo para separar memoria base, coste de una
+//!    operación Argon2id y memoria retenida por el asignador tras concurrencia.
 //!
 //! # Entorno
 //!
@@ -33,6 +36,7 @@
 use std::{
     env, fs,
     io::Write,
+    process::Command,
     time::{Duration, Instant},
 };
 
@@ -96,6 +100,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut workers = vec![1_u32, 4, 16];
     let mut burst = DEFAULT_BURST;
     let mut output: Option<String> = None;
+    let mut isolate_memory = false;
     let mut arguments = env::args().skip(1);
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
@@ -121,6 +126,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     burst = value.parse().unwrap_or(DEFAULT_BURST).max(1);
                 }
             }
+            "--memory-isolation" => isolate_memory = true,
+            "--memory-child" => {
+                // Modo interno: un escenario por proceso, sin estado compartido.
+                let workers = arguments
+                    .next()
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .unwrap_or(0);
+                return memory_child(workers);
+            }
             "--json" => output = arguments.next(),
             _ => {}
         }
@@ -133,6 +147,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let concurrency = measure_concurrency(&workers, rounds)?;
     let after_concurrency = peak_rss_kib();
     let burst_report = measure_burst(burst)?;
+    let memory_isolation = if isolate_memory {
+        measure_memory_isolation()?
+    } else {
+        Value::Null
+    };
     let report = json!({
         "status": "OBSERVED",
         "normative": "D-AUTH-09 remains blocked until target hardware evidence is recorded and the holder approves",
@@ -143,6 +162,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "concurrency": concurrency,
         "burst": burst_report,
         "memory": memory_profile(after_policies, after_candidates, after_concurrency),
+        "memory_isolation": memory_isolation,
     });
 
     let rendered = serde_json::to_string_pretty(&report)?;
@@ -212,6 +232,94 @@ fn peak_rss_kib() -> Option<u64> {
             .and_then(|rest| rest.split_whitespace().next())
             .and_then(|value| value.parse::<u64>().ok())
     })
+}
+
+/// Un escenario de memoria por proceso: base, una operación y concurrencia.
+///
+/// Se ejecuta en un hijo porque `VmHWM` es monótono y el asignador reutiliza
+/// bloques: medir todo en el mismo proceso confunde coste criptográfico con
+/// retención del asignador.
+fn memory_child(workers: u32) -> Result<(), Box<dyn std::error::Error>> {
+    let base = peak_rss_kib();
+    let policy = Argon2Policy::LAB_V1;
+    let started = Instant::now();
+    let stored = hash_password(PASSWORD, policy)?;
+    let hash_ms = millis(started.elapsed());
+    let after_hash = peak_rss_kib();
+
+    let mut failures = 0_u32;
+    let verify_started = Instant::now();
+    if workers > 0 {
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..workers)
+                .map(|_| {
+                    let reference = &stored;
+                    scope.spawn(move || {
+                        matches!(
+                            verify_credential(&VerifyRequest {
+                                purpose: CredentialKind::Password,
+                                algorithm: CredentialAlgorithm::Argon2id,
+                                stored: reference,
+                                password: PASSWORD,
+                            }),
+                            Ok(VerificationOutcome::Verified { .. })
+                        )
+                    })
+                })
+                .collect();
+            for handle in handles {
+                match handle.join() {
+                    Ok(true) => {}
+                    _ => failures += 1,
+                }
+            }
+        });
+    }
+    let verify_ms = millis(verify_started.elapsed());
+    let peak = peak_rss_kib();
+    println!(
+        "{}",
+        json!({
+            "workers": workers,
+            "policy": policy.id(),
+            "m_kib": policy.memory_kib(),
+            "base_rss_kib": base,
+            "after_hash_rss_kib": after_hash,
+            "peak_rss_kib": peak,
+            "crypto_cost_kib": after_hash.zip(base).map(|(after, before)| after.saturating_sub(before)),
+            "allocator_retained_kib": peak.zip(after_hash).map(|(after, hash)| after.saturating_sub(hash)),
+            "hash_ms": hash_ms,
+            "verify_wall_ms": verify_ms,
+            "failures": failures,
+            "rss_available": peak.is_some(),
+        })
+    );
+    Ok(())
+}
+
+/// Ejecuta el escenario de memoria en procesos hijos independientes.
+fn measure_memory_isolation() -> Result<Value, Box<dyn std::error::Error>> {
+    let executable = env::current_exe()?;
+    let mut scenarios = Vec::new();
+    for workers in [0_u32, 1, 2, 4, 8] {
+        let output = Command::new(&executable)
+            .arg("--memory-child")
+            .arg(workers.to_string())
+            .output()?;
+        if !output.status.success() {
+            scenarios.push(json!({ "workers": workers, "status": "FAILED" }));
+            continue;
+        }
+        let rendered = String::from_utf8(output.stdout)?;
+        match serde_json::from_str::<Value>(rendered.trim()) {
+            Ok(value) => scenarios.push(value),
+            Err(_) => scenarios.push(json!({ "workers": workers, "status": "UNPARSEABLE" })),
+        }
+    }
+    Ok(json!({
+        "scenarios": scenarios,
+        "note": "Cada escenario es un proceso nuevo: base, coste de una operación y retención del asignador quedan separados. `rss_available=false` indica que el sistema no expone /proc; la evidencia debe repetirse en el equipo objetivo.",
+    }))
 }
 
 fn measure_registered_policies(rounds: u32) -> Result<Value, Box<dyn std::error::Error>> {

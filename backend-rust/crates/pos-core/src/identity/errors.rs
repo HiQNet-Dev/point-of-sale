@@ -37,6 +37,11 @@ pub enum IdentityError {
     ScopeDenied,
     /// Un permiso no es un código técnico estable.
     InvalidPermission,
+    /// No hay capacidad de verificación en el tiempo máximo de espera.
+    ///
+    /// Es una respuesta segura: no revela si el usuario existe ni el estado de
+    /// su credencial, y nunca se interpreta como autenticación correcta.
+    VerificationSaturated,
 }
 
 impl fmt::Display for IdentityError {
@@ -59,6 +64,7 @@ impl fmt::Display for IdentityError {
             Self::StorageUnavailable => "almacenamiento no disponible",
             Self::ScopeDenied => "scope denegado",
             Self::InvalidPermission => "permiso inválido",
+            Self::VerificationSaturated => "capacidad de verificación saturada",
         })
     }
 }
