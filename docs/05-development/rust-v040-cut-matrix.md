@@ -23,8 +23,8 @@ ninguna fila comprometida quede en `BLOCKED`.
 | Sucursales | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Mantener; lectura solo en laboratorio |
 | Bootstrap administrativo | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Mantener; autorización nativa lista |
 | Provisioning (token/CLI) | IMPLEMENTED (secreto) | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Mantener; falta UI de instalación |
-| Usuarios | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Mantener; falta login comercial |
-| Autenticación / sesión | IMPLEMENTED | BLOCKED | BLOCKED | BLOCKED | BLOCKED | DEFERRED | **Bloqueo principal**: falta caso de uso de login e IPC |
+| Usuarios | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Login operativo; falta administración de usuarios |
+| Autenticación / sesión | IMPLEMENTED | IMPLEMENTED | TESTED | INTEGRATED | IMPLEMENTED | TESTED | Sesión nativa, RBAC y reapertura demostrados sobre SQLite real |
 | RBAC / memberships | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Mantener; resolución probada |
 | Auditoría | IMPLEMENTED | IMPLEMENTED | TESTED | DEFERRED | DEFERRED | DEFERRED | Mantener; no se expone UI en v0.4.0 |
 | Catálogo (categorías, productos) | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Laboratorio ya integrado; falta activación comercial |
@@ -47,21 +47,23 @@ ninguna fila comprometida quede en `BLOCKED`.
 
 ## Lectura honesta
 
-Con esta matriz **no** se puede retirar Java todavía. La sustitución funcional
-existe hasta persistencia y aplicación, pero el producto no es operable por un
-usuario final porque faltan:
+La autenticación ya no bloquea el producto: el administrador creado por
+provisioning inicia sesión, recibe sus permisos reales, selecciona sucursal y
+cierra sesión sobre SQLite real, con reapertura y nueva autenticación. El E2E de
+esta fila es un test de integración Rust sobre el esquema productivo y la
+composición del escritorio; **no** es un E2E gráfico de WebView2.
 
-1. Caso de uso comercial de login/sesión y su IPC.
-2. Handlers IPC de operación (organización, catálogo, caja, ventas, inventario,
+Con esta matriz **no** se puede retirar Java todavía. Faltan:
+
+1. Handlers IPC de operación (organización, catálogo, caja, ventas, inventario,
    compras) y sus ACL por permiso.
-3. Pantallas React conectadas a esos handlers.
-4. Seguridad nativa de Windows para el canal de provisioning.
-5. E2E de escritorio real y Docker que ejerzan el flujo comercial.
+2. Pantallas React de esos flujos.
+3. Seguridad nativa de Windows para el canal de provisioning.
+4. E2E gráfico de escritorio y Docker que ejerza el flujo comercial.
 
 ## Siguiente orden de corte
 
-1. Login/sesión/RBAC por IPC (desbloquea todas las filas `BLOCKED` de negocio).
+1. Handlers de operación + pantallas sobre el principal ya autenticado.
 2. `pos-windows-security` (desbloquea provisioning en Windows).
-3. Handlers de operación + pantallas.
-4. E2E de escritorio y Docker comercial.
-5. Retirada de Java y release `v0.4.0`.
+3. E2E de escritorio y Docker comercial.
+4. Retirada de Java y release `v0.4.0`.

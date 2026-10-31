@@ -4,6 +4,22 @@ All notable changes to HiQNet POS are documented in this file.
 
 ## [Unreleased] — 0.4.0-SNAPSHOT (Rust cutover)
 
+### Autenticación Local
+
+- Login comercial en Rust sobre SQLite: Argon2id verificado fuera del hilo de la
+  transacción, CAS sobre `credential_version`, bloqueo 5/15 min equivalente a
+  Java, sesiones de alta entropía con solo el digest persistido y auditoría
+  `auth.login` / `auth.login_failed` en la misma UoW.
+- Un único error genérico para usuario inexistente, contraseña errónea, cuenta
+  inactiva, credencial bloqueada o reset pendiente.
+- IPC Tauri: `auth_login`, `auth_me`, `auth_logout`, `auth_logout_all`,
+  `auth_select_branch` y `auth_list_branches`. El handle de sesión queda en
+  memoria nativa; el renderer nunca lo recibe ni lo guarda.
+- React: pantalla de acceso, sesión autenticada, permisos efectivos, selección de
+  sucursal y cierre de sesión. El laboratorio sigue rechazando `auth_*`.
+- D-AUTH-09 medido en hardware Windows: `local-argon2-v2` (32 MiB, t=3, p=1) con
+  `verify` p95 ≈ 51 ms; pendiente de ratificación.
+
 ### Storage / migraciones
 
 - Promovido el esquema Local completo `0002`–`0017` al migrador productivo
