@@ -9,6 +9,8 @@
 
 /// Escritor de auditoría sobre la tabla candidata `audit_event`. No productivo.
 pub mod audit;
+/// Snapshots consistentes y restauración a destino nuevo; sin exposición IPC.
+pub mod backup;
 /// Provisioning inicial sobre el esquema candidato. No productivo.
 pub mod bootstrap;
 /// Cajas y turnos persistentes sobre el esquema candidato. No productivo.
