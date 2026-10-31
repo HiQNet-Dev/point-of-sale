@@ -170,6 +170,14 @@ fn bootstrap_request() -> BootstrapRequest {
         administrator_role_code: BusinessCode::new("administrator")
             .unwrap_or_else(|error| panic!("rol: {error}")),
         installation_fingerprint: "ed25519:pos-lab-synthetic".to_owned(),
+        initial_credential: pos_storage_sqlite::bootstrap::CandidateBootstrapPasswords::lab_v1()
+            .prepare(
+                id(ADMIN),
+                id(ADMIN),
+                "contraseña-sintetica-pos-lab-2d",
+                UtcSeconds::new(NOW).unwrap_or_else(|_| panic!("instante sintético inválido")),
+            )
+            .unwrap_or_else(|_| panic!("credencial inicial sintética no disponible")),
     }
 }
 
@@ -186,15 +194,10 @@ async fn prepare_database(pool: &SqlitePool) -> Result<(), Box<dyn Error>> {
 async fn provision(pool: &SqlitePool) -> Result<(EntityId, BootstrapProvisioning), Box<dyn Error>> {
     let capability = authorize_bootstrap(&LabVerifier, BOOTSTRAP_SECRET)?;
     let unit_of_work = SqliteUnitOfWork::new(pool.clone());
+    let request = bootstrap_request();
     let mut transaction = unit_of_work.begin().await?;
 
-    provision_initial_installation(
-        &mut transaction,
-        &capability,
-        &bootstrap_request(),
-        OPENED_AT,
-    )
-    .await?;
+    provision_initial_installation(&mut transaction, &capability, &request, OPENED_AT).await?;
     // El caso de uso canónico ya asignó al administrador el catálogo vigente.
 
     let branch = Branch::create(

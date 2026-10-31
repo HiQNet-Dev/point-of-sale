@@ -1,8 +1,9 @@
 //! Aprovisionamiento inicial canónico sobre una única transacción del llamador.
 //!
 //! No elige una política comercial: exige la capacidad de `authorize_bootstrap`
-//! ya emitida mediante el secreto de despliegue. No crea credenciales ni sesiones
-//! implícitas. Su activación Local sigue pendiente de aprobación del bloque A.
+//! ya emitida mediante el secreto de despliegue. La credencial inicial exige
+//! prueba criptográfica previa y se confirma junto al provisioning; no emite
+//! sesiones implícitas. Su activación sigue pendiente de A y D-AUTH-09.
 
 use std::future::Future;
 
@@ -15,8 +16,10 @@ use pos_core::{
 };
 
 use crate::audit::AuditAppender;
+pub use crate::bootstrap_password::{BootstrapPasswordVerifier, VerifiedInitialCredential};
 
-/// Datos públicos del provisioning; no contiene secretos ni actores de cliente.
+/// Entrada interna de provisioning; sin contraseña en claro ni actor de cliente.
+/// No es serializable ni se expone como DTO: incluye material de hash redactado.
 #[derive(Clone, Debug)]
 pub struct BootstrapRequest {
     /// Instalación que se provisiona.
@@ -39,6 +42,8 @@ pub struct BootstrapRequest {
     pub administrator_role_code: BusinessCode,
     /// Huella pública; nunca material de clave privada.
     pub installation_fingerprint: String,
+    /// Contraseña inicial ya comprobada; no puede omitirse.
+    pub initial_credential: VerifiedInitialCredential,
 }
 
 /// Persistencia del provisioning sobre la misma UoW que la auditoría.
@@ -54,7 +59,21 @@ pub trait BootstrapTransaction: AuditAppender {
         request: &BootstrapRequest,
     ) -> impl Future<Output = Result<(), ApplicationError>> + Send;
 
-    /// Persiste el agregado y sus vínculos iniciales, sin confirmar la transacción.
+    /// Inserta la credencial comprobada en la misma conexión, sin commit.
+    fn insert_initial_credential(
+        &mut self,
+        request: &BootstrapRequest,
+        occurred_at: &str,
+    ) -> impl Future<Output = Result<(), ApplicationError>> + Send;
+
+    /// Completa el registro solo después de persistir credencial y grants.
+    fn complete_initial_bootstrap(
+        &mut self,
+        request: &BootstrapRequest,
+        occurred_at: &str,
+    ) -> impl Future<Output = Result<(), ApplicationError>> + Send;
+
+    /// Persiste el agregado y sus vínculos iniciales, sin completar ni confirmar.
     fn insert_initial_identity(
         &mut self,
         organization: &Organization,
@@ -81,8 +100,8 @@ pub async fn requires_provisioning<T: BootstrapTransaction>(
 ///
 /// # Errors
 /// Devuelve Storage para identidad existente/parcial o errores de persistencia;
-/// Audit si el evento no se puede construir/escribir. No emite sesiones ni
-/// declara credenciales verificadas: ese paso necesita su política autorizada.
+/// Audit si el evento no se puede construir/escribir. La credencial obligatoria
+/// debe pertenecer al administrador de este request. No emite sesiones.
 pub async fn provision_initial_installation<T: BootstrapTransaction>(
     transaction: &mut T,
     capability: &BootstrapProvisioning,
@@ -91,6 +110,9 @@ pub async fn provision_initial_installation<T: BootstrapTransaction>(
 ) -> Result<Organization, ApplicationError> {
     let occurred_at = AuditOccurredAt::new(occurred_at).map_err(|_| ApplicationError::Audit)?;
     if !requires_provisioning(transaction).await? {
+        return Err(ApplicationError::Storage);
+    }
+    if request.initial_credential.credential().user_id() != &request.administrator_id {
         return Err(ApplicationError::Storage);
     }
     let organization = Organization::create(
@@ -108,7 +130,13 @@ pub async fn provision_initial_installation<T: BootstrapTransaction>(
     transaction
         .insert_initial_identity(&organization, request, occurred_at.as_str())
         .await?;
+    transaction
+        .insert_initial_credential(request, occurred_at.as_str())
+        .await?;
     transaction.grant_administrator_catalog(request).await?;
     transaction.append_audit_event(&event).await?;
+    transaction
+        .complete_initial_bootstrap(request, occurred_at.as_str())
+        .await?;
     Ok(organization)
 }

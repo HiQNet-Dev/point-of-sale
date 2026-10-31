@@ -85,6 +85,20 @@ async fn open_candidate() -> Result<(tempfile::TempDir, SqlitePool), Box<dyn std
     Ok((temp, pool))
 }
 
+#[path = "bootstrap_atomicity_tests.rs"]
+mod bootstrap_atomicity;
+
+fn candidate_password(user: EntityId) -> pos_application::bootstrap::VerifiedInitialCredential {
+    crate::bootstrap::CandidateBootstrapPasswords::new(pos_credentials::Argon2Policy::LAB_V1)
+        .prepare(
+            user.clone(),
+            user,
+            "contraseña-sintetica-inicial-2d",
+            utc(1_793_232_000),
+        )
+        .unwrap_or_else(|_| panic!("no se pudo preparar la credencial sintética"))
+}
+
 fn request() -> BootstrapRequest {
     BootstrapRequest {
         installation_id: id(INSTALLATION),
@@ -107,6 +121,7 @@ fn request() -> BootstrapRequest {
         administrator_role_code: BusinessCode::new("administrator")
             .unwrap_or_else(|error| panic!("rol: {error}")),
         installation_fingerprint: "ed25519:test-fingerprint".to_owned(),
+        initial_credential: candidate_password(id(ADMIN)),
     }
 }
 
@@ -321,6 +336,7 @@ async fn bootstrap_rejects_new_ids_after_reopen() -> Result<(), Box<dyn std::err
     other.organization_id = id("00000000-0000-0000-0000-0000000010a0");
     other.organization.code = BusinessCode::new("segunda")?;
     other.administrator_id = id("00000000-0000-0000-0000-0000000010a1");
+    other.initial_credential = candidate_password(other.administrator_id.clone());
     other.administrator_role_id = id("00000000-0000-0000-0000-0000000010b0");
     other.audit_event_id = AuditEventId::new(id("00000000-0000-0000-0000-0000000010e0"));
     assert!(
@@ -350,6 +366,7 @@ async fn concurrent_bootstraps_with_distinct_ids_only_commit_once()
     second.organization_id = id("00000000-0000-0000-0000-0000000020a0");
     second.organization.code = BusinessCode::new("concurrente")?;
     second.administrator_id = id("00000000-0000-0000-0000-0000000020a1");
+    second.initial_credential = candidate_password(second.administrator_id.clone());
     second.administrator_role_id = id("00000000-0000-0000-0000-0000000020b0");
     second.audit_event_id = AuditEventId::new(id("00000000-0000-0000-0000-0000000020e0"));
     async fn attempt(
@@ -408,7 +425,8 @@ async fn bootstrap_audit_failure_rolls_back_every_initial_row()
         "SELECT (SELECT COUNT(*) FROM organization) + (SELECT COUNT(*) FROM installation_identity) \
          + (SELECT COUNT(*) FROM bootstrap_record) + (SELECT COUNT(*) FROM pos_user) \
          + (SELECT COUNT(*) FROM role) + (SELECT COUNT(*) FROM user_organization_role) \
-         + (SELECT COUNT(*) FROM role_permission) + (SELECT COUNT(*) FROM audit_event)",
+         + (SELECT COUNT(*) FROM role_permission) + (SELECT COUNT(*) FROM local_credential) \
+         + (SELECT COUNT(*) FROM audit_event)",
     )
     .fetch_one(&pool)
     .await?;

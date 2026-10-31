@@ -35,6 +35,35 @@ impl BootstrapTransaction for SqliteTransaction {
         Ok(())
     }
 
+    async fn insert_initial_credential(
+        &mut self,
+        request: &BootstrapRequest,
+        occurred_at: &str,
+    ) -> Result<(), ApplicationError> {
+        let credential = request.initial_credential.credential();
+        sqlx::query(
+            "INSERT INTO local_credential (id,user_id,organization_id,credential_kind,algorithm,secret_hash,params_json,policy_id,state,credential_version,failed_login_attempts,created_at,updated_at) \
+             VALUES (?,?,?,'PASSWORD','ARGON2ID',?,?,?,'ACTIVE',1,0,?,?)",
+        )
+        .bind(credential.id().as_str())
+        .bind(credential.user_id().as_str())
+        .bind(request.organization_id.as_str())
+        .bind(credential.secret_hash().expose_to_verifier())
+        .bind(credential.parameters().canonical_json())
+        .bind(credential.policy_id())
+        .bind(occurred_at).bind(occurred_at)
+        .execute(self.connection()).await.map_err(|_| ApplicationError::Storage)?;
+        Ok(())
+    }
+
+    async fn complete_initial_bootstrap(
+        &mut self,
+        request: &BootstrapRequest,
+        occurred_at: &str,
+    ) -> Result<(), ApplicationError> {
+        complete_bootstrap(self.connection(), request, occurred_at).await
+    }
+
     async fn insert_initial_identity(
         &mut self,
         organization: &Organization,
@@ -49,8 +78,7 @@ impl BootstrapTransaction for SqliteTransaction {
         insert_pending_bootstrap(connection, request, occurred_at).await?;
         insert_administrator(connection, request, occurred_at).await?;
         insert_role(connection, request, occurred_at).await?;
-        assign_role(connection, request, occurred_at).await?;
-        complete_bootstrap(connection, request, occurred_at).await
+        assign_role(connection, request, occurred_at).await
     }
 }
 
@@ -158,13 +186,22 @@ async fn complete_bootstrap(
     let updated = sqlx::query(
         "UPDATE bootstrap_record SET state = 'COMPLETED', completed_at = ?, organization_id = ?, \
          administrator_user_id = ?, administrator_role_id = ?, bootstrap_version = 1, updated_at = ? \
-         WHERE installation_id = ? AND state = 'PENDING'",
+         WHERE installation_id = ? AND state = 'PENDING' \
+         AND EXISTS (SELECT 1 FROM local_credential WHERE user_id = ? AND organization_id = ? \
+             AND credential_kind = 'PASSWORD' AND state = 'ACTIVE') \
+         AND EXISTS (SELECT 1 FROM audit_event WHERE id = ? AND action = 'bootstrap.completed' \
+             AND actor_type = 'SYSTEM' AND organization_id = ? AND entity_id = ?)",
     )
     .bind(occurred_at)
     .bind(request.organization_id.as_str())
     .bind(request.administrator_id.as_str())
     .bind(request.administrator_role_id.as_str())
     .bind(occurred_at)
+    .bind(request.installation_id.as_str())
+    .bind(request.administrator_id.as_str())
+    .bind(request.organization_id.as_str())
+    .bind(request.audit_event_id.as_entity_id().as_str())
+    .bind(request.organization_id.as_str())
     .bind(request.installation_id.as_str())
     .execute(connection)
     .await
