@@ -18,6 +18,11 @@ export function InstallationPage({ status }: { status: InstallationStatusDto }) 
         Previsualización técnica. Las operaciones comerciales requieren la aprobación de las
         decisiones de identidad, catálogo, caja, ventas e inventario.
       </Alert>
+      <Alert severity="info" role="status">
+        Identidad no habilitada: provisioning, login y operaciones administrativas siguen bloqueados.
+        El estado del esquema no acredita un administrador ni una sesión válida; tampoco permite
+        distinguir todavía una sesión inexistente, expirada o revocada.
+      </Alert>
       <Box component="section" aria-labelledby="installation-heading">
         <Typography id="installation-heading" variant="h6" component="h2">Estado del esquema</Typography>
         <Table aria-label="Estado de la instalación">
