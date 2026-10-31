@@ -118,6 +118,21 @@ fn tokens(sql: &str) -> Result<Vec<String>> {
     Ok(result)
 }
 
+/// Extrae los paths de `git status --porcelain=v1 -z`.
+///
+/// Las entradas de rename/copy añaden el path original como registro separado;
+/// solo se conserva el path nuevo (el registro que empieza con dos códigos y un
+/// espacio) para no duplicar migraciones en el manifiesto.
+fn status_paths(stdout: &[u8]) -> Vec<String> {
+    stdout
+        .split(|byte| *byte == 0)
+        .filter(|entry| {
+            entry.len() >= 4 && entry[2] == b' ' && (entry[0] != b' ' || entry[1] != b' ')
+        })
+        .map(|entry| String::from_utf8_lossy(&entry[3..]).into_owned())
+        .collect()
+}
+
 fn tables(sql: &str) -> Result<Vec<String>> {
     let tokens = tokens(sql)?;
     let mut tables = Vec::new();
@@ -202,11 +217,39 @@ pub(crate) fn baseline(repo: &Path) -> Result<Value> {
         }),
         _ => json!({"status": "NOT_RUN", "dirty": null, "reason": "git status no disponible"}),
     };
+    // Las migraciones Java son inmutables (ADR-0002/F4-21). Detecta ediciones sin
+    // commitear para que el manifiesto no presente como fuente íntegra un checkout
+    // con V1–V25 modificadas; no reemplaza la validación de checksums de Flyway.
+    let flyway_status = Command::new("git")
+        .args([
+            "--no-optional-locks",
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--",
+            "backend/src/main/resources/db/migration",
+        ])
+        .current_dir(repo)
+        .output();
+    let flyway_worktree = match flyway_status {
+        Ok(output) if output.status.success() => {
+            let paths = status_paths(&output.stdout);
+            json!({
+                "status": "OBSERVED",
+                "clean": paths.is_empty(),
+                "paths": paths,
+                "scope": "git status del directorio Flyway; detecta ediciones/untracked, no valida contra un servidor ni certifica V1–V25",
+            })
+        }
+        _ => json!({"status": "NOT_RUN", "clean": null, "reason": "git status no disponible"}),
+    };
     Ok(json!({
         "status": if verified { "VERIFIED_SOURCE_INVENTORY" } else { "BLOCKED" },
         "scope": "Fuentes del checkout actual, no catálogo de una BD ejecutada ni certificación de paridad",
         "git_head": command(repo, "git", &["--no-pager", "rev-parse", "HEAD"]),
         "worktree": worktree,
+        "flyway_worktree": flyway_worktree,
         "flyway": {"expected_count": 25, "observed_count": files.len(), "files": files},
         "table_inventory": {"expected_count": 37, "observed_count": inventory.len(), "names": inventory,
             "method": "CREATE TABLE no citado, fuera de comentarios/literales/cuerpos; rechaza DROP TABLE y sintaxis no soportada; excluye flyway_schema_history"},
@@ -287,6 +330,23 @@ mod tests {
         assert!(tables("CREATE TABLE IF NOT EXISTS uncertain(id int)").is_err());
         assert!(tables("CREATE TABLE \"quoted\"(id int)").is_err());
         Ok(())
+    }
+
+    #[test]
+    fn flyway_status_parser_keeps_new_paths_and_ignores_rename_source() {
+        assert!(status_paths(b"").is_empty());
+        assert_eq!(
+            status_paths(b" M backend/src/main/resources/db/migration/V23__x.sql\0"),
+            vec!["backend/src/main/resources/db/migration/V23__x.sql"]
+        );
+        assert_eq!(
+            status_paths(b"?? backend/src/main/resources/db/migration/V26__new.sql\0"),
+            vec!["backend/src/main/resources/db/migration/V26__new.sql"]
+        );
+        assert_eq!(
+            status_paths(b"R  backend/src/main/resources/db/migration/V2__new.sql\0backend/src/main/resources/db/migration/V2__old.sql\0"),
+            vec!["backend/src/main/resources/db/migration/V2__new.sql"]
+        );
     }
 
     #[test]

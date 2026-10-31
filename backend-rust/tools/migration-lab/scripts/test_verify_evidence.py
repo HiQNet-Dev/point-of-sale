@@ -43,7 +43,9 @@ class VerifyEvidenceTests(unittest.TestCase):
             "normative_approved": 1,
             "normative_blocked": 29,
             "normative_complete": False,
+            "normative_status": "BLOCKED",
             "exit_code": 0,
+            "require_complete": False,
             "technical_status": "PASSED",
             "technical_checks": [
                 {"id": f"SYNTHETIC-{index}", "status": "PASSED"} for index in range(41)
@@ -150,6 +152,7 @@ class VerifyEvidenceTests(unittest.TestCase):
                 "table_inventory": {"observed_count": 37},
             },
         )
+        self.write_execution_summaries()
         (self.root / "schema-snapshots").mkdir()
         self.manifest = {
             "scope": "synthetic_technical_or_storage_subset",
@@ -171,9 +174,67 @@ class VerifyEvidenceTests(unittest.TestCase):
 
     def write_json(self, relative, value):
         (self.root / relative).write_text(json.dumps(value), encoding="utf-8")
+        if (
+            relative == "parity-report.json"
+            and (self.root / "baseline-manifest.json").is_file()
+        ):
+            self.write_execution_summaries()
 
     def write_manifest(self):
         self.write_json("schema-snapshots/technical-digests.json", self.manifest)
+
+    def write_execution_summaries(self):
+        baseline_digest = hashlib.sha256(
+            (self.root / "baseline-manifest.json").read_bytes()
+        ).hexdigest()
+        complete = self.parity["require_complete"]
+        code = self.parity["exit_code"]
+        technical_status = self.parity["technical_status"]
+        technical_failed = technical_status != "PASSED" or any(
+            case["status"] != "PASSED" for case in self.parity["technical_checks"]
+        )
+        gate = (
+            "NOT_EVALUATED"
+            if technical_failed
+            else ("BLOCKED" if complete else "NOT_REQUESTED")
+        )
+        self.write_json(
+            "run-result.json",
+            {
+                "schema_version": 1,
+                "technical_status": technical_status,
+                "normative_status": "BLOCKED",
+                "normative_complete": False,
+                "normative_approved": 1,
+                "normative_blocked": 29,
+                "require_complete": complete,
+                "exit_code": code,
+                "baseline_evidence": {
+                    "path": "baseline-manifest.json",
+                    "sha256": baseline_digest,
+                },
+            },
+        )
+        self.write_json(
+            "aggregate-status.json",
+            {
+                "schema_version": 1,
+                "status": "FAILED" if technical_failed else "BLOCKED",
+                "technical_status": technical_status,
+                "normative_status": "BLOCKED",
+                "baseline_evidence_status": "VERIFIED_SOURCE_INVENTORY",
+                "gate": {
+                    "require_complete": complete,
+                    "status": gate,
+                    "exit_code": code,
+                },
+                "sources": {
+                    "run_result": "run-result.json",
+                    "parity_report": "parity-report.json",
+                    "baseline_manifest": "baseline-manifest.json",
+                },
+            },
+        )
 
     def verify(self, exit_code=0):
         return subprocess.run(
@@ -191,25 +252,165 @@ class VerifyEvidenceTests(unittest.TestCase):
             timeout=10,
         )
 
-    def assert_rejected(self):
+    def assert_rejected(self, diagnostic="snapshot"):
         result = self.verify()
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertNotIn("verify-evidence: OK", result.stdout)
         self.assertIn("verify-evidence:", result.stderr)
-        self.assertIn("snapshot", result.stderr.lower())
+        self.assertIn(diagnostic, result.stderr)
         self.assertNotIn("Traceback", result.stderr)
 
     def test_valid_evidence_preserves_normal_and_incomplete_gate_results(self):
-        for exit_code in (0, 2):
-            with self.subTest(exit_code=exit_code):
+        for require_complete, exit_code in ((False, 0), (True, 2)):
+            with self.subTest(require_complete=require_complete):
+                self.parity["require_complete"] = require_complete
                 self.parity["exit_code"] = exit_code
                 self.write_json("parity-report.json", self.parity)
+                self.write_execution_summaries()
                 self.manifest["exit_code"] = exit_code
                 self.write_manifest()
                 result = self.verify(exit_code)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("normative_passed=1, normative_blocked=29", result.stdout)
                 self.assertIn(f"exit={exit_code}", result.stdout)
+
+    def test_inconsistent_execution_summaries_are_rejected(self):
+        self.write_json("run-result.json", {"schema_version": 1})
+        self.assert_rejected("run result")
+
+    def test_technical_failure_has_exit_one_and_gate_not_evaluated(self):
+        for require_complete in (False, True):
+            with self.subTest(require_complete=require_complete):
+                self.parity["require_complete"] = require_complete
+                self.parity["technical_status"] = "FAILED"
+                self.parity["technical_checks"][0]["status"] = "FAILED"
+                self.parity["exit_code"] = 1
+                self.write_json("parity-report.json", self.parity)
+                result = self.verify(1)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_missing_normative_case_replaced_by_duplicate_is_rejected(self):
+        original = self.parity["normative_cases"]
+        for index, case in enumerate(original):
+            if case["id"] == "PAR-08":
+                continue
+            with self.subTest(missing=case["id"]):
+                cases = [dict(item) for item in original]
+                replacement = "DDL13-02" if index == 0 else "DDL13-01"
+                cases[index]["id"] = replacement
+                self.parity["normative_cases"] = cases
+                self.write_json("parity-report.json", self.parity)
+                self.assert_rejected("normative case IDs")
+
+    def test_unexpected_or_invalid_normative_ids_are_rejected(self):
+        case = self.parity["normative_cases"][0]
+        for identifier in (
+            "DDL13-00",
+            "DDL13-12",
+            "PAR-00",
+            "PAR-10",
+            "AS-00",
+            "AS-11",
+            "DDL13-1",
+            "ddl13-01",
+            " DDL13-01",
+            "SYNTHETIC-01",
+            "",
+            None,
+            1,
+            True,
+            [],
+            {},
+        ):
+            with self.subTest(identifier=identifier):
+                case["id"] = identifier
+                self.write_json("parity-report.json", self.parity)
+                self.assert_rejected("normative case IDs")
+        del case["id"]
+        self.write_json("parity-report.json", self.parity)
+        self.assert_rejected("normative case IDs")
+
+    def test_malformed_normative_cases_are_rejected(self):
+        original = self.parity["normative_cases"]
+        for cases in (
+            None,
+            {},
+            "x" * 30,
+            [None] * 30,
+            ["DDL13-01"] * 30,
+            [*original[:-1], []],
+        ):
+            with self.subTest(cases=cases):
+                self.parity["normative_cases"] = cases
+                self.write_json("parity-report.json", self.parity)
+                self.assert_rejected("normative case")
+
+    def test_missing_and_extra_normative_cases_are_rejected(self):
+        original = self.parity["normative_cases"]
+        for cases in ([], original[:-1], [*original, original[0]]):
+            with self.subTest(count=len(cases)):
+                self.parity["normative_cases"] = cases
+                self.write_json("parity-report.json", self.parity)
+                self.assert_rejected("normative case")
+        del self.parity["normative_cases"]
+        self.write_json("parity-report.json", self.parity)
+        self.assert_rejected("normative case")
+
+    def test_invalid_or_missing_normative_status_is_rejected(self):
+        case = self.parity["normative_cases"][0]
+        for status in (None, "", "PASS", "FAILED", 1, True, [], {}):
+            with self.subTest(status=status):
+                case["status"] = status
+                self.write_json("parity-report.json", self.parity)
+                self.assert_rejected("normative case has an invalid status")
+        del case["status"]
+        self.write_json("parity-report.json", self.parity)
+        self.assert_rejected("normative case has an invalid status")
+
+    def test_par08_must_remain_the_only_passed_normative_case(self):
+        cases = self.parity["normative_cases"]
+        par08 = next(case for case in cases if case["id"] == "PAR-08")
+        for par08_status, other_status in (
+            ("BLOCKED", "BLOCKED"),
+            ("NOT_RUN", "BLOCKED"),
+            ("PASSED", "PASSED"),
+            ("BLOCKED", "PASSED"),
+        ):
+            with self.subTest(par08=par08_status, other=other_status):
+                par08["status"] = par08_status
+                cases[0]["status"] = other_status
+                self.write_json("parity-report.json", self.parity)
+                self.assert_rejected("only PAR-08")
+
+    def test_normative_counters_must_match_case_status_counts(self):
+        for field, correct in (("normative_approved", 1), ("normative_blocked", 29)):
+            for value in (None, 0, correct + 1, True, float(correct), str(correct)):
+                with self.subTest(field=field, value=value):
+                    self.parity[field] = value
+                    self.write_json("parity-report.json", self.parity)
+                    self.assert_rejected("normative approval counters")
+            del self.parity[field]
+            self.write_json("parity-report.json", self.parity)
+            self.assert_rejected("normative approval counters")
+            self.parity[field] = correct
+
+    def test_normative_case_order_is_not_significant(self):
+        self.parity["normative_cases"].reverse()
+        self.write_json("parity-report.json", self.parity)
+        result = self.verify()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("normative_passed=1, normative_blocked=29", result.stdout)
+
+    def test_blocked_counter_includes_not_run_cases(self):
+        for status in ("BLOCKED", "NOT_RUN"):
+            with self.subTest(status=status):
+                for case in self.parity["normative_cases"]:
+                    if case["id"] != "PAR-08":
+                        case["status"] = status
+                self.write_json("parity-report.json", self.parity)
+                result = self.verify()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("normative_passed=1, normative_blocked=29", result.stdout)
 
     def test_changed_snapshot_is_rejected_even_when_json_is_valid(self):
         self.write_json(

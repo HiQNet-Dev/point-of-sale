@@ -69,13 +69,13 @@ independiente. No hay integración automática ni commits de subagentes.
 La [guía Rust](../../backend-rust/README.md) contiene diagrama, árbol, dependencias,
 comandos y límites. Workspace edición 2024, toolchain 1.99.1, MSRV 1.99 y lockfile.
 
-| Componente           | Implementado                                                                                                              | No implementado                                                                    |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `pos-core`           | Currency sintáctica, MoneyMinor `i64`, suma checked, conversión exacta con escala explícita                               | DecimalExact general, Quantity, rounding, costeo, casos de uso                     |
-| `pos-storage-sqlite` | Archivo WAL/FULL, FK verificadas por conexión, timeout obligatorio, pool de un slot, migración Local embebida, checkpoint | Repositorios, ownership multiproceso, cifrado, backup de instalación               |
-| `pos-local`          | Configuración tipada, composición explícita, tracing JSON cerrado, SIGINT/SIGTERM y cierre                                | Tauri, IPC, HTTP, auth, RBAC, comandos de negocio                                  |
-| `migration-lab`      | Fixtures SQLite, PG17 nativo, origen Flyway real, 37 tablas exportadas, AUTH-MIG, verificación y evidencia honesta        | Import target/paridad, esquemas completos, ownership/rehost, sesiones persistentes |
-| CI                   | Detección Rust y gates fmt/clippy/test/build/secrets/audit/DDL13, PG build y verificación de evidencia                    | Gate normativo remoto verde; ver reconciliación 0c                                 |
+| Componente           | Implementado                                                                                                                 | No implementado                                                                    |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `pos-core`           | Currency sintáctica, MoneyMinor `i64`, Quantity exacta `NUMERIC(19,6)`, Organization/Branch puros y validaciones de metadata | DecimalExact general, codec SQLite Quantity, rounding/costeo y casos de uso        |
+| `pos-storage-sqlite` | Archivo WAL/FULL, FK verificadas por conexión, timeout obligatorio, pool de un slot, migración Local embebida, checkpoint    | Repositorios, ownership multiproceso, cifrado, backup de instalación               |
+| `pos-local`          | Configuración tipada, composición explícita, tracing JSON cerrado, SIGINT/SIGTERM y cierre                                   | Tauri, IPC, HTTP, auth, RBAC, comandos de negocio                                  |
+| `migration-lab`      | Fixtures SQLite, PG17 nativo, origen Flyway real, 37 tablas exportadas, AUTH-MIG, verificación y evidencia honesta           | Import target/paridad, esquemas completos, ownership/rehost, sesiones persistentes |
+| CI                   | Detección Rust y gates fmt/clippy/test/build/secrets/audit/DDL13, PG build y verificación de evidencia                       | Gate normativo remoto verde; ver reconciliación 0c                                 |
 
 Los errores públicos de configuración/storage no contienen rutas, SQL ni valores
 externos. Se desactiva logging de sentencias y se filtra telemetría de dependencias.
@@ -256,8 +256,9 @@ y scanner redactado en `target/gitleaks-report.json`.
    producto. AUTH-MIG es una simulación en memoria; faltan atomicidad persistente,
    sesiones revocables y benchmark en hardware objetivo. No se habilitaron
    usuarios reales ni se migraron JWT/refresh tokens.
-6. Faltan escalas/rangos definitivos de operandos, rounding concreto, Quantity,
-   costeo, snapshots, outbox y RBAC persistente. `MoneyMinor` no redondea.
+6. Faltan escalas/rangos definitivos de operandos, rounding concreto, codec SQLite
+   para Quantity, costeo, snapshots, outbox y RBAC persistente. `MoneyMinor` no
+   redondea; el dominio puro Organization/Branch no acredita persistencia ni API.
 7. No hay cobertura porcentual ni matriz de features opcionales: no se declara un
    umbral cumplido sin contrato. La suite no demuestra paridad comercial.
 

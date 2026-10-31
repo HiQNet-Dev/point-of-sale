@@ -25,6 +25,70 @@ def fail(message):
     raise SystemExit(1)
 
 
+def verify_execution_summaries(root, parity, baseline):
+    try:
+        run = load(root / "run-result.json")
+        aggregate = load(root / "aggregate-status.json")
+    except (OSError, ValueError):
+        fail("run result or aggregate status missing or unreadable")
+    if type(parity.get("require_complete")) is not bool:
+        fail("run result requires boolean require_complete in parity report")
+    technical_failed = parity.get("technical_status") != "PASSED" or any(
+        case.get("status") != "PASSED" for case in parity.get("technical_checks", [])
+    )
+    expected_exit = 1 if technical_failed else (2 if parity["require_complete"] else 0)
+    if parity.get("exit_code") != expected_exit:
+        fail("run result exit code conflicts with technical or normative gate")
+    expected_run = {
+        "schema_version": 1,
+        "technical_status": parity["technical_status"],
+        "normative_status": parity.get("normative_status"),
+        "normative_complete": parity["normative_complete"],
+        "normative_approved": parity["normative_approved"],
+        "normative_blocked": parity["normative_blocked"],
+        "require_complete": parity["require_complete"],
+        "exit_code": parity["exit_code"],
+    }
+    if not isinstance(run, dict) or any(
+        run.get(key) != value for key, value in expected_run.items()
+    ):
+        fail("run result disagrees with parity report")
+    evidence = run.get("baseline_evidence")
+    digest = hashlib.sha256((root / "baseline-manifest.json").read_bytes()).hexdigest()
+    if (
+        not isinstance(evidence, dict)
+        or evidence.get("path") != "baseline-manifest.json"
+        or evidence.get("sha256") != digest
+    ):
+        fail("run result baseline evidence digest is invalid")
+    gate_status = (
+        "NOT_EVALUATED"
+        if technical_failed
+        else ("BLOCKED" if parity["require_complete"] else "NOT_REQUESTED")
+    )
+    expected_aggregate = {
+        "schema_version": 1,
+        "status": "FAILED" if technical_failed else "BLOCKED",
+        "technical_status": parity["technical_status"],
+        "normative_status": "BLOCKED",
+        "baseline_evidence_status": baseline.get("status"),
+        "gate": {
+            "require_complete": parity["require_complete"],
+            "status": gate_status,
+            "exit_code": parity["exit_code"],
+        },
+        "sources": {
+            "run_result": "run-result.json",
+            "parity_report": "parity-report.json",
+            "baseline_manifest": "baseline-manifest.json",
+        },
+    }
+    if not isinstance(aggregate, dict) or any(
+        aggregate.get(key) != value for key, value in expected_aggregate.items()
+    ):
+        fail("aggregate status is not derived from execution evidence")
+
+
 def verify_snapshot_digests(root):
     directory = root / "schema-snapshots"
     if directory.is_symlink():
@@ -89,25 +153,53 @@ def main():
     parity = load(root / "parity-report.json")
     normative = parity.get("normative_cases", [])
     technical = parity.get("technical_checks", [])
-    if len(normative) != 30:
-        fail("normative case count is not 30")
-    passed = {case.get("id") for case in normative if case.get("status") == "PASSED"}
-    if passed != {"PAR-08"}:
-        fail("only PAR-08 is approved at the source-exporter level")
+    expected_ids = {
+        *(f"DDL13-{index:02}" for index in range(1, 12)),
+        *(f"PAR-{index:02}" for index in range(1, 10)),
+        *(f"AS-{index:02}" for index in range(1, 11)),
+    }
+    if (
+        not isinstance(normative, list)
+        or len(normative) != len(expected_ids)
+        or any(not isinstance(case, dict) for case in normative)
+    ):
+        fail("normative cases must be a list of 30 objects")
+    # La cantidad por sí sola permite sustituir un caso faltante por un duplicado.
+    identifiers = [case.get("id") for case in normative]
+    if (
+        any(not isinstance(identifier, str) for identifier in identifiers)
+        or set(identifiers) != expected_ids
+    ):
+        fail("normative case IDs have missing, duplicate or unexpected values")
     if any(
-        case.get("status") not in {"PASSED", "BLOCKED", "NOT_RUN"} for case in normative
+        not isinstance(case.get("status"), str)
+        or case["status"] not in {"PASSED", "BLOCKED", "NOT_RUN"}
+        for case in normative
     ):
         fail("normative case has an invalid status")
-    if parity.get("normative_approved") != 1 or parity.get("normative_blocked") != 29:
+    passed = {case["id"] for case in normative if case["status"] == "PASSED"}
+    if passed != {"PAR-08"}:
+        fail("only PAR-08 is approved at the source-exporter level")
+    normative_approved = sum(case["status"] == "PASSED" for case in normative)
+    # NOT_RUN sigue pendiente: no reduce el bloqueo normativo ni acredita paridad.
+    normative_blocked = sum(
+        case["status"] in {"BLOCKED", "NOT_RUN"} for case in normative
+    )
+    if any(
+        type(parity.get(field)) is not int or parity[field] != observed
+        for field, observed in (
+            ("normative_approved", normative_approved),
+            ("normative_blocked", normative_blocked),
+        )
+    ):
         fail("normative approval counters are inconsistent")
     if parity.get("normative_complete") is not False:
         fail("normative_complete must remain false")
     if parity.get("exit_code") != args.expect_exit:
         fail(f"expected exit {args.expect_exit}, observed {parity.get('exit_code')}")
-    if parity.get("technical_status") != "PASSED":
-        fail("technical checks are not PASSED")
-    if any(case.get("status") != "PASSED" for case in technical):
-        fail("a technical check failed")
+    technical_failed = parity.get("technical_status") != "PASSED" or any(
+        case.get("status") != "PASSED" for case in technical
+    )
     expected = 41
     if len(technical) != expected:
         fail(f"expected {expected} technical checks, observed {len(technical)}")
@@ -215,6 +307,7 @@ def main():
     if baseline.get("table_inventory", {}).get("observed_count") != 37:
         fail("AS-IS table count is not 37")
 
+    verify_execution_summaries(root, parity, baseline)
     verify_snapshot_digests(root)
 
     if any((root / name).exists() for name in ("bundle-1.json", "bundle-2.json")):
@@ -230,8 +323,8 @@ def main():
 
     print(
         "verify-evidence: OK "
-        f"(technical={len(technical)}, normative_passed={parity['normative_approved']}, "
-        f"normative_blocked={parity['normative_blocked']}, "
+        f"(technical={len(technical)}, normative_passed={normative_approved}, "
+        f"normative_blocked={normative_blocked}, "
         f"source_tables={source_counts['table_count']}, exit={args.expect_exit})"
     )
 

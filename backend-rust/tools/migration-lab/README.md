@@ -58,8 +58,9 @@ No se publican como hashes de datos de negocio.
 ## Evidencias
 
 - `baseline-manifest.json`: HEAD de Git, dirty observado y hash de la salida
-  porcelain (no hash del contenido del worktree), hashes SHA-256 de los **25
-  archivos Flyway leídos**, y las **37 tablas obtenidas del SQL fuente**.
+  porcelain (no hash del contenido del worktree), `flyway_worktree` con los paths
+  de migraciones modificadas o untracked en el checkout, hashes SHA-256 de los
+  **25 archivos Flyway leídos**, y las **37 tablas obtenidas del SQL fuente**.
   El inventario excluye `flyway_schema_history`, ignora comentarios/literales/
   cuerpos dollar-quoted y rechaza `DROP TABLE` o `CREATE TABLE` no soportado.
   No es una consulta a una BD viva ni un checksum CRC32 de Flyway.
@@ -71,6 +72,16 @@ No se publican como hashes de datos de negocio.
   Los 30 casos `DDL13-01..11`, `PAR-01..09`, `AS-01..10` permanecen
   `BLOCKED`/`NOT_RUN`, nunca `PASSED` por estos fixtures. Un fallo técnico fija
   el estado global a `FAILED`, manteniendo `normative_status: BLOCKED`.
+- `run-result.json` (**RUN RESULT**): resultado exacto de esa ejecución y digest
+  SHA-256 de `baseline-manifest.json`. No convierte el inventario de fuentes en
+  una aprobación normativa.
+- `baseline-manifest.json` (**BASELINE EVIDENCE**): procedencia e inventario de
+  las fuentes del checkout; `VERIFIED_SOURCE_INVENTORY` no significa que una BD
+  viva, una importación ni la paridad estén validadas.
+- `aggregate-status.json` (**AGGREGATE STATUS**): estado derivado de los dos
+  anteriores y de `parity-report.json`. Con técnicos correctos y normativa
+  incompleta queda `BLOCKED`; con `--require-complete` su gate es `BLOCKED` y el
+  proceso termina en `2`. Nunca declara `PASSED` en el estado actual.
 - `parity-report.xml`: incluye los checks técnicos y los 30 normativos con su
   cobertura identificada; los normativos son `skipped`, no éxitos vacíos. Un
   técnico fallido aparece como `failure` también en este informe principal.
