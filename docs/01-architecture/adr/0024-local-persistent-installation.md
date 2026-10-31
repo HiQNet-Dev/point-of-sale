@@ -161,6 +161,22 @@ migración de rutas automática ni activación de esquemas candidatos.
 
 Evidencia y alcance: [avance 2C](../../05-development/rust-increment-2c.md).
 
+## Preparación de mantenimiento 2D — sin activación administrativa
+
+`pos-storage-sqlite::backup` añade `VACUUM INTO`, verificación de integridad/FKs e
+historial/checksums, digest del archivo cerrado y restauración **a archivo nuevo**.
+Rechaza destinos existentes (incluso vacíos) y auxiliares WAL/SHM/journal previos;
+no elimina archivos ni activa un destino. Un snapshot puede reabrirse con el digest
+de un manifiesto custodiado antes de restaurarlo. Ese digest no acredita autoridad.
+
+Son componentes de infraestructura probados, **no comandos de producto**. El
+entrypoint administrativo futuro debe aplicar ACL/directorio privado, autorización,
+protocolo de candado compartido y cierre controlado para cutover. No se copia el
+archivo abierto de una instalación como si incluyera automáticamente su WAL.
+Siguen pendientes ACL Windows efectiva, TOCTOU, coordinación con pos-local,
+identificador/ruta nativa, custodia del manifiesto, fsync de metadatos del directorio
+y simulación de fallos de alimentación. No se cambia el alcance de D aceptado.
+
 ## Alternativas descartadas
 
 - **Reutilizar el laboratorio como producto**: mezclaría fixtures con datos

@@ -1,6 +1,13 @@
 # Paquete de decisión 1Y — activación condicionada del backend Rust Local
 
-**Estado: propuesta. Ninguna decisión de este documento está aprobada.**
+**Estado vigente: A/B/C pendientes. D aceptado como diseño el 2026-10-30;
+CC21-03 aceptada parcialmente. D-AUTH-09 sigue bloqueada.** Las aceptaciones
+no autorizan por sí solas despliegue, merge o release.
+
+Preparación actual de A y decisión adicional de primer arranque:
+[matriz 2D](rust-block-a-readiness-2d.md) y
+[ADR-0025 propuesto](../01-architecture/adr/0025-free-local-first-provisioning.md).
+No registran nuevas aprobaciones.
 
 Este paquete no sustituye al expediente canónico
 [`rust-1i-approval-decision-record.md`](rust-1i-approval-decision-record.md) ni a la

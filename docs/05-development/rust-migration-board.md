@@ -1,7 +1,8 @@
 # Tablero maestro de migración Java → Rust
 
-**Actualizado con el avance de consolidación 2C.** Este tablero registra el estado real de la
-migración, no el deseado. Un estado solo avanza con evidencia publicada.
+**Consolidación publicada 2C y preparación local 2D (sin activar).** Este tablero
+registra el estado real, no el deseado. La evidencia 2D se distingue como local;
+no acredita integración remota ni aprobación comercial.
 
 Arquitectura: monolito modular hexagonal (`pos-core` ← `pos-application` ←
 `pos-storage-sqlite` ← `pos-local`), documentada en
@@ -36,7 +37,7 @@ auditoría transaccional— sobre un esquema **candidato** que aún no vive en
 | Audit | `PERSISTENCE (fixture)` | `pos-core::audit` (metadata ≤16 KiB, USER/SYSTEM), `audit_event` propuesto con triggers append-only | DDL aprobado, writer persistente, tabla canónica |
 | Users / Auth | `PERSISTENCE (lab)` | `pos-core::identity`, `identity_lab`, `credential_lab`, `pos-credentials` | DDL aprobado, verificación productiva, sesiones operativas |
 | RBAC | `PERSISTENCE (lab)` | Catálogo exacto de 59 permisos, override de organización, modo recuperación | DDL aprobado, resolución contextual productiva |
-| Bootstrap | `APPLICATION (candidate)` | `pos-application::bootstrap`, capacidad autorizada, organización/administrador y 59 grants + auditoría SYSTEM en una UoW; pruebas de concurrencia, reapertura, IDs nuevos y rollback | Credencial inicial, política del secreto de despliegue para Free Local, aprobación A y transporte comercial |
+| Bootstrap | `APPLICATION (candidate; 2D local)` | `pos-application::bootstrap`, credencial inicial comprobada y persistida, organización/administrador y 59 grants + auditoría SYSTEM en una UoW; fallos por etapa, concurrencia, interrupción y reapertura | Autorización inicial ADR-0025, A/D-AUTH-09, login/sesión comercial y transporte |
 | Catálogo (categorías, productos) | `APPLICATION (candidate)` | `pos-core::catalog`, `proposals/local-catalog/0008`, `SqliteCatalogApplication`, 9 pruebas de integración (CAS, tenant, rollback por auditoría, reapertura); escritura expuesta solo en laboratorio por IPC con auditoría transaccional | Aprobación D-CAT, promoción a `migrations/local`, API |
 | Modificadores | `PERSISTENCE (fixture)` | `0011` candidato, FKs same-org y snapshots de opciones usados por ventas SQLite | CRUD/autorización administrativa, aprobación D-SALES, promoción, API |
 | Cajas | `APPLICATION (candidate)` | `pos-core::cash`, `0009` candidato, `SqliteCashApplication`, SQLite real: scope, CAS, auditoría, reapertura | Aprobación D-CASH, promoción, API |
@@ -69,12 +70,28 @@ registro no se incluye en el dispatcher activo ni tiene ACLs. Se corrigió la
 idempotencia para exigir misma sucursal, orden y cantidades. No hay paridad
 diferencial completa ni pantallas comerciales Rust. A/B/C y D-AUTH-09 siguen pendientes.
 
+### Preparación local 2D — primer arranque seguro
+
+La credencial inicial es obligatoria y debe verificar su contraseña antes de
+persistir; no se completa bootstrap sin ella y su auditoría. El adaptador existente
+comparte reglas para el físico canónico de credenciales, con prueba de bloqueo
+tras reinicio y reset al vencer. Hay snapshots/restauración a destino nuevo, no
+herramientas comerciales expuestas. Purchasing conserva sus 17 handlers cerrados.
+
+Validación local: 332 headless, 35 desktop, 220 frontend (+3 contratos), 18 pruebas
+SQLite de bootstrap/backup en Linux y 10 checks reales de interoperabilidad
+Java/Rust. E2E WebView2 existentes y smoke Docker pasan; no es E2E comercial.
+
+[Informe 2D](rust-increment-2d.md), [matriz A](rust-block-a-readiness-2d.md) y
+[ADR-0025 propuesto](../01-architecture/adr/0025-free-local-first-provisioning.md).
+No se promueve 0002–0016 ni se registra la política comercial propuesta.
+
 ### Frontera de sustitución real (no porcentaje de migración)
 
 | Módulo | DOMAIN | APPLICATION | STORAGE | TRANSPORT | REACT | PARITY_VERIFIED |
 | --- | --- | --- | --- | --- | --- | --- |
 | Identity / RBAC | Sí | Principal/credenciales existentes; login comercial incompleto | Candidato | Sin login IPC | Java operativo | No |
-| Bootstrap | Capacidad y SYSTEM | Canónico, one-shot y grants | Candidato | No expuesto | No | No |
+| Bootstrap | Capacidad y SYSTEM | Canónico, one-shot, grants y contraseña inicial (2D local) | Candidato | No expuesto | No | No |
 | Organization / Branch | Sí | Sí | 0001 aprobado; atribución canónica pendiente | Lectura de sucursales solo lab | Solo lab | No |
 | Catálogo | Sí | Sí | Candidato | Lectura/crear producto solo lab | Solo lab | No |
 | Caja / turnos | Sí | Sí | Candidato | No | Java | No |
