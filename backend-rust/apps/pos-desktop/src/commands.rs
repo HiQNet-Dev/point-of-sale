@@ -2,9 +2,10 @@
 use crate::{
     composition::LocalState,
     dto::{
-        BootstrapInstallRequestDto, BootstrapStatusDto, BranchDto, CategoryDto,
-        CreateProductRequest, CreatedProductDto, InstallationStatusDto, IpcError, LoginRequestDto,
-        LogoutAllDto, PageRequest, ProductDto, SelectBranchRequestDto, SessionIdentityDto,
+        BootstrapInstallRequestDto, BootstrapStatusDto, BranchDto, CatalogItemRequestDto,
+        CategoryDto, CreateProductRequest, CreatedProductDto, InstallationStatusDto, IpcError,
+        LoginRequestDto, LogoutAllDto, NewCategoryRequestDto, PageRequest, ProductDto,
+        SelectBranchRequestDto, SessionIdentityDto, UpdateProductRequestDto,
     },
 };
 use tauri::State;
@@ -74,6 +75,66 @@ pub async fn bootstrap_install(
     state.bootstrap_install(request).await
 }
 
+/// Lista categorías de la organización autenticada.
+#[tauri::command]
+#[specta::specta]
+pub async fn catalog_list_categories(
+    state: State<'_, LocalState>,
+    request: PageRequest,
+) -> Result<Vec<CategoryDto>, IpcError> {
+    state.catalog_list_categories(request).await
+}
+
+/// Lista productos de la organización autenticada.
+#[tauri::command]
+#[specta::specta]
+pub async fn catalog_list_products(
+    state: State<'_, LocalState>,
+    request: PageRequest,
+) -> Result<Vec<ProductDto>, IpcError> {
+    state.catalog_list_products(request).await
+}
+
+/// Consulta un producto de la organización autenticada.
+#[tauri::command]
+#[specta::specta]
+pub async fn catalog_get_product(
+    state: State<'_, LocalState>,
+    request: CatalogItemRequestDto,
+) -> Result<ProductDto, IpcError> {
+    state.catalog_get_product(request).await
+}
+
+/// Crea una categoría como actor autenticado.
+#[tauri::command]
+#[specta::specta]
+pub async fn catalog_create_category(
+    state: State<'_, LocalState>,
+    request: NewCategoryRequestDto,
+) -> Result<CategoryDto, IpcError> {
+    state.catalog_create_category(request).await
+}
+
+/// Crea un producto como actor autenticado.
+#[tauri::command]
+#[specta::specta]
+pub async fn catalog_create_product(
+    state: State<'_, LocalState>,
+    request: CreateProductRequest,
+) -> Result<CreatedProductDto, IpcError> {
+    state.catalog_create_product(request).await
+}
+
+/// Edita un producto con CAS sobre la versión leída.
+#[tauri::command]
+#[specta::specta]
+pub async fn catalog_update_product(
+    state: State<'_, LocalState>,
+    request: UpdateProductRequestDto,
+) -> Result<ProductDto, IpcError> {
+    state.catalog_update_product(request).await
+}
+
 /// Autentica con email y contraseña; el handle queda en memoria nativa.
 #[tauri::command]
 #[specta::specta]
@@ -132,6 +193,12 @@ pub fn registry<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         installation_status,
         bootstrap_status,
         bootstrap_install,
+        catalog_list_categories,
+        catalog_list_products,
+        catalog_get_product,
+        catalog_create_category,
+        catalog_create_product,
+        catalog_update_product,
         auth_login,
         auth_me,
         auth_logout,

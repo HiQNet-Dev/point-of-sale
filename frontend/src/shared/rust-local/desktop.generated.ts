@@ -18,6 +18,18 @@ export const commands = {
 	bootstrapStatus: () => typedError<BootstrapStatusDto_Serialize, IpcError>(__TAURI_INVOKE("bootstrap_status")),
 	/**  Completa la primera instalación consumiendo la autorización nativa. */
 	bootstrapInstall: (request: BootstrapInstallRequestDto_Deserialize) => typedError<null, IpcError>(__TAURI_INVOKE("bootstrap_install", { request })),
+	/**  Lista categorías de la organización autenticada. */
+	catalogListCategories: (request: PageRequest) => typedError<CategoryDto[], IpcError>(__TAURI_INVOKE("catalog_list_categories", { request })),
+	/**  Lista productos de la organización autenticada. */
+	catalogListProducts: (request: PageRequest) => typedError<ProductDto_Serialize[], IpcError>(__TAURI_INVOKE("catalog_list_products", { request })),
+	/**  Consulta un producto de la organización autenticada. */
+	catalogGetProduct: (request: CatalogItemRequestDto) => typedError<ProductDto_Serialize, IpcError>(__TAURI_INVOKE("catalog_get_product", { request })),
+	/**  Crea una categoría como actor autenticado. */
+	catalogCreateCategory: (request: NewCategoryRequestDto) => typedError<CategoryDto, IpcError>(__TAURI_INVOKE("catalog_create_category", { request })),
+	/**  Crea un producto como actor autenticado. */
+	catalogCreateProduct: (request: CreateProductRequest_Deserialize) => typedError<CreatedProductDto_Serialize, IpcError>(__TAURI_INVOKE("catalog_create_product", { request })),
+	/**  Edita un producto con CAS sobre la versión leída. */
+	catalogUpdateProduct: (request: UpdateProductRequestDto_Deserialize) => typedError<ProductDto_Serialize, IpcError>(__TAURI_INVOKE("catalog_update_product", { request })),
 	/**  Autentica con email y contraseña; el handle queda en memoria nativa. */
 	authLogin: (request: LoginRequestDto) => typedError<SessionIdentityDto_Serialize, IpcError>(__TAURI_INVOKE("auth_login", { request })),
 	/**  Identidad y permisos de la sesión nativa vigente. */
@@ -135,6 +147,12 @@ export type BranchDto = {
 	name: string,
 	/**  Estado operativo. */
 	status: string,
+};
+
+/**  Identidad de una entidad del catálogo. */
+export type CatalogItemRequestDto = {
+	/**  UUID canónico dentro de la organización del principal. */
+	id: string,
 };
 
 /**  Categoría de catálogo, con versión exacta representada como texto. */
@@ -266,6 +284,14 @@ export type LogoutAllDto = {
 	revoked: number,
 };
 
+/**  Alta de categoría por el administrador autenticado. */
+export type NewCategoryRequestDto = {
+	/**  Código slug de la categoría. */
+	code: string,
+	/**  Nombre visible. */
+	name: string,
+};
+
 /**  Página explícita, sin organización ni actor controlados por el consumidor. */
 export type PageRequest = {
 	/**  Límite de 1 a 100, validado por Application. */
@@ -360,6 +386,56 @@ export type SessionIdentityDto_Serialize = {
 	branchId: string | null,
 	/**  Permisos efectivos resueltos en SQLite. */
 	permissions: string[],
+};
+
+/**
+ *  Edición de producto con versión exacta.
+ *
+ *  Los campos ausentes se conservan; el precio viaja como texto decimal de
+ *  escala 4 y nunca como número de JavaScript.
+ */
+export type UpdateProductRequestDto = UpdateProductRequestDto_Serialize | UpdateProductRequestDto_Deserialize;
+
+/**
+ *  Edición de producto con versión exacta.
+ *
+ *  Los campos ausentes se conservan; el precio viaja como texto decimal de
+ *  escala 4 y nunca como número de JavaScript.
+ */
+export type UpdateProductRequestDto_Deserialize = {
+	/**  UUID del producto. */
+	productId: string,
+	/**  Versión leída por el cliente, en texto decimal. */
+	expectedVersion: string,
+	/**  Nombre nuevo, si cambia. */
+	name?: string | null,
+	/**  Precio nuevo exacto, si cambia. */
+	unitPrice?: string | null,
+	/**  Categoría nueva, si cambia. */
+	categoryId?: string | null,
+	/**  `ACTIVE` o `INACTIVE`, si cambia. */
+	status?: string | null,
+};
+
+/**
+ *  Edición de producto con versión exacta.
+ *
+ *  Los campos ausentes se conservan; el precio viaja como texto decimal de
+ *  escala 4 y nunca como número de JavaScript.
+ */
+export type UpdateProductRequestDto_Serialize = {
+	/**  UUID del producto. */
+	productId: string,
+	/**  Versión leída por el cliente, en texto decimal. */
+	expectedVersion: string,
+	/**  Nombre nuevo, si cambia. */
+	name: string | null,
+	/**  Precio nuevo exacto, si cambia. */
+	unitPrice: string | null,
+	/**  Categoría nueva, si cambia. */
+	categoryId: string | null,
+	/**  `ACTIVE` o `INACTIVE`, si cambia. */
+	status: string | null,
 };
 
 /* Tauri Specta runtime */

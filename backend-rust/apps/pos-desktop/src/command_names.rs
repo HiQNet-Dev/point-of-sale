@@ -10,6 +10,12 @@ pub const COMMAND_NAMES: &[&str] = &[
     "installation_status",
     "bootstrap_status",
     "bootstrap_install",
+    "catalog_list_categories",
+    "catalog_list_products",
+    "catalog_get_product",
+    "catalog_create_category",
+    "catalog_create_product",
+    "catalog_update_product",
     "auth_login",
     "auth_me",
     "auth_logout",
@@ -41,3 +47,14 @@ pub const AUTH_COMMAND_NAMES: &[&str] = &[
 /// Comandos de primera instalación; no existen en el laboratorio sintético.
 #[allow(dead_code)] // Consumido por las pruebas del dispatcher.
 pub const BOOTSTRAP_COMMAND_NAMES: &[&str] = &["bootstrap_status", "bootstrap_install"];
+
+/// Comandos de catálogo comercial; requieren sesión y no existen en laboratorio.
+#[allow(dead_code)] // Consumido por las pruebas del dispatcher.
+pub const CATALOG_COMMAND_NAMES: &[&str] = &[
+    "catalog_list_categories",
+    "catalog_list_products",
+    "catalog_get_product",
+    "catalog_create_category",
+    "catalog_create_product",
+    "catalog_update_product",
+];

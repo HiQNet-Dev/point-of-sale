@@ -4,6 +4,7 @@ import { DesktopCommandError, desktopService } from '../../shared/rust-local/des
 import type { BranchDto, InstallationStatusDto, SessionIdentityDto } from '../../shared/rust-local/desktop.generated'
 import { LoginPage } from './LoginPage'
 import { SetupWizard } from './SetupWizard'
+import { CatalogWorkspace } from './CatalogWorkspace'
 
 const stateLabels: Record<string, string> = {
   FIRST_INSTALL: 'Primera instalación',
@@ -161,6 +162,8 @@ function AuthenticatedHome({ identity, status }: { identity: SessionIdentityDto;
             </Alert>
           ) : null}
         </Box>
+
+        <CatalogWorkspace permissions={identity.permissions} />
       </Stack>
     </Container>
   )
