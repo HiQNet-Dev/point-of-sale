@@ -178,6 +178,7 @@ class RustWorkflowTest(unittest.TestCase):
         changes_result="success",
         backend_result="skipped",
         event_name="pull_request",
+        windows_result="success",
     ):
         needs = {
             "changes": {"result": changes_result, "outputs": {"rust_run": rust_run}},
@@ -187,6 +188,7 @@ class RustWorkflowTest(unittest.TestCase):
                 "result": normative_result,
                 "outputs": {"status": normative_status, "exit_code": "2"},
             },
+            "windows-desktop": {"result": windows_result},
             "frontend": {"result": "skipped"},
             "compose": {"result": "skipped"},
             "e2e": {"result": "skipped"},
@@ -423,6 +425,64 @@ class RustWorkflowTest(unittest.TestCase):
                 )
                 self.assertEqual(expected_status, recorded["status"])
                 self.assertEqual(str(mock_exit), recorded["exit_code"])
+
+    def test_windows_desktop_result_is_required_for_rust_changes(self):
+        for result in ("success", "skipped", "failure", "cancelled"):
+            with self.subTest(result=result):
+                self.assertEqual(
+                    result == "success",
+                    self.gate_result("true", "success", windows_result=result),
+                )
+
+    def test_windows_desktop_failure_never_approves_the_gate(self):
+        self.assertFalse(
+            self.gate_result(
+                "false",
+                "skipped",
+                normative_result="skipped",
+                windows_result="failure",
+            )
+        )
+        self.assertTrue(
+            self.gate_result(
+                "false",
+                "skipped",
+                normative_result="skipped",
+                windows_result="skipped",
+            )
+        )
+
+    def test_windows_desktop_job_covers_the_tauri_runtime(self):
+        desktop = self.jobs["windows-desktop"]
+        self.assertEqual("Windows Desktop (Tauri)", desktop["name"])
+        self.assertEqual("needs.changes.outputs.rust_run == 'true'", desktop["if"])
+        self.assertEqual("windows-latest", desktop["runs-on"])
+        self.assertEqual("bash", desktop["defaults"]["run"]["shell"])
+        self.assertEqual(
+            "backend-rust/apps/pos-desktop",
+            desktop["defaults"]["run"]["working-directory"],
+        )
+        self.assertEqual("1.99.1", desktop["env"]["RUSTUP_TOOLCHAIN"])
+        steps = desktop["steps"]
+        self.assertFalse(desktop.get("continue-on-error"))
+        self.assertFalse(any(step.get("continue-on-error") for step in steps))
+        commands = "\n".join(step.get("run", "") for step in steps)
+        for command in (
+            "git ls-files --error-unmatch Cargo.lock",
+            "cargo metadata --locked --format-version 1",
+            "cargo fmt --all -- --check",
+            "cargo clippy --locked --all-targets -- -D warnings",
+            "cargo test --locked",
+            "cargo build --locked",
+            "vite build --config vite.rust-lab.config.ts",
+        ):
+            self.assertIn(command, commands)
+        names = [step.get("name") for step in steps]
+        self.assertLess(
+            names.index("Build the synthetic frontend required by the Tauri context"),
+            names.index("Build the desktop binary (bundling stays disabled)"),
+        )
+        self.assertIn("windows-desktop", self.jobs["ci-gate"]["needs"])
 
     def test_security_scans_are_pinned_and_blocking(self):
         rust = self.jobs["rust"]

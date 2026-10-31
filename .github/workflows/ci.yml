@@ -294,6 +294,92 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  # Nivel 1 en Windows: verificabilidad real del runtime Tauri (compilación,
+  # pruebas del registro IPC y build del binario). No genera instalador ni
+  # bundle comercial. `pos-desktop` tiene workspace propio, por eso no lo cubre
+  # el job `rust`.
+  windows-desktop:
+    name: Windows Desktop (Tauri)
+    needs: changes
+    if: needs.changes.outputs.rust_run == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: backend-rust/apps/pos-desktop
+    env:
+      CARGO_TERM_COLOR: always
+      RUSTUP_TOOLCHAIN: "1.99.1"
+    steps:
+      - name: Validate requested SHA input
+        working-directory: .
+        env:
+          TARGET_SHA: ${{ inputs.target_sha || github.sha }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Manual validation must be dispatched from main" >&2
+            exit 1
+          fi
+          if [[ ! "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "target_sha must be a full lowercase 40-character commit SHA" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify checked-out target and committed lockfile
+        env:
+          TARGET_SHA: ${{ inputs.target_sha || github.sha }}
+        run: |
+          [[ "$(git rev-parse HEAD)" == "$TARGET_SHA" ]]
+          git ls-files --error-unmatch Cargo.lock
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+          rustc --version
+          cargo --version
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      # `generate_context!` exige que exista `frontend/dist-rust-lab`; sin este
+      # paso la compilación del desktop falla.
+      - name: Build the synthetic frontend required by the Tauri context
+        working-directory: frontend
+        run: pnpm exec vite build --config vite.rust-lab.config.ts
+
+      - name: Resolve the committed lockfile
+        run: cargo metadata --locked --format-version 1 > /dev/null
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (all targets)
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test the desktop runtime and IPC registry
+        run: cargo test --locked
+
+      - name: Build the desktop binary (bundling stays disabled)
+        run: cargo build --locked
+
   frontend:
     name: Frontend (install, lint, typecheck, test, build)
     needs: changes
@@ -562,7 +648,7 @@ jobs:
   ci-gate:
     name: CI Gate
     if: always()
-    needs: [changes, backend, rust, rust-normative, frontend, compose, e2e]
+    needs: [changes, backend, rust, rust-normative, windows-desktop, frontend, compose, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -592,6 +678,7 @@ jobs:
             and (
               if $n.changes.outputs.rust_run == "true" then
                 ($n.rust.result == "success")
+                and ($n["windows-desktop"].result == "success")
                 and ($n["rust-normative"].result == "success")
                 and (
                   ($n["rust-normative"].outputs.status == "PASSED")
@@ -599,6 +686,7 @@ jobs:
                 )
               else
                 ($n.rust | ok)
+                and ($n["windows-desktop"] | ok)
                 and ($n["rust-normative"] | ok)
                 and (($main | not) or ($n["rust-normative"].outputs.status == "PASSED"))
               end

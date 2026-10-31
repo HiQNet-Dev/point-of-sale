@@ -60,6 +60,7 @@ El CI de Rust tiene dos niveles independientes:
 | Job | Nombre | Cuándo corre | `--require-complete` |
 | --- | --- | --- | --- |
 | `rust` | `Rust Technical Integration Gate` | PR y push con `rust_run=true` | no se ejecuta |
+| `windows-desktop` | `Windows Desktop (Tauri)` | `rust_run=true` | no aplica |
 | `rust-normative` | `Rust Normative Release Gate` | `rust_run=true`; siempre en `main` y dispatch | sí, sin cambios |
 
 El nivel técnico puede quedar verde con código Rust integrado pero inactivo
@@ -112,6 +113,35 @@ verde aunque la cobertura normativa siga incompleta: ese estado se declara en
 `rust-normative` y lo evalúa `CI Gate` según el destino. No hay
 `continue-on-error` a nivel de job ni de step, `|| true`, fixtures aprobatorias ni
 resultados ficticios de completitud.
+
+### Nivel 1 en Windows — `windows-desktop`
+
+`apps/pos-desktop` declara su propio workspace, por lo que no lo cubre el job
+`rust`. El job `windows-desktop` corre en `windows-latest` con toolchain
+**1.99.1** fijada (`RUSTUP_TOOLCHAIN`) y shell `bash`, desde
+`backend-rust/apps/pos-desktop`:
+
+```bash
+cargo metadata --locked --format-version 1
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked
+cargo build --locked
+```
+
+Antes de compilar se construye el frontend sintético
+(`pnpm exec vite build --config vite.rust-lab.config.ts`): `generate_context!`
+exige que exista `frontend/dist-rust-lab` y sin él la compilación falla. El
+bundling comercial sigue desactivado (`bundle.active=false`), así que no se
+genera instalador ni se requiere `icon.png`.
+
+Las pruebas cubren el registro IPC cerrado: los 17 comandos `purchasing_*` no
+están registrados, el modo producto rechaza los comandos de laboratorio, y se
+valida el manejo de junctions, symlinks, locking de instalación y rutas Windows.
+
+`CI Gate` exige `windows-desktop=success` cuando `rust_run=true` y acepta
+`skipped` solo cuando la detección no requiere Rust, de modo que una omisión
+inesperada falla cerrado.
 
 ### Nivel 2 — `rust-normative`: evidencia normativa real
 
@@ -196,6 +226,9 @@ Las regresiones de dos niveles comprueban que `rust` no ejecuta
 `continue-on-error`, que el wrapper clasifica `0`/`2`/cualquier otro exit sin
 ocultarlo, y que `CI Gate` acepta `BLOCKED` solo para `dev` y exige `PASSED` para
 `main` y `workflow_dispatch`.
+Las regresiones de Windows comprueban que `windows-desktop` corre en
+`windows-latest` con la toolchain fijada, que el frontend sintético se construye
+antes del binario y que su resultado es obligatorio cuando `rust_run=true`.
 
 ## Concurrency
 
