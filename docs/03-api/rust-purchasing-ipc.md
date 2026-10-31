@@ -102,6 +102,15 @@ escritura. No reintentar mutaciones automáticamente. La recepción admite repet
 la misma clave de idempotencia y payload según las reglas existentes; cambiar el
 payload no debe interpretarse como una segunda recepción válida.
 
+Comprobado en 2D: la equivalencia relevante incluye organización derivada del
+principal, sucursal, orden y el conjunto de **IDs de partida + cantidades exactas**,
+no solo cantidades. `expectedVersion` es una precondición del primer intento y no
+impide recuperar el resultado ya confirmado de un replay idéntico. La clave sigue
+siendo única **por organización**, no global: nunca permite leer o recibir una
+orden ajena. Rechazos/replays no duplican receipt, ledger, auditoría o estado.
+Un actor de otra organización con permiso propio también queda rechazado; la
+prueba no se limita a un actor sin grants.
+
 ## Errores seguros
 
 | Código | Significado |

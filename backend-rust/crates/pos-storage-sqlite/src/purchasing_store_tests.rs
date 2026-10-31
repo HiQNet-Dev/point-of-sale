@@ -715,6 +715,36 @@ async fn receipt_is_idempotent_and_over_receipt_is_rejected()
         .post_purchase_receipt(&user, &mut ids, &id(&order.id), request(), &at(LATER))
         .await?;
     assert_eq!(first.id, second.id);
+    let mut different_line = request();
+    different_line.lines[0].purchase_order_line_id = id("00000000-0000-0000-0000-000000002d01");
+    assert_eq!(
+        app.post_purchase_receipt(&user, &mut ids, &id(&order.id), different_line, &at(LATER))
+            .await
+            .err(),
+        Some(ApplicationError::DuplicateReceipt)
+    );
+    // El actor existente de B recibe permiso propio: el rechazo debe probar
+    // aislamiento, no limitarse a la ausencia de grants de la fixture original.
+    let other_role = "00000000-0000-0000-0000-000000002db0";
+    sqlx::query("INSERT INTO role SELECT ?,?,code,name,status,version,created_at,updated_at FROM role WHERE id = ?")
+        .bind(other_role).bind(ORG_B).bind(ROLE_A).execute(&pool).await?;
+    sqlx::query("INSERT INTO role_permission (role_id,permission_code) VALUES (?,'purchasing.receipt.write')")
+        .bind(other_role).execute(&pool).await?;
+    sqlx::query("INSERT INTO user_organization_role (organization_id,user_id,role_id,created_at) VALUES (?,?,?,?)")
+        .bind(ORG_B).bind(USER_B).bind(other_role).bind(TIME).execute(&pool).await?;
+    let other_organization = principal(&pool, HASH_B, &id(BRANCH_OTHER)).await?;
+    assert_eq!(
+        app.post_purchase_receipt(
+            &other_organization,
+            &mut ids,
+            &id(&order.id),
+            request(),
+            &at(LATER)
+        )
+        .await
+        .err(),
+        Some(ApplicationError::PurchaseOrderNotFound)
+    );
     let mut different_payload = request();
     different_payload.lines[0].quantity = "1.000000".to_owned();
     assert_eq!(
@@ -765,6 +795,22 @@ async fn receipt_is_idempotent_and_over_receipt_is_rejected()
         .fetch_one(&pool)
         .await?;
     assert_eq!(receipts, 1);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM inventory_ledger WHERE movement_type = 'PURCHASE_RECEIPT'"
+        )
+        .fetch_one(&pool)
+        .await?,
+        1
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM audit_event WHERE action = 'purchase.receipt.posted'"
+        )
+        .fetch_one(&pool)
+        .await?,
+        1
+    );
 
     // La orden quedó completa y ya no admite más recepciones.
     let order_now = app.get_purchase_order(&user, &id(&order.id)).await?;
