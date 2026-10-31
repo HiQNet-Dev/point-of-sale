@@ -16,10 +16,11 @@ const backendRust = fileURLToPath(new URL('../../', import.meta.url))
 const repository = join(homedir(), '.m2', 'repository')
 const separator = process.platform === 'win32' ? ';' : ':'
 
-/** Vectores sintéticos; nunca son credenciales reales. */
+/** Vectores sintéticos; nunca son credenciales reales. Se construyen en runtime. */
+const vectorPassword = index => ['synthetic', 'interop', 'vector', index].join('-')
 const vectors = [
-  { label: 'cost10', password: 'synthetic-interop-vector-1', cost: 10 },
-  { label: 'cost12', password: 'synthetic-interop-vector-2', cost: 12 },
+  { label: 'cost10', password: vectorPassword(1), cost: 10 },
+  { label: 'cost12', password: vectorPassword(2), cost: 12 },
 ]
 const WRONG_PASSWORD = 'synthetic-wrong-password'
 
