@@ -14,6 +14,8 @@ pub enum Invocation {
     SyntheticLab,
     /// Instalación persistente en el directorio indicado.
     Installation(PathBuf),
+    /// Instalación persistente en el directorio privado del sistema operativo.
+    InstallationDefault,
 }
 
 /// Fallos de uso; el mensaje no reproduce los argumentos recibidos.
@@ -46,6 +48,7 @@ where
         let selected = match argument.as_str() {
             "--export-bindings" => Invocation::ExportBindings,
             "--synthetic-lab" => Invocation::SyntheticLab,
+            "--installation-default" => Invocation::InstallationDefault,
             "--installation" => {
                 let directory = arguments
                     .next()
@@ -74,6 +77,10 @@ mod tests {
         assert_eq!(parse(["--export-bindings"]), Ok(Invocation::ExportBindings));
         assert_eq!(parse(["--synthetic-lab"]), Ok(Invocation::SyntheticLab));
         assert_eq!(
+            parse(["--installation-default"]),
+            Ok(Invocation::InstallationDefault)
+        );
+        assert_eq!(
             parse(["--installation", "C:/datos/hiqnet"]),
             Ok(Invocation::Installation(PathBuf::from("C:/datos/hiqnet")))
         );
@@ -84,6 +91,10 @@ mod tests {
         assert_eq!(parse(Vec::<String>::new()), Err(ArgumentError::MissingMode));
         assert_eq!(
             parse(["--synthetic-lab", "--installation", "datos"]),
+            Err(ArgumentError::ConflictingModes)
+        );
+        assert_eq!(
+            parse(["--installation-default", "--installation", "datos"]),
             Err(ArgumentError::ConflictingModes)
         );
         assert_eq!(

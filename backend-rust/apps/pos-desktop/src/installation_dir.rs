@@ -17,16 +17,25 @@
 //!
 //! El bloqueo entre procesos lo aporta SQLite (un pool por proceso y
 //! `BEGIN IMMEDIATE` para escrituras críticas); este módulo no implementa un
-//! candado de instancia única. La ruta por plataforma (`app_data_dir`) depende de
-//! D-INST y no se resuelve aquí.
+//! candado de instancia única.
 
 use std::{
+    ffi::OsString,
     fs, io,
     path::{Path, PathBuf},
 };
 
 /// Nombre fijo del archivo dentro del directorio de instalación.
 pub const DATABASE_FILE_NAME: &str = "hiqnet-pos.sqlite";
+
+/// Directorio estable de producto bajo el directorio de datos del sistema.
+///
+/// Es el candidato `com.hiqnet.pos` del bloque D. Se usa **solo** como nombre de
+/// directorio: el bundle identifier de Tauri sigue siendo el de laboratorio
+/// hasta verificar colisiones, continuidad de almacenamiento y requisitos de
+/// distribución. Reutilizar el identificador de laboratorio ubicaría datos de
+/// producto en una ruta experimental.
+pub const PRODUCT_DATA_DIRECTORY: &str = "com.hiqnet.pos";
 
 /// Directorio validado de una instalación Local.
 #[derive(Clone, Debug)]
@@ -44,6 +53,8 @@ pub enum DirectoryError {
     /// Los permisos permiten que otro usuario sustituya la instalación.
     #[cfg_attr(not(unix), allow(dead_code))] // Solo evaluable con bits POSIX.
     InsecurePermissions,
+    /// El sistema operativo no expone un directorio de datos para el usuario.
+    ApplicationDataUnavailable,
     /// El sistema de archivos rechazó la operación.
     Unavailable,
 }
@@ -56,12 +67,72 @@ impl std::fmt::Display for DirectoryError {
             Self::InsecurePermissions => {
                 "el directorio de instalación es accesible por otros usuarios"
             }
+            Self::ApplicationDataUnavailable => {
+                "el sistema no ofrece un directorio de datos de aplicación"
+            }
             Self::Unavailable => "el directorio de instalación no está disponible",
         })
     }
 }
 
 impl std::error::Error for DirectoryError {}
+
+/// Directorio privado que el sistema operativo asigna al usuario actual,
+/// seguido del directorio estable del producto.
+///
+/// Solo resuelve la ruta candidata: no la crea ni la valida. La validación de
+/// enlaces, permisos y archivo corresponde a [`InstallationDirectory::resolve`].
+///
+/// # Errors
+/// Devuelve [`DirectoryError::ApplicationDataUnavailable`] si el sistema no
+/// expone un directorio de datos para el usuario.
+pub fn default_data_directory() -> Result<PathBuf, DirectoryError> {
+    Ok(platform_data_root(|name| std::env::var_os(name))?.join(PRODUCT_DATA_DIRECTORY))
+}
+
+/// Raíz de datos por plataforma, con el lector de entorno inyectado.
+///
+/// La inyección permite probar la política en cualquier sistema sin mutar el
+/// entorno del proceso.
+fn platform_data_root<F>(lookup: F) -> Result<PathBuf, DirectoryError>
+where
+    F: Fn(&str) -> Option<OsString>,
+{
+    #[cfg(windows)]
+    {
+        if let Some(root) = usable(lookup("LOCALAPPDATA")) {
+            return Ok(PathBuf::from(root));
+        }
+        // Un perfil sin LOCALAPPDATA conserva la misma ubicación privada.
+        let profile =
+            usable(lookup("USERPROFILE")).ok_or(DirectoryError::ApplicationDataUnavailable)?;
+        Ok(PathBuf::from(profile).join("AppData").join("Local"))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let home = usable(lookup("HOME")).ok_or(DirectoryError::ApplicationDataUnavailable)?;
+        Ok(PathBuf::from(home)
+            .join("Library")
+            .join("Application Support"))
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        if let Some(root) = usable(lookup("XDG_DATA_HOME")) {
+            return Ok(PathBuf::from(root));
+        }
+        let home = usable(lookup("HOME")).ok_or(DirectoryError::ApplicationDataUnavailable)?;
+        Ok(PathBuf::from(home).join(".local").join("share"))
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        let _ = lookup;
+        Err(DirectoryError::ApplicationDataUnavailable)
+    }
+}
+
+fn usable(value: Option<OsString>) -> Option<OsString> {
+    value.filter(|candidate| !candidate.is_empty())
+}
 
 impl InstallationDirectory {
     /// Valida (y crea si falta) el directorio indicado.
@@ -265,5 +336,64 @@ mod tests {
             Err(DirectoryError::InsecurePermissions)
         ));
         Ok(())
+    }
+
+    #[test]
+    fn product_directory_is_not_the_laboratory_identifier() {
+        assert_eq!(PRODUCT_DATA_DIRECTORY, "com.hiqnet.pos");
+        assert_ne!(PRODUCT_DATA_DIRECTORY, "local.hiqnet.rustlab");
+        assert!(PRODUCT_DATA_DIRECTORY.contains('.'));
+        assert!(!PRODUCT_DATA_DIRECTORY.contains('/'));
+        assert!(!PRODUCT_DATA_DIRECTORY.contains('\\'));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_root_prefers_local_app_data_and_falls_back_to_the_profile() {
+        let preferred = platform_data_root(|name| match name {
+            "LOCALAPPDATA" => Some(OsString::from("C:/Users/demo/AppData/Local")),
+            _ => None,
+        });
+        assert_eq!(
+            preferred.ok().as_deref(),
+            Some(Path::new("C:/Users/demo/AppData/Local"))
+        );
+        let fallback = platform_data_root(|name| match name {
+            "USERPROFILE" => Some(OsString::from("C:/Users/demo")),
+            _ => None,
+        });
+        assert_eq!(
+            fallback.ok(),
+            Some(PathBuf::from("C:/Users/demo").join("AppData").join("Local"))
+        );
+        assert!(matches!(
+            platform_data_root(|_| None),
+            Err(DirectoryError::ApplicationDataUnavailable)
+        ));
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn unix_root_prefers_xdg_data_home_and_falls_back_to_home() {
+        let preferred = platform_data_root(|name| match name {
+            "XDG_DATA_HOME" => Some(OsString::from("/home/demo/.local/state")),
+            _ => None,
+        });
+        assert_eq!(
+            preferred.ok().as_deref(),
+            Some(Path::new("/home/demo/.local/state"))
+        );
+        let fallback = platform_data_root(|name| match name {
+            "HOME" => Some(OsString::from("/home/demo")),
+            _ => None,
+        });
+        assert_eq!(
+            fallback.ok(),
+            Some(PathBuf::from("/home/demo").join(".local").join("share"))
+        );
+        assert!(matches!(
+            platform_data_root(|_| None),
+            Err(DirectoryError::ApplicationDataUnavailable)
+        ));
     }
 }

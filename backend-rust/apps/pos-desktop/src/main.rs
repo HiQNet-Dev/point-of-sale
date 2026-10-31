@@ -5,6 +5,8 @@
 //! - `--synthetic-lab`: laboratorio efímero con fixtures sintéticas.
 //! - `--installation <directorio>`: instalación persistente con migraciones
 //!   aprobadas; expone únicamente su estado.
+//! - `--installation-default`: la misma instalación, en el directorio privado
+//!   que el sistema operativo asigna a la aplicación.
 //! - `--export-bindings`: regenera los contratos TypeScript.
 mod arguments;
 mod bindings;
@@ -48,6 +50,13 @@ fn execute() -> Result<(), Box<dyn Error>> {
             let state = tauri::async_runtime::block_on(LocalState::open_installation(&directory))?;
             run_desktop(state)
         }
+        Invocation::InstallationDefault => {
+            // El directorio lo elige el sistema operativo; JavaScript nunca lo
+            // suministra. Si no existe se crea bajo el perfil del usuario.
+            let directory = installation_dir::default_data_directory()?;
+            let state = tauri::async_runtime::block_on(LocalState::open_installation(&directory))?;
+            run_desktop(state)
+        }
     }
 }
 
@@ -71,7 +80,7 @@ fn run_desktop(state: LocalState) -> Result<(), Box<dyn Error>> {
 fn usage(error: ArgumentError) -> &'static str {
     match error {
         ArgumentError::MissingMode => {
-            "indique --synthetic-lab o --installation <directorio>; no hay configuración productiva por defecto"
+            "indique --synthetic-lab, --installation <directorio> o --installation-default; no hay configuración productiva implícita"
         }
         ArgumentError::ConflictingModes => "indique un único modo de arranque",
         ArgumentError::MissingInstallationDirectory => {
