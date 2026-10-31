@@ -4,6 +4,20 @@ All notable changes to HiQNet POS are documented in this file.
 
 ## [Unreleased] — 0.4.0-SNAPSHOT (Rust cutover)
 
+### Primera instalación y catálogo
+
+- Asistente de primera instalación: detecta el estado, lee la autorización del
+  archivo privado en Rust, crea organización + administrador + credencial + 59
+  grants y consume el derecho en una sola UoW. El token no cruza IPC, logs ni la
+  interfaz.
+- Estados explícitos: pendiente de autorización, caducada, revocada, consumida,
+  inválida, permisos inseguros y plataforma sin custodia (Windows).
+- Catálogo operativo detrás de la sesión: listar y consultar categorías y
+  productos, crear ambos y editar productos con CAS y precio decimal exacto.
+- Prueba integral sobre SQLite productiva: instalación → login → categoría →
+  producto → edición → retirada de permiso rechazada tras revalidar → reapertura
+  con el producto persistido.
+
 ### Autenticación Local
 
 - Login comercial en Rust sobre SQLite: Argon2id verificado fuera del hilo de la
