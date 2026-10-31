@@ -179,6 +179,7 @@ class RustWorkflowTest(unittest.TestCase):
         backend_result="skipped",
         event_name="pull_request",
         windows_result="success",
+        e2e_result="skipped",
     ):
         needs = {
             "changes": {"result": changes_result, "outputs": {"rust_run": rust_run}},
@@ -191,7 +192,7 @@ class RustWorkflowTest(unittest.TestCase):
             "windows-desktop": {"result": windows_result},
             "frontend": {"result": "skipped"},
             "compose": {"result": "skipped"},
-            "e2e": {"result": "skipped"},
+            "e2e": {"result": e2e_result},
         }
         script = next(
             step["run"]
@@ -272,6 +273,7 @@ class RustWorkflowTest(unittest.TestCase):
                         normative_status="PASSED",
                         destination="main",
                         event_name=event_name,
+                        e2e_result="success",
                     )
                 )
                 self.assertFalse(
@@ -281,6 +283,7 @@ class RustWorkflowTest(unittest.TestCase):
                         normative_status="BLOCKED",
                         destination="main",
                         event_name=event_name,
+                        e2e_result="success",
                     )
                 )
 
@@ -292,7 +295,61 @@ class RustWorkflowTest(unittest.TestCase):
                 normative_status="BLOCKED",
                 destination="main",
                 event_name="workflow_dispatch",
+                e2e_result="success",
             )
+        )
+
+    def test_e2e_is_required_for_every_main_destination(self):
+        for event_name in ("pull_request", "push", "workflow_dispatch"):
+            with self.subTest(event=event_name):
+                self.assertTrue(
+                    self.gate_result(
+                        "true",
+                        "success",
+                        normative_status="PASSED",
+                        destination="main",
+                        event_name=event_name,
+                        e2e_result="success",
+                    )
+                )
+                self.assertFalse(
+                    self.gate_result(
+                        "true",
+                        "success",
+                        normative_status="PASSED",
+                        destination="main",
+                        event_name=event_name,
+                        e2e_result="skipped",
+                    )
+                )
+                for result in ("failure", "cancelled"):
+                    with self.subTest(event=event_name, result=result):
+                        self.assertFalse(
+                            self.gate_result(
+                                "true",
+                                "success",
+                                normative_status="PASSED",
+                                destination="main",
+                                event_name=event_name,
+                                e2e_result=result,
+                            )
+                        )
+
+    def test_e2e_is_optional_for_dev_but_never_failed(self):
+        for result in ("success", "skipped"):
+            with self.subTest(result=result):
+                self.assertTrue(self.gate_result("true", "success", e2e_result=result))
+        for result in ("failure", "cancelled"):
+            with self.subTest(result=result):
+                self.assertFalse(self.gate_result("true", "success", e2e_result=result))
+
+    def test_e2e_job_runs_for_main_prs_push_and_dispatch(self):
+        condition = " ".join(self.jobs["e2e"]["if"].split())
+        self.assertEqual(
+            "github.event_name == 'workflow_dispatch' || "
+            "(github.event_name == 'push' && github.ref == 'refs/heads/main') || "
+            "(github.event_name == 'pull_request' && github.base_ref == 'main')",
+            condition,
         )
 
     def test_docs_only_is_accepted_on_dev_but_main_still_needs_passed(self):
@@ -305,6 +362,7 @@ class RustWorkflowTest(unittest.TestCase):
                 "skipped",
                 normative_status="PASSED",
                 destination="main",
+                e2e_result="success",
             )
         )
         self.assertFalse(
@@ -313,6 +371,7 @@ class RustWorkflowTest(unittest.TestCase):
                 "skipped",
                 normative_status="BLOCKED",
                 destination="main",
+                e2e_result="success",
             )
         )
 
@@ -533,11 +592,6 @@ class RustWorkflowTest(unittest.TestCase):
         self.assertIn(
             "docker compose config",
             [step.get("run") for step in self.jobs["compose"]["steps"]],
-        )
-        self.assertEqual(
-            "github.event_name == 'workflow_dispatch' || "
-            "(github.event_name == 'push' && github.ref == 'refs/heads/main')",
-            self.jobs["e2e"]["if"],
         )
 
     def test_detector_tests_are_run_in_ci(self):

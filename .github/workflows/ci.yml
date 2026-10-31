@@ -486,13 +486,15 @@ jobs:
       - name: Validate compose file
         run: docker compose config
 
-  # Integración E2E real: solo en el CI robusto de `main` (push a main) y en la
-  # validación manual. El CI general (PRs y ramas de trabajo) no la ejecuta.
+  # Integración E2E real: push a `main`, PR hacia `main` y validación manual.
+  # El CI de PRs hacia `dev` no la ejecuta; `CI Gate` la exige solo cuando el
+  # destino es `main` o la ejecución es manual.
   e2e:
     name: POS integrated E2E (Chromium + PostgreSQL)
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && github.base_ref == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -643,8 +645,9 @@ jobs:
           retention-days: 7
 
   # Gate estable: único required status check recomendado. Aplica la política
-  # del destino: `dev` exige los controles técnicos y una observación normativa
-  # correcta (PASSED, o BLOCKED declarado); `main` exige además PASSED.
+  # del destino: `dev` exige los controles técnicos, una observación normativa
+  # correcta (PASSED, o BLOCKED declarado) y tolera E2E omitido; `main` exige
+  # además PASSED y E2E en `success` (un `skipped` nunca satisface el E2E).
   ci-gate:
     name: CI Gate
     if: always()
@@ -691,5 +694,9 @@ jobs:
                 and (($main | not) or ($n["rust-normative"].outputs.status == "PASSED"))
               end
             )
-            and (["backend", "frontend", "compose", "e2e"] | all(.[]; ($n[.] | ok)))
+            and (["backend", "frontend", "compose"] | all(.[]; ($n[.] | ok)))
+            and (
+              ($n.e2e.result == "success")
+              or (($main | not) and ($n.e2e.result == "skipped"))
+            )
           '
