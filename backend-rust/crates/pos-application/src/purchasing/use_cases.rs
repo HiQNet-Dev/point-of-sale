@@ -796,9 +796,39 @@ where
             .find_receipt_by_idempotency(&organization_id, &request.idempotency_key)
             .await?
         {
+            // La clave es única por organización, no una autorización para
+            // consultar hechos de otra sucursal ni reutilizar otro payload.
+            if existing.branch_id() != &branch_id {
+                return Err(ApplicationError::Forbidden);
+            }
+            if existing.purchase_order_id() != purchase_order_id {
+                return Err(ApplicationError::DuplicateReceipt);
+            }
             let lines = transaction
                 .receipt_lines(&organization_id, existing.id())
                 .await?;
+            let requested = request
+                .lines
+                .iter()
+                .map(|line| {
+                    Ok(ReceiptLineRequest {
+                        purchase_order_line_id: line.purchase_order_line_id.clone(),
+                        quantity: parse_positive_quantity(&line.quantity)
+                            .ok_or(ApplicationError::InvalidPurchaseInput)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, ApplicationError>>()?;
+            validate_receipt_lines(&requested).map_err(map_purchasing_error)?;
+            if requested.len() != lines.len()
+                || requested.iter().any(|requested| {
+                    !lines.iter().any(|line| {
+                        line.purchase_order_line_id() == &requested.purchase_order_line_id
+                            && line.quantity() == requested.quantity
+                    })
+                })
+            {
+                return Err(ApplicationError::DuplicateReceipt);
+            }
             let view = receipt_view(&existing, &lines);
             self.unit_of_work.commit_transaction(transaction).await?;
             return Ok(view);

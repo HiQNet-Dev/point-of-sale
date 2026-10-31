@@ -715,6 +715,45 @@ async fn receipt_is_idempotent_and_over_receipt_is_rejected()
         .post_purchase_receipt(&user, &mut ids, &id(&order.id), request(), &at(LATER))
         .await?;
     assert_eq!(first.id, second.id);
+    let mut different_payload = request();
+    different_payload.lines[0].quantity = "1.000000".to_owned();
+    assert_eq!(
+        app.post_purchase_receipt(
+            &user,
+            &mut ids,
+            &id(&order.id),
+            different_payload,
+            &at(LATER)
+        )
+        .await
+        .err(),
+        Some(ApplicationError::DuplicateReceipt)
+    );
+    assert_eq!(
+        app.post_purchase_receipt(
+            &user,
+            &mut ids,
+            &id("00000000-0000-0000-0000-000000002c01"),
+            request(),
+            &at(LATER)
+        )
+        .await
+        .err(),
+        Some(ApplicationError::DuplicateReceipt)
+    );
+    let other_scope = principal(&pool, HASH_A, &id(BRANCH_OTHER)).await?;
+    assert_eq!(
+        app.post_purchase_receipt(
+            &other_scope,
+            &mut ids,
+            &id(&order.id),
+            request(),
+            &at(LATER)
+        )
+        .await
+        .err(),
+        Some(ApplicationError::Forbidden)
+    );
     let balance: String = sqlx::query_scalar(
         "SELECT quantity_on_hand FROM inventory_balance WHERE inventory_item_id = ?",
     )
