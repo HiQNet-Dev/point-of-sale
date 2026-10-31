@@ -363,6 +363,8 @@ mod inventory_tests;
 #[cfg(test)]
 mod money_scale_tests;
 #[cfg(test)]
+mod provisioning_tests;
+#[cfg(test)]
 mod purchasing_tests;
 #[cfg(test)]
 mod recipe_tests;
