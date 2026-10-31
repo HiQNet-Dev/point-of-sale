@@ -227,7 +227,7 @@ fn hash_of(handle: &str) -> Result<SessionHash, IpcError> {
         .map_err(|_| IpcError::Unauthorized)
 }
 
-async fn clock(pool: &SqlitePool) -> Result<(UtcSeconds, AuditOccurredAt), IpcError> {
+pub(crate) async fn clock(pool: &SqlitePool) -> Result<(UtcSeconds, AuditOccurredAt), IpcError> {
     let elapsed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| IpcError::InternalError)?;

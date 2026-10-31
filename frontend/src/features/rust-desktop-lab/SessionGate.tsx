@@ -3,6 +3,7 @@ import { Alert, Box, Button, Container, MenuItem, Stack, Table, TableBody, Table
 import { DesktopCommandError, desktopService } from '../../shared/rust-local/desktop-client'
 import type { BranchDto, InstallationStatusDto, SessionIdentityDto } from '../../shared/rust-local/desktop.generated'
 import { LoginPage } from './LoginPage'
+import { SetupWizard } from './SetupWizard'
 
 const stateLabels: Record<string, string> = {
   FIRST_INSTALL: 'Primera instalación',
@@ -20,12 +21,34 @@ function codeOf(error: unknown): string | null {
  * ya descartó el handle nativo en ese caso.
  */
 export function SessionGate({ status }: { status: InstallationStatusDto }) {
+  const queryClient = useQueryClient()
+  const bootstrap = useQuery({
+    queryKey: ['rust-desktop', 'bootstrap'],
+    queryFn: desktopService.bootstrapStatus,
+    retry: false,
+  })
+  const provisioned = bootstrap.data?.state === 'ALREADY_PROVISIONED'
   const me = useQuery({
     queryKey: ['rust-desktop', 'auth'],
     queryFn: desktopService.authMe,
     retry: false,
+    enabled: provisioned,
   })
 
+  if (bootstrap.isPending) {
+    return <Container component="main" sx={{ py: 4 }}><Typography role="status">Comprobando la instalación local…</Typography></Container>
+  }
+  if (bootstrap.isError) {
+    return <Container component="main" sx={{ py: 4 }}>
+      <Alert severity="error" role="alert">No se pudo consultar la instalación: {bootstrap.error.message}</Alert>
+    </Container>
+  }
+  if (!provisioned) {
+    return <SetupWizard
+      status={bootstrap.data}
+      onCompleted={() => void queryClient.invalidateQueries({ queryKey: ['rust-desktop', 'bootstrap'] })}
+    />
+  }
   if (me.isPending) {
     return <Container component="main" sx={{ py: 4 }}><Typography role="status">Comprobando la sesión local…</Typography></Container>
   }

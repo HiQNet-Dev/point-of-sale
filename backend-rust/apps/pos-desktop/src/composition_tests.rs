@@ -2,7 +2,10 @@
 use std::error::Error;
 
 use super::*;
-use crate::dto::{CreateProductRequest, LoginRequestDto, PageRequest, SelectBranchRequestDto};
+use crate::dto::{
+    BootstrapInstallRequestDto, CreateProductRequest, LoginRequestDto, PageRequest,
+    SelectBranchRequestDto,
+};
 
 fn page() -> PageRequest {
     PageRequest {
@@ -281,6 +284,51 @@ fn authentication_commands_are_gated_by_mode_and_session() -> Result<(), Box<dyn
             .fetch_one(&state.product_installation()?.pool)
             .await?;
         assert_eq!(sessions, 0);
+        state.shutdown().await;
+        Ok(())
+    })
+}
+
+#[test]
+fn first_installation_is_gated_by_platform_custody() -> Result<(), Box<dyn Error>> {
+    tauri::async_runtime::block_on(async {
+        let lab = LocalState::synthetic().await?;
+        assert_eq!(
+            lab.bootstrap_status().await.err(),
+            Some(IpcError::OperationNotAvailable)
+        );
+        lab.shutdown().await;
+
+        let directory = tempfile::tempdir()?;
+        let state = LocalState::open_installation(directory.path()).await?;
+        let status = state.bootstrap_status().await?;
+        #[cfg(windows)]
+        assert_eq!(status.state, "UNSUPPORTED_PLATFORM");
+        #[cfg(unix)]
+        assert_eq!(status.state, "AWAITING_AUTHORIZATION");
+        assert!(status.expires_at.is_none());
+
+        let installed = state
+            .bootstrap_install(BootstrapInstallRequestDto {
+                business_name: "Café Central".to_owned(),
+                business_code: None,
+                administrator_name: "Administradora".to_owned(),
+                email: "admin@cafe.test".to_owned(),
+                password: "contraseña-larga-2k".to_owned(),
+                currency: Some("MXN".to_owned()),
+            })
+            .await;
+        #[cfg(windows)]
+        assert_eq!(installed.err(), Some(IpcError::OperationNotAvailable));
+        #[cfg(unix)]
+        assert_eq!(installed.err(), Some(IpcError::Unauthorized));
+
+        // Ningún intento sin autorización crea identidad.
+        let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pos_user")
+            .fetch_one(&state.product_installation()?.pool)
+            .await?;
+        assert_eq!(users, 0);
+        assert_eq!(state.bootstrap_status().await?.state, status.state);
         state.shutdown().await;
         Ok(())
     })

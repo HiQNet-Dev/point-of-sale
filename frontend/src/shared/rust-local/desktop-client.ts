@@ -1,4 +1,4 @@
-import { commands, type CreateProductRequest_Deserialize, type IpcError } from './desktop.generated'
+import { commands, type BootstrapInstallRequestDto_Deserialize, type CreateProductRequest_Deserialize, type IpcError } from './desktop.generated'
 
 /** Errores públicos del adaptador IPC, sin diagnósticos de almacenamiento. */
 export class DesktopCommandError extends Error {
@@ -41,4 +41,11 @@ export const desktopService = {
   authLogoutAll: () => unwrap(commands.authLogoutAll()),
   authSelectBranch: (branchId: string) => unwrap(commands.authSelectBranch({ branchId })),
   authListBranches: () => unwrap(commands.authListBranches()),
+
+  /**
+   * Primera instalación. El token de provisioning lo lee Rust desde el archivo
+   * privado; nunca viaja por este canal.
+   */
+  bootstrapStatus: () => unwrap(commands.bootstrapStatus()),
+  bootstrapInstall: (request: BootstrapInstallRequestDto_Deserialize) => unwrap(commands.bootstrapInstall(request)),
 }

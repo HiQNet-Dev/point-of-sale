@@ -206,6 +206,11 @@ impl InstallationDirectory {
         self.path.join(DATABASE_FILE_NAME)
     }
 
+    /// Directorio privado de la instalación.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
     /// También se validan los auxiliares que SQLite abre junto al archivo principal.
     fn validate_database_file(&self) -> Result<(), DirectoryError> {
         let files = [

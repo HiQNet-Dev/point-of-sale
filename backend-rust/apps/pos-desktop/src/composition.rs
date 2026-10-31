@@ -75,6 +75,8 @@ pub(crate) struct LabInstallation {
 pub(crate) struct ProductInstallation {
     pub(crate) pool: SqlitePool,
     pub(crate) report: InstallationReport,
+    /// Directorio privado; el bootstrap lee aquí la autorización nativa.
+    pub(crate) directory: std::path::PathBuf,
     installation_lock: std::fs::File,
     /// Handle de sesión en memoria nativa; nunca se persiste ni llega al
     /// renderer. Se libera al cerrar la aplicación.
@@ -176,6 +178,7 @@ impl LocalState {
         let installation_lock = directory.acquire_lock()?;
         let database = directory.database_file();
         let existed = database.exists();
+        let installation_directory = directory.path().to_path_buf();
         let pool = pos_storage_sqlite::open(&database, BUSY_TIMEOUT)
             .await
             .map_err(|_| StartupError::Storage)?;
@@ -192,6 +195,7 @@ impl LocalState {
             mode: Mode::Product(ProductInstallation {
                 pool,
                 report,
+                directory: installation_directory,
                 installation_lock,
                 session: tokio::sync::Mutex::new(None),
             }),
