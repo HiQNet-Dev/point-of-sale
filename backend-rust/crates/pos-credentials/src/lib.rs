@@ -33,6 +33,7 @@ pub use policy::{
 };
 pub use provisioning::{
     PROVISIONING_TOKEN_BYTES, PROVISIONING_TOKEN_HEX_LEN, ProvisioningToken, TokenDigest,
+    random_uuid_v4,
 };
 pub use session::{SESSION_HANDLE_BYTES, SessionHandle};
 pub use verify::{VerificationOutcome, VerifyRequest, hash_password, verify_credential};
