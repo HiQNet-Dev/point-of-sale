@@ -77,7 +77,7 @@ use sqlx::SqlitePool;
 ///
 /// Permanecen fuera de `migrations/local/`: este arnés no las convierte en DDL
 /// aprobado, solo las evalúa sobre SQLite sintético.
-const PROPOSALS: [&str; 14] = [
+const PROPOSALS: [&str; 15] = [
     include_str!("../../../proposals/local-auth/0002_installation_identity.proposed.sql"),
     include_str!("../../../proposals/local-auth/0003_user_credential_session.proposed.sql"),
     include_str!("../../../proposals/local-auth/0004_rbac_catalog.proposed.sql"),
@@ -92,6 +92,7 @@ const PROPOSALS: [&str; 14] = [
     include_str!("../../../proposals/local-inventory/0013_inventory.proposed.sql"),
     include_str!("../../../proposals/local-inventory/0014_inventory_recipes.proposed.sql"),
     include_str!("../../../proposals/local-sales/0015_checkout.proposed.sql"),
+    include_str!("../../../proposals/local-purchasing/0016_purchasing.proposed.sql"),
 ];
 
 const ORG: &str = "00000000-0000-0000-0000-0000000007a0";
