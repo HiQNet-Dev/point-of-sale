@@ -75,6 +75,7 @@ struct LabInstallation {
 struct ProductInstallation {
     pool: SqlitePool,
     report: InstallationReport,
+    installation_lock: std::fs::File,
 }
 
 /// Fallos de arranque sin SQL, credenciales ni contenidos de fila.
@@ -82,6 +83,8 @@ struct ProductInstallation {
 pub enum StartupError {
     /// El directorio de instalación no es utilizable.
     InvalidInstallationDirectory,
+    /// Otro runtime desktop mantiene abierta esta instalación.
+    InstallationInUse,
     /// El archivo no pudo abrirse con los PRAGMA exigidos.
     Storage,
     /// El historial de migraciones no permite operar.
@@ -94,6 +97,7 @@ impl fmt::Display for StartupError {
             Self::InvalidInstallationDirectory => {
                 formatter.write_str("directorio de instalación inválido")
             }
+            Self::InstallationInUse => formatter.write_str("la instalación ya está abierta"),
             Self::Storage => formatter.write_str("no se pudo abrir el archivo SQLite local"),
             Self::Installation(error) => write!(formatter, "instalación rechazada: {error}"),
         }
@@ -109,8 +113,11 @@ impl From<InstallationError> for StartupError {
 }
 
 impl From<crate::installation_dir::DirectoryError> for StartupError {
-    fn from(_error: crate::installation_dir::DirectoryError) -> Self {
-        Self::InvalidInstallationDirectory
+    fn from(error: crate::installation_dir::DirectoryError) -> Self {
+        match error {
+            crate::installation_dir::DirectoryError::InUse => Self::InstallationInUse,
+            _ => Self::InvalidInstallationDirectory,
+        }
     }
 }
 
@@ -163,6 +170,7 @@ impl LocalState {
         // El directorio se valida antes de abrir SQLite: enlaces y permisos
         // compartidos se rechazan en el entrypoint, no en la capa de datos.
         let directory = InstallationDirectory::resolve(directory)?;
+        let installation_lock = directory.acquire_lock()?;
         let database = directory.database_file();
         let existed = database.exists();
         let pool = pos_storage_sqlite::open(&database, BUSY_TIMEOUT)
@@ -178,7 +186,11 @@ impl LocalState {
             }
         };
         Ok(Self {
-            mode: Mode::Product(ProductInstallation { pool, report }),
+            mode: Mode::Product(ProductInstallation {
+                pool,
+                report,
+                installation_lock,
+            }),
         })
     }
 
@@ -190,6 +202,9 @@ impl LocalState {
                 // Un cierre limpio deja el WAL integrado en el archivo principal.
                 let _ = checkpoint(&product.pool).await;
                 product.pool.close().await;
+                // Nunca se libera mientras SQLite siga abierto; en caso de fallo,
+                // el SO lo liberará al destruir el estado o terminar el proceso.
+                let _ = product.installation_lock.unlock();
             }
         }
     }

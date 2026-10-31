@@ -18,8 +18,19 @@ configuración productiva por defecto ni lectura de variables de entorno.
 
 El modo instalación aplica únicamente el migrador aprobado
 (`migrations/local`). Historial vacío ⇒ primera instalación; versión igual al
-build ⇒ reapertura; versión posterior ⇒ el arranque se rechaza. Nunca carga
-`proposals/`, nunca crea usuarios, sesiones ni credenciales.
+build ⇒ reapertura; versión posterior ⇒ el arranque se rechaza. En cada apertura
+se valida el historial/checksums con SQLx; si faltan migraciones **aprobadas**, se
+aplican antes de informar disponibilidad. Nunca carga `proposals/`, nunca crea
+usuarios, sesiones ni credenciales.
+
+Desde la consolidación 2C, una segunda instancia desktop sobre la misma
+instalación se rechaza antes de abrir SQLite. El candado `.hiqnet-pos.lock` se
+mantiene hasta cerrar el pool y no se borra: **no eliminarlo para intentar abrir
+una segunda instancia**. También se rechazan redirecciones en directorios
+antecesores y en archivos SQLite auxiliares. En Unix, un directorio existente
+con acceso de grupo u otros usuarios se rechaza sin cambiar sus permisos; una
+ruta explícita de recuperación requiere revisión de permisos/ACL por el
+administrador. Estos rechazos son fallos de arranque, no nuevos errores IPC.
 
 ## Levantar la aplicación para probarla
 

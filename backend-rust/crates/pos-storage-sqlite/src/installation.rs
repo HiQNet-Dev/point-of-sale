@@ -130,6 +130,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reopen_rejects_a_changed_checksum() -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let pool = pool(&directory.path().join("installation.sqlite")).await?;
+        crate::migrate(&pool).await?;
+        sqlx::query("UPDATE _sqlx_migrations SET checksum = x'00' WHERE version = 1")
+            .execute(&pool)
+            .await?;
+        let schema = SqliteInstallationSchema::new(pool.clone(), true);
+        assert_eq!(
+            prepare_installation(&schema, &schema, approved()?).await,
+            Err(InstallationError::MigrationFailed)
+        );
+        pool.close().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn reopen_rejects_a_failed_migration() -> Result<(), Box<dyn std::error::Error>> {
+        let directory = tempfile::tempdir()?;
+        let pool = pool(&directory.path().join("installation.sqlite")).await?;
+        crate::migrate(&pool).await?;
+        sqlx::query("UPDATE _sqlx_migrations SET success = 0 WHERE version = 1")
+            .execute(&pool)
+            .await?;
+        let schema = SqliteInstallationSchema::new(pool.clone(), true);
+        assert!(
+            prepare_installation(&schema, &schema, approved()?)
+                .await
+                .is_err()
+        );
+        pool.close().await;
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn approved_version_follows_the_embedded_migrator() {
         assert_eq!(crate::approved_schema_version(), 1);
     }

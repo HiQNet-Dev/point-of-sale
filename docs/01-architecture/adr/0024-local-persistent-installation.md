@@ -133,6 +133,34 @@ proceso, `BEGIN IMMEDIATE` para escrituras críticas).
 4. Confirmar que la recuperación administrativa usa `--installation <directorio>`
    y no un modo oculto.
 
+## Consolidación técnica 2C — apertura segura (sin nueva autorización)
+
+Este apartado actualiza el estado de implementación; las tablas 1Z/2B anteriores
+se conservan como historial. No cambia el alcance de aceptación de 2026-10-30.
+
+- La reapertura ejecuta el migrador aprobado para **validar checksums e historial**,
+  no para reaplicar DDL ya ejecutado. También aplica upgrades aprobados pendientes.
+  El estado informado sigue describiendo si había historial al abrir.
+- Un esquema futuro se rechaza **antes** de invocar el migrador. Un migrador que
+  no alcanza la versión aprobada no puede informar disponibilidad.
+- Se validan todos los antecesores de la ruta, incluidos junctions/puntos de
+  reanálisis en Windows; también SQLite, WAL, SHM, rollback journal y lock file.
+- En Unix el directorio final debe ser privado (sin acceso de grupo u otros).
+  Si no lo es, se rechaza sin modificar permisos existentes.
+- Un candado exclusivo del SO (`.hiqnet-pos.lock`) impide dos runtimes **desktop**
+  cooperantes sobre la misma instalación. Se adquiere antes de SQLite y se libera
+  después de cerrar el pool; nunca se borra el lock file al cerrar. No sustituye
+  `BEGIN IMMEDIATE`, no protege frente a programas que ignoren el candado y no
+  se ha añadido al ejecutable headless `pos-local`.
+
+Límites pendientes: validación de ACL Windows (no se presupone que cualquier
+ruta explícita sea privada), carreras de sustitución entre validación y apertura
+(TOCTOU), directorios compartidos, identidad definitiva del bundle, resolución
+nativa Tauri, backup/restauración y actualización de instalaciones. No hay
+migración de rutas automática ni activación de esquemas candidatos.
+
+Evidencia y alcance: [avance 2C](../../05-development/rust-increment-2c.md).
+
 ## Alternativas descartadas
 
 - **Reutilizar el laboratorio como producto**: mezclaría fixtures con datos

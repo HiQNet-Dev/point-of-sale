@@ -9,15 +9,15 @@
 //! - Debe ser un directorio real, nunca un archivo ni un enlace simbólico.
 //! - En Windows también se rechazan *junctions* y otros puntos de reanálisis.
 //! - Se crea si falta, con permisos de propietario en Unix.
-//! - Se rechaza un directorio escribible por todos: otro usuario local podría
-//!   sustituir el archivo de la instalación.
+//! - En Unix se rechaza acceso de grupo u otros usuarios al directorio final;
+//!   no se modifican silenciosamente los permisos de instalaciones existentes.
 //! - El archivo de base de datos tampoco puede ser un enlace simbólico.
 //!
 //! # Límites conocidos
 //!
-//! El bloqueo entre procesos lo aporta SQLite (un pool por proceso y
-//! `BEGIN IMMEDIATE` para escrituras críticas); este módulo no implementa un
-//! candado de instancia única.
+//! Un candado del sistema operativo impide dos runtimes desktop sobre la misma
+//! instalación. SQLite sigue serializando las transacciones de negocio. Los
+//! permisos deben impedir que terceros sustituyan rutas durante la apertura.
 
 use std::{
     ffi::OsString,
@@ -27,6 +27,8 @@ use std::{
 
 /// Nombre fijo del archivo dentro del directorio de instalación.
 pub const DATABASE_FILE_NAME: &str = "hiqnet-pos.sqlite";
+
+const LOCK_FILE_NAME: &str = ".hiqnet-pos.lock";
 
 /// Directorio estable de producto bajo el directorio de datos del sistema.
 ///
@@ -55,6 +57,8 @@ pub enum DirectoryError {
     InsecurePermissions,
     /// El sistema operativo no expone un directorio de datos para el usuario.
     ApplicationDataUnavailable,
+    /// Otro runtime mantiene abierta esta instalación.
+    InUse,
     /// El sistema de archivos rechazó la operación.
     Unavailable,
 }
@@ -70,6 +74,7 @@ impl std::fmt::Display for DirectoryError {
             Self::ApplicationDataUnavailable => {
                 "el sistema no ofrece un directorio de datos de aplicación"
             }
+            Self::InUse => "la instalación ya está abierta en otro proceso",
             Self::Unavailable => "el directorio de instalación no está disponible",
         })
     }
@@ -143,6 +148,7 @@ impl InstallationDirectory {
         if path.as_os_str().is_empty() {
             return Err(DirectoryError::InvalidPath);
         }
+        validate_ancestors(path)?;
         match fs::symlink_metadata(path) {
             Ok(metadata) => {
                 if is_redirect(&metadata) {
@@ -158,12 +164,41 @@ impl InstallationDirectory {
             }
             Err(_) => return Err(DirectoryError::Unavailable),
         }
-        ensure_not_world_writable(path)?;
+        ensure_private_directory(path)?;
         let directory = Self {
             path: path.to_path_buf(),
         };
+        validate_ancestors(path)?;
         directory.validate_database_file()?;
         Ok(directory)
+    }
+
+    /// Adquiere un candado exclusivo antes de abrir SQLite.
+    ///
+    /// El archivo no se elimina al liberar el candado: borrarlo permitiría que
+    /// dos procesos bloquearan inodos distintos bajo el mismo nombre. El sistema
+    /// operativo libera el candado también si el proceso termina abruptamente.
+    ///
+    /// # Errors
+    /// Rechaza rutas inseguras, errores de E/S e instalaciones ya abiertas.
+    pub fn acquire_lock(&self) -> Result<fs::File, DirectoryError> {
+        validate_ancestors(&self.path)?;
+        self.validate_database_file()?;
+        let mut options = fs::OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let file = options
+            .open(self.path.join(LOCK_FILE_NAME))
+            .map_err(|_| DirectoryError::Unavailable)?;
+        file.try_lock().map_err(|error| match error {
+            fs::TryLockError::WouldBlock => DirectoryError::InUse,
+            fs::TryLockError::Error(_) => DirectoryError::Unavailable,
+        })?;
+        Ok(file)
     }
 
     /// Ruta del archivo SQLite de esta instalación.
@@ -171,23 +206,55 @@ impl InstallationDirectory {
         self.path.join(DATABASE_FILE_NAME)
     }
 
-    /// El archivo no puede ser un enlace ni un directorio.
+    /// También se validan los auxiliares que SQLite abre junto al archivo principal.
     fn validate_database_file(&self) -> Result<(), DirectoryError> {
-        let database = self.database_file();
-        match fs::symlink_metadata(&database) {
+        let files = [
+            DATABASE_FILE_NAME.to_owned(),
+            format!("{DATABASE_FILE_NAME}-wal"),
+            format!("{DATABASE_FILE_NAME}-shm"),
+            format!("{DATABASE_FILE_NAME}-journal"),
+            LOCK_FILE_NAME.to_owned(),
+        ];
+        for name in files {
+            let file = self.path.join(name);
+            match fs::symlink_metadata(&file) {
+                Ok(metadata) => {
+                    if is_redirect(&metadata) {
+                        return Err(DirectoryError::Symlink);
+                    }
+                    if !metadata.is_file() {
+                        return Err(DirectoryError::InvalidPath);
+                    }
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(_) => return Err(DirectoryError::Unavailable),
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Evita que una ruta aparentemente normal atraviese una redirección del padre.
+///
+/// Es una comprobación previa, no una apertura atómica: sigue siendo necesario
+/// proteger el directorio frente a sustituciones concurrentes mediante permisos.
+fn validate_ancestors(path: &Path) -> Result<(), DirectoryError> {
+    let absolute = std::path::absolute(path).map_err(|_| DirectoryError::InvalidPath)?;
+    for ancestor in absolute.ancestors() {
+        match fs::symlink_metadata(ancestor) {
             Ok(metadata) => {
                 if is_redirect(&metadata) {
                     return Err(DirectoryError::Symlink);
                 }
-                if metadata.is_dir() {
+                if !metadata.is_dir() {
                     return Err(DirectoryError::InvalidPath);
                 }
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(_) => return Err(DirectoryError::Unavailable),
         }
-        Ok(())
     }
+    Ok(())
 }
 
 /// Un enlace simbólico o, en Windows, cualquier punto de reanálisis (junction).
@@ -218,25 +285,26 @@ fn restrict_to_owner(path: &Path) -> Result<(), DirectoryError> {
 
 #[cfg(not(unix))]
 fn restrict_to_owner(_path: &Path) -> Result<(), DirectoryError> {
-    // En Windows el ACL heredado del perfil del usuario ya excluye a otros usuarios.
+    // Las rutas del perfil suelen heredar un ACL privado; los directorios de
+    // recuperación explícitos requieren verificación administrativa del ACL.
     Ok(())
 }
 
 #[cfg(unix)]
-fn ensure_not_world_writable(path: &Path) -> Result<(), DirectoryError> {
+fn ensure_private_directory(path: &Path) -> Result<(), DirectoryError> {
     use std::os::unix::fs::PermissionsExt;
     let mode = fs::metadata(path)
         .map_err(|_| DirectoryError::Unavailable)?
         .permissions()
         .mode();
-    if mode & 0o002 != 0 {
+    if mode & 0o077 != 0 {
         return Err(DirectoryError::InsecurePermissions);
     }
     Ok(())
 }
 
 #[cfg(not(unix))]
-fn ensure_not_world_writable(_path: &Path) -> Result<(), DirectoryError> {
+fn ensure_private_directory(_path: &Path) -> Result<(), DirectoryError> {
     // Sin bits POSIX no se puede evaluar el ACL sin dependencias adicionales.
     Ok(())
 }
@@ -325,16 +393,108 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn rejects_a_world_writable_directory() -> Result<(), Box<dyn std::error::Error>> {
+    fn rejects_non_private_directories_without_changing_permissions()
+    -> Result<(), Box<dyn std::error::Error>> {
         use std::os::unix::fs::PermissionsExt;
         let parent = tempfile::tempdir()?;
         let target = parent.path().join("compartida");
         std::fs::create_dir(&target)?;
-        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o777))?;
+        for mode in [0o777, 0o770, 0o750, 0o755] {
+            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(mode))?;
+            assert!(matches!(
+                InstallationDirectory::resolve(&target),
+                Err(DirectoryError::InsecurePermissions)
+            ));
+            assert_eq!(
+                std::fs::metadata(&target)?.permissions().mode() & 0o777,
+                mode
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_directories_in_place_of_sqlite_sidecars() -> Result<(), Box<dyn std::error::Error>> {
+        for suffix in ["-wal", "-shm", "-journal"] {
+            let parent = tempfile::tempdir()?;
+            let installation = parent.path().join("installation");
+            InstallationDirectory::resolve(&installation)?;
+            fs::create_dir(installation.join(format!("{DATABASE_FILE_NAME}{suffix}")))?;
+            assert!(matches!(
+                InstallationDirectory::resolve(&installation),
+                Err(DirectoryError::InvalidPath)
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn rejects_a_junction_ancestor_before_creating_the_installation()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let parent = tempfile::tempdir()?;
+        let target = parent.path().join("real");
+        fs::create_dir(&target)?;
+        let junction = parent.path().join("redirected");
+        let result = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&junction)
+            .arg(&target)
+            .output()?;
+        assert!(
+            result.status.success(),
+            "no se pudo crear el junction de prueba"
+        );
         assert!(matches!(
-            InstallationDirectory::resolve(&target),
-            Err(DirectoryError::InsecurePermissions)
+            InstallationDirectory::resolve(&junction.join("installation")),
+            Err(DirectoryError::Symlink)
         ));
+        assert!(!target.join("installation").exists());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlink_ancestors_and_sidecars() -> Result<(), Box<dyn std::error::Error>> {
+        let parent = tempfile::tempdir()?;
+        let target = parent.path().join("real");
+        fs::create_dir(&target)?;
+        let link = parent.path().join("redirected");
+        std::os::unix::fs::symlink(&target, &link)?;
+        assert!(matches!(
+            InstallationDirectory::resolve(&link.join("installation")),
+            Err(DirectoryError::Symlink)
+        ));
+        assert!(!target.join("installation").exists());
+        for suffix in ["-wal", "-shm", "-journal"] {
+            let directory = tempfile::tempdir()?;
+            let installation = directory.path().join("installation");
+            InstallationDirectory::resolve(&installation)?;
+            let sidecar = installation.join(format!("{DATABASE_FILE_NAME}{suffix}"));
+            std::os::unix::fs::symlink(parent.path().join("absent"), &sidecar)?;
+            assert!(matches!(
+                InstallationDirectory::resolve(&installation),
+                Err(DirectoryError::Symlink)
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn installation_lock_is_exclusive_and_released_on_drop()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let parent = tempfile::tempdir()?;
+        let installation = parent.path().join("installation");
+        let directory = InstallationDirectory::resolve(&installation)?;
+        let first = directory.acquire_lock()?;
+        assert!(matches!(
+            directory.acquire_lock(),
+            Err(DirectoryError::InUse)
+        ));
+        drop(first);
+        let second = directory.acquire_lock()?;
+        drop(second);
+        assert!(installation.join(LOCK_FILE_NAME).is_file());
         Ok(())
     }
 

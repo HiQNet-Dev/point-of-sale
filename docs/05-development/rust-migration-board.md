@@ -1,6 +1,6 @@
 # Tablero maestro de migración Java → Rust
 
-**Actualizado en el Incremento 2B.** Este tablero registra el estado real de la
+**Actualizado con el avance de consolidación 2C.** Este tablero registra el estado real de la
 migración, no el deseado. Un estado solo avanza con evidencia publicada.
 
 Arquitectura: monolito modular hexagonal (`pos-core` ← `pos-application` ←
@@ -53,6 +53,19 @@ auditoría transaccional— sobre un esquema **candidato** que aún no vive en
 | Integración React | `INTEGRATED (lab only)` | Pantalla separada de laboratorio (lectura + creación de producto) y pantalla de instalación; E2E Windows real React → WebView2 IPC → Application → SQLite → auditoría | Login comercial, escrituras en producto, integración de pantallas operativas y paridad completa |
 | Arnés Docker Local | `DEV HARNESS (validated)` | `backend-rust/Dockerfile` multi-stage, runtime no-root, volumen, healthcheck funcional (`verify_health`: integridad + migraciones), reinicio, cierre con checkpoint, evidencia `first_install` → `reopened` y checksum idéntico | No es distribución Free Local ni expone red |
 | Arnés sintético extremo a extremo | `E2E (synthetic)` | `tools/pos-lab`: bootstrap → admin → sesión → RBAC → sucursal → categoría → producto → inventario → receta → caja → turno → venta → checkout → consumo → `COMPLETED` → auditoría → cierre → reapertura, más matriz ejecutable de dependencias `0002`–`0015` (FK y `foreign_key_check` por paso). Ejecutado en local y en Docker | Sigue sobre esquema **candidato**; no es producto |
+
+### Consolidación 2C: camino persistente, no activación comercial
+
+La instalación aprobada añade validación SQLx de checksums en cada reapertura,
+upgrades limitados al migrador aprobado, rechazo de rutas redirigidas/auxiliares
+inseguros y exclusión de segunda instancia desktop mediante candado del SO.
+Pruebas: 315 headless, 29 desktop Windows, 9 de directorios en Linux Docker;
+E2E WebView2 de instalación y laboratorio, y smoke Docker aprobados localmente.
+Detalle y límites en [el informe 2C](rust-increment-2c.md).
+
+No se promovió ninguna migración, no hay login comercial ni nuevos comandos de
+Purchasing. Las 17 operaciones permanecen `APPLICATION (candidate)`, sin paridad
+diferencial completa ni integración IPC/React. A/B/C y D-AUTH-09 siguen pendientes.
 
 ## 3. Dinero y cantidades
 

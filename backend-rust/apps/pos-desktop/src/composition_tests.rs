@@ -146,6 +146,46 @@ fn installation_persists_across_reopen() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn only_one_desktop_runtime_can_open_an_installation() -> Result<(), Box<dyn Error>> {
+    tauri::async_runtime::block_on(async {
+        let directory = tempfile::tempdir()?;
+        let first = LocalState::open_installation(directory.path()).await?;
+        assert!(matches!(
+            LocalState::open_installation(directory.path()).await,
+            Err(StartupError::InstallationInUse)
+        ));
+        first.shutdown().await;
+        let second = LocalState::open_installation(directory.path()).await?;
+        assert_eq!(second.installation_status()?.state, "REOPENED");
+        second.shutdown().await;
+        Ok(())
+    })
+}
+
+#[test]
+fn changed_checksum_is_rejected_and_startup_releases_the_lock() -> Result<(), Box<dyn Error>> {
+    tauri::async_runtime::block_on(async {
+        let directory = tempfile::tempdir()?;
+        let database = directory.path().join(DATABASE_FILE_NAME);
+        let pool = pos_storage_sqlite::open(&database, Duration::from_secs(5)).await?;
+        pos_storage_sqlite::migrate(&pool).await?;
+        sqlx::query("UPDATE _sqlx_migrations SET checksum = x'00'")
+            .execute(&pool)
+            .await?;
+        pool.close().await;
+        for _ in 0..2 {
+            assert!(matches!(
+                LocalState::open_installation(directory.path()).await,
+                Err(StartupError::Installation(
+                    InstallationError::MigrationFailed
+                ))
+            ));
+        }
+        Ok(())
+    })
+}
+
+#[test]
 fn newer_schema_is_rejected_at_startup() -> Result<(), Box<dyn Error>> {
     tauri::async_runtime::block_on(async {
         let directory = tempfile::tempdir()?;

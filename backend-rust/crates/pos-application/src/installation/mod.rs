@@ -82,7 +82,10 @@ pub struct InstallationReport {
 }
 
 impl InstallationReport {
-    /// Indica si el arranque tuvo que ejecutar el migrador autorizado.
+    /// Indica si la primera instalación incorporó migraciones.
+    ///
+    /// No indica si se invocó el migrador: también se ejecuta al reabrir para
+    /// validar checksums y aplicar upgrades aprobados pendientes.
     pub fn was_migrated(self) -> bool {
         self.state == InstallationState::FirstInstall && self.applied_migrations > 0
     }
@@ -151,8 +154,11 @@ pub fn classify(
     ))
 }
 
-/// Prepara la instalación: clasifica, migra solo si es la primera vez y vuelve a
-/// clasificar para devolver el estado final.
+/// Prepara la instalación: rechaza esquemas futuros, valida el historial y aplica
+/// únicamente las migraciones aprobadas pendientes antes de volver a observar.
+///
+/// El migrador también se invoca al reabrir: SQLx debe comprobar los checksums
+/// aunque no haya migraciones pendientes. No equivale a reaplicar el DDL.
 ///
 /// La clasificación de [`InstallationReport::state`] corresponde al momento de
 /// apertura, de modo que un arranque que creó el esquema se informa como
@@ -167,13 +173,13 @@ pub async fn prepare_installation<R: InstallationReader, M: AuthorizedMigrator>(
     approved: ApprovedSchema,
 ) -> Result<InstallationReport, InstallationError> {
     let initial = classify(reader.observe().await?, approved)?;
-    if initial.state == InstallationState::Reopened {
-        return Ok(initial);
-    }
     migrator.apply_approved_migrations().await?;
     let settled = classify(reader.observe().await?, approved)?;
+    if settled.schema_version != approved.version() {
+        return Err(InstallationError::InconsistentHistory);
+    }
     Ok(InstallationReport {
-        state: InstallationState::FirstInstall,
+        state: initial.state,
         ..settled
     })
 }
@@ -295,6 +301,46 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn pending_approved_upgrade_is_applied() -> Result<(), InstallationError> {
+        let fixture = Fixture {
+            applied: std::cell::Cell::new(Some(0)),
+            existed: true,
+            fail: false,
+        };
+        let report = prepare_installation(&fixture, &fixture, approved()).await?;
+        assert_eq!(report.state, InstallationState::Reopened);
+        assert_eq!(report.schema_version, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn migrator_must_reach_the_approved_version() -> Result<(), InstallationError> {
+        let fixture = Fixture {
+            applied: std::cell::Cell::new(Some(1)),
+            existed: true,
+            fail: false,
+        };
+        assert_eq!(
+            prepare_installation(&fixture, &fixture, ApprovedSchema::new(2)?).await,
+            Err(InstallationError::InconsistentHistory)
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn future_schema_is_rejected_before_migrating() {
+        let fixture = Fixture {
+            applied: std::cell::Cell::new(Some(99)),
+            existed: true,
+            fail: false,
+        };
+        assert!(matches!(
+            prepare_installation(&fixture, &RejectingMigrator, approved()).await,
+            Err(InstallationError::SchemaAhead { found: 99, .. })
+        ));
+    }
+
     /// Adaptador de prueba: simula un archivo que empieza vacío.
     struct Fixture {
         applied: std::cell::Cell<Option<i64>>,
@@ -350,7 +396,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reopen_does_not_migrate_again() {
+    async fn reopen_validates_migration_history() {
         let fixture = Fixture {
             applied: std::cell::Cell::new(Some(1)),
             existed: true,
@@ -358,16 +404,11 @@ mod tests {
         };
         assert_eq!(
             prepare_installation(&fixture, &RejectingMigrator, approved()).await,
-            Ok(InstallationReport {
-                state: InstallationState::Reopened,
-                schema_version: 1,
-                applied_migrations: 1,
-                database_existed: true,
-            })
+            Err(InstallationError::MigrationFailed)
         );
     }
 
-    /// Migrador que siempre falla: demuestra que la reapertura no lo invoca.
+    /// Migrador que siempre falla: la reapertura debe propagar su rechazo.
     struct RejectingMigrator;
 
     impl AuthorizedMigrator for RejectingMigrator {
