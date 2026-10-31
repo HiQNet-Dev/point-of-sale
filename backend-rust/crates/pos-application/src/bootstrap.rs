@@ -80,6 +80,38 @@ pub trait BootstrapTransaction: AuditAppender {
         request: &BootstrapRequest,
         occurred_at: &str,
     ) -> impl Future<Output = Result<(), ApplicationError>> + Send;
+
+    /// Consume la autorización de provisioning dentro de la misma UoW.
+    ///
+    /// Debe validar digest, instalación, finalidad y ventana, aplicar un CAS
+    /// sobre el estado pendiente y registrar el evento `CONSUMED`, sin confirmar.
+    fn consume_provisioning_authorization(
+        &mut self,
+        request: &BootstrapRequest,
+        authorization_id: &EntityId,
+        presented_digest: &str,
+        now_epoch: i64,
+    ) -> impl Future<Output = Result<(), ApplicationError>> + Send;
+
+    /// Vincula la preautorización con la instalación canónica ya insertada.
+    fn claim_provisional_installation(
+        &mut self,
+        request: &BootstrapRequest,
+        now_epoch: i64,
+    ) -> impl Future<Output = Result<(), ApplicationError>> + Send;
+}
+
+/// Prueba de autorización presentada por el emisor nativo.
+///
+/// No se serializa ni viaja por React: el proceso administrativo entrega el
+/// token por un canal privado y aquí solo llega su digest.
+pub struct ProvisioningProof<'a> {
+    /// Autorización emitida previamente.
+    pub authorization_id: &'a EntityId,
+    /// Digest SHA-256 del token presentado.
+    pub presented_digest: &'a str,
+    /// Instante actual en segundos UTC, para la ventana y el CAS.
+    pub now_epoch: i64,
 }
 
 /// Detecta si el provisioning inicial aún es posible dentro de la UoW actual.
@@ -129,6 +161,70 @@ pub async fn provision_initial_installation<T: BootstrapTransaction>(
     .map_err(|_| ApplicationError::Audit)?;
     transaction
         .insert_initial_identity(&organization, request, occurred_at.as_str())
+        .await?;
+    transaction
+        .insert_initial_credential(request, occurred_at.as_str())
+        .await?;
+    transaction.grant_administrator_catalog(request).await?;
+    transaction.append_audit_event(&event).await?;
+    transaction
+        .complete_initial_bootstrap(request, occurred_at.as_str())
+        .await?;
+    Ok(organization)
+}
+
+/// Crea la instalación inicial exigiendo una autorización de provisioning.
+///
+/// A diferencia de [`provision_initial_installation`], esta variante no acepta el
+/// secreto de despliegue como autoridad: la presentación se valida contra la
+/// autorización persistida y se consume en la **misma** transacción que crea la
+/// organización, la identidad canónica, el administrador, la credencial, los
+/// grants, la auditoría y el bootstrap. Si cualquier paso falla, el llamador
+/// revierte y la autorización no queda consumida.
+///
+/// # Errors
+/// Devuelve Storage si la instalación ya existe, la credencial no corresponde al
+/// administrador, la autorización no acepta la presentación o el vínculo
+/// provisional no puede reclamarse; Audit si el evento no se puede escribir.
+pub async fn provision_initial_installation_with_proof<T: BootstrapTransaction>(
+    transaction: &mut T,
+    capability: &BootstrapProvisioning,
+    request: &BootstrapRequest,
+    proof: &ProvisioningProof<'_>,
+    occurred_at: &str,
+) -> Result<Organization, ApplicationError> {
+    let occurred_at = AuditOccurredAt::new(occurred_at).map_err(|_| ApplicationError::Audit)?;
+    if !requires_provisioning(transaction).await? {
+        return Err(ApplicationError::Storage);
+    }
+    if request.initial_credential.credential().user_id() != &request.administrator_id {
+        return Err(ApplicationError::Storage);
+    }
+    transaction
+        .consume_provisioning_authorization(
+            request,
+            proof.authorization_id,
+            proof.presented_digest,
+            proof.now_epoch,
+        )
+        .await?;
+    let organization = Organization::create(
+        request.organization_id.clone(),
+        request.organization.clone(),
+    );
+    let event = AuditEventRecord::bootstrap_completed(
+        capability,
+        request.audit_event_id.clone(),
+        organization.id().clone(),
+        request.installation_id.clone(),
+        occurred_at.clone(),
+    )
+    .map_err(|_| ApplicationError::Audit)?;
+    transaction
+        .insert_initial_identity(&organization, request, occurred_at.as_str())
+        .await?;
+    transaction
+        .claim_provisional_installation(request, proof.now_epoch)
         .await?;
     transaction
         .insert_initial_credential(request, occurred_at.as_str())
