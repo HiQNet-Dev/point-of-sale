@@ -73,6 +73,8 @@ mod inventory_store_tests;
 #[cfg(test)]
 mod proposals_tests;
 #[cfg(test)]
+mod provisioning_flow_tests;
+#[cfg(test)]
 mod provisioning_store_tests;
 #[cfg(test)]
 mod purchasing_store_tests;

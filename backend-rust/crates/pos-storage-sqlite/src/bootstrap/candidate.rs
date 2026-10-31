@@ -5,6 +5,7 @@
 
 use pos_application::bootstrap::BootstrapTransaction;
 pub use pos_application::bootstrap::{BootstrapRequest, provision_initial_installation};
+use pos_core::identity::ProvisioningPurpose;
 use pos_core::organization_branch::{ApplicationError, Organization};
 use sqlx::SqliteConnection;
 
@@ -79,6 +80,47 @@ impl BootstrapTransaction for SqliteTransaction {
         insert_administrator(connection, request, occurred_at).await?;
         insert_role(connection, request, occurred_at).await?;
         assign_role(connection, request, occurred_at).await
+    }
+
+    async fn consume_provisioning_authorization(
+        &mut self,
+        request: &BootstrapRequest,
+        authorization_id: &pos_core::organization_branch::EntityId,
+        presented_digest: &str,
+        now_epoch: i64,
+    ) -> Result<(), ApplicationError> {
+        crate::provisioning::consume_derived(
+            self,
+            authorization_id,
+            presented_digest,
+            &request.installation_id,
+            ProvisioningPurpose::Bootstrap,
+            now_epoch,
+        )
+        .await
+        .map(|_| ())
+        .map_err(|_| ApplicationError::Storage)
+    }
+
+    async fn claim_provisional_installation(
+        &mut self,
+        request: &BootstrapRequest,
+        now_epoch: i64,
+    ) -> Result<(), ApplicationError> {
+        let updated = sqlx::query(
+            "UPDATE provisional_installation SET claimed_at = ?, claimed_installation_id = ? \
+             WHERE id = ? AND claimed_at IS NULL",
+        )
+        .bind(now_epoch)
+        .bind(request.installation_id.as_str())
+        .bind(request.installation_id.as_str())
+        .execute(self.connection())
+        .await
+        .map_err(|_| ApplicationError::Storage)?;
+        if updated.rows_affected() != 1 {
+            return Err(ApplicationError::Storage);
+        }
+        Ok(())
     }
 }
 

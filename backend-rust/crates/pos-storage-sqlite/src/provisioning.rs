@@ -261,6 +261,27 @@ impl SqliteProvisioningStore {
     }
 }
 
+pub(crate) async fn consume_derived(
+    transaction: &mut SqliteTransaction,
+    id: &EntityId,
+    token_digest: &str,
+    installation_id: &EntityId,
+    purpose: ProvisioningPurpose,
+    now: i64,
+) -> Result<ProvisioningAuthorization, ProvisioningStorageError> {
+    let event_id = derived_event_id(id.as_str(), "CONSUMED")?;
+    SqliteProvisioningStore::consume_in(
+        transaction,
+        id,
+        token_digest,
+        installation_id,
+        purpose,
+        &event_id,
+        now,
+    )
+    .await
+}
+
 async fn load(
     transaction: &mut SqliteTransaction,
     id: &EntityId,
