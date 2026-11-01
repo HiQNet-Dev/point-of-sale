@@ -17,7 +17,9 @@ escritorio solo sabía abrir la base y, desde ADR-0027, autenticar.
 1. **Lectura nativa.** `pos-storage-sqlite::native_authorization` lee
    `provisioning-authorization.txt` con las mismas garantías que el emisor: sin
    enlaces, owner efectivo, sin bits de grupo/otros en directorio ni archivo.
-   Windows responde `UnsupportedPlatform` (fail-closed).
+   Windows aplica la política equivalente sobre propietario y DACL del handle
+   abierto desde [ADR-0029](0029-windows-native-file-custody.md); las demás
+   plataformas responden `UnsupportedPlatform` (fail-closed).
 2. **Clasificación sin consumo.** `bootstrap_status` compara el token leído con
    el digest persistido y reporta `READY`, `AWAITING_AUTHORIZATION`,
    `AUTHORIZATION_EXPIRED`, `AUTHORIZATION_REVOKED`, `AUTHORIZATION_CONSUMED`,
@@ -47,17 +49,22 @@ escritorio solo sabía abrir la base y, desde ADR-0027, autenticar.
 - Una persona puede configurar su negocio, crear el administrador y llegar al
   login sin tocar la base ni el token.
 - La autorización sigue siendo de un solo uso y con ventana temporal.
-- Windows no puede completar el asistente hasta que exista el componente nativo
-  de DACL/owner; el comportamiento previo (fail-closed) se conserva intacto.
+- Windows no podía completar el asistente mientras no existiera el componente
+  nativo de DACL/owner; ese componente es ahora
+  [ADR-0029](0029-windows-native-file-custody.md) y el asistente funciona en
+  Windows con la misma política de archivo privado.
 - El operador debe colocar el archivo con el emisor nativo; no hay copia manual
   del token desde la interfaz.
 
 ## Evidencia
 
-`pos-storage-sqlite::native_authorization_tests` (Linux, SQLite productiva):
-permisos inseguros de directorio y archivo, archivo ausente, enlace simbólico,
-digest que no coincide, caducidad, derecho consumido, y el recorrido completo
-archivo → bootstrap → login → catálogo → reapertura.
+`pos-storage-sqlite::native_authorization_tests` (Linux y Windows, SQLite
+productiva): permisos inseguros de directorio y archivo, archivo ausente, enlace
+simbólico, junction, digest que no coincide, caducidad, derecho consumido, y el
+recorrido completo archivo → bootstrap → login → catálogo → reapertura.
 
-`pos-desktop` (Windows): `bootstrap_status` responde `UNSUPPORTED_PLATFORM`, el
-comando falla cerrado y ningún intento sin autorización crea `pos_user`.
+`pos-desktop` (Windows): `bootstrap_status` responde `AWAITING_AUTHORIZATION`
+sin autorización entregada, el intento de instalación falla con `Unauthorized` y
+ningún intento sin autorización crea `pos_user`; con una autorización real el
+asistente crea la organización y el administrador, autentica, cierra sesión y
+vuelve a autenticar tras reabrir la instalación.

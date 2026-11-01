@@ -319,6 +319,75 @@ jobs:
   # pruebas del registro IPC y build del binario). No genera instalador ni
   # bundle comercial. `pos-desktop` tiene workspace propio, por eso no lo cubre
   # el job `rust`.
+  # Nivel 1 en Windows: custodia nativa de archivos. Ejecuta el crate de
+  # plataforma contra descriptores de seguridad reales (propietario, DACL,
+  # junctions, enlaces y carreras de creación), el emisor de provisioning y la
+  # primera instalación completa sobre SQLite productiva. No sustituye al
+  # runtime gráfico, que se valida en `windows-desktop`.
+  windows-security:
+    name: Windows Native Custody
+    needs: changes
+    if: needs.changes.outputs.rust_run == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: backend-rust
+    env:
+      CARGO_TERM_COLOR: always
+      RUSTUP_TOOLCHAIN: "1.99.1"
+    steps:
+      - name: Validate requested SHA input
+        working-directory: .
+        env:
+          TARGET_SHA: ${{ inputs.target_sha || github.sha }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" && "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Manual validation must be dispatched from main" >&2
+            exit 1
+          fi
+          if [[ ! "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "target_sha must be a full lowercase 40-character commit SHA" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify checked-out target and committed lockfile
+        working-directory: .
+        env:
+          TARGET_SHA: ${{ inputs.target_sha || github.sha }}
+        run: |
+          [[ "$(git rev-parse HEAD)" == "$TARGET_SHA" ]]
+          git ls-files --error-unmatch backend-rust/Cargo.lock
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install 1.99.1 --profile minimal --component rustfmt --component clippy
+          rustup override set 1.99.1
+          rustc --version
+          cargo --version
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy on the native custody boundary
+        run: cargo clippy --locked -p pos-windows-security --all-targets -- -D warnings
+
+      # Las pruebas inspeccionan owner y DACL efectivos del kernel, no dobles.
+      - name: Test the custody boundary against real security descriptors
+        run: cargo test --locked -p pos-windows-security -- --nocapture
+
+      - name: Test the provisioning emitter and the public authorization file
+        run: cargo test --locked -p pos-local --bins
+
+      - name: Test SQLite persistence and the first installation journey
+        run: cargo test --locked -p pos-storage-sqlite
+
   windows-desktop:
     name: Windows Desktop (Tauri)
     needs: changes
@@ -672,7 +741,7 @@ jobs:
   ci-gate:
     name: CI Gate
     if: always()
-    needs: [changes, backend, rust, rust-normative, windows-desktop, frontend, compose, e2e]
+    needs: [changes, backend, rust, rust-normative, windows-security, windows-desktop, frontend, compose, e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -702,6 +771,7 @@ jobs:
             and (
               if $n.changes.outputs.rust_run == "true" then
                 ($n.rust.result == "success")
+                and ($n["windows-security"].result == "success")
                 and ($n["windows-desktop"].result == "success")
                 and ($n["rust-normative"].result == "success")
                 and (
@@ -710,6 +780,7 @@ jobs:
                 )
               else
                 ($n.rust | ok)
+                and ($n["windows-security"] | ok)
                 and ($n["windows-desktop"] | ok)
                 and ($n["rust-normative"] | ok)
                 and (($main | not) or ($n["rust-normative"].outputs.status == "PASSED"))
