@@ -1,6 +1,6 @@
 # Matriz de corte v0.4.0 — HiQNet POS Free Local (Rust)
 
-**Estado a 2026-10-31, tras fusionar #88 y preparar #89.**
+**Estado a 2026-11-01, tras fusionar #92 y la custodia nativa de Windows.**
 
 Estados admitidos por columna: `IMPLEMENTED`, `TESTED`, `INTEGRATED`, `BLOCKED`,
 `DEFERRED`. No se usan porcentajes.
@@ -22,7 +22,7 @@ ninguna fila comprometida quede en `BLOCKED`.
 | Organización | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Mantener; falta IPC/UI comercial |
 | Sucursales | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Mantener; lectura solo en laboratorio |
 | Bootstrap administrativo | IMPLEMENTED | IMPLEMENTED | TESTED | INTEGRATED | IMPLEMENTED | TESTED | Instalación guiada desde el archivo de autorización nativa |
-| Provisioning (token/CLI) | IMPLEMENTED (secreto) | IMPLEMENTED | TESTED | INTEGRATED | IMPLEMENTED | TESTED | Token leído solo por Rust; Windows fail-closed |
+| Provisioning (token/CLI) | IMPLEMENTED (secreto) | IMPLEMENTED | TESTED | INTEGRATED | IMPLEMENTED | TESTED | Emisor, lectura y custodia operativos en Unix y Windows ([ADR-0029](../01-architecture/adr/0029-windows-native-file-custody.md)) |
 | Usuarios | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Login operativo; falta administración de usuarios |
 | Autenticación / sesión | IMPLEMENTED | IMPLEMENTED | TESTED | INTEGRATED | IMPLEMENTED | TESTED | Sesión nativa, RBAC y reapertura demostrados sobre SQLite real |
 | RBAC / memberships | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Mantener; resolución probada |
@@ -39,7 +39,7 @@ ninguna fila comprometida quede en `BLOCKED`.
 | Recepción de compras | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Mantener; acumulada e idempotente |
 | Instalación Local persistente | IMPLEMENTED | IMPLEMENTED | TESTED | INTEGRATED | INTEGRATED | BLOCKED | Desktop Windows compila y prueba; E2E gráfico completo pendiente |
 | Backup / restauración | IMPLEMENTED | IMPLEMENTED | TESTED | DEFERRED | DEFERRED | DEFERRED | Herramienta sin exposición comercial |
-| Seguridad Windows (DACL) | IMPLEMENTED | BLOCKED | BLOCKED | BLOCKED | DEFERRED | DEFERRED | Falta crate nativo `pos-windows-security` |
+| Seguridad Windows (DACL) | IMPLEMENTED | IMPLEMENTED | TESTED | INTEGRATED | DEFERRED | TESTED | `pos-windows-security`: owner y DACL reales, junctions y sustitución rechazadas |
 | Docker (runtime Rust) | DEFERRED | IMPLEMENTED | TESTED | DEFERRED | DEFERRED | BLOCKED | Arnés smoke; falta flujo comercial dentro del contenedor |
 | E2E sintético completo | IMPLEMENTED (Java) | IMPLEMENTED | TESTED | INTEGRATED | DEFERRED | TESTED | `pos-lab` recorre el flujo completo sobre esquema aprobado |
 | Control Plane / Pro / SaaS | IMPLEMENTED | DEFERRED | DEFERRED | DEFERRED | DEFERRED | DEFERRED | Fuera de v0.4.0 |
@@ -47,18 +47,21 @@ ninguna fila comprometida quede en `BLOCKED`.
 
 ## Lectura honesta
 
-La primera instalación y el catálogo ya no bloquean el producto: una persona
-configura el negocio desde el asistente, crea el administrador, entra, crea una
-categoría y un producto, y lo encuentra tras reiniciar. El E2E de esas filas es
-un test de integración Rust sobre el esquema productivo; **no** es un E2E
-gráfico de WebView2, y la instalación guiada sigue deshabilitada en Windows.
+La primera instalación y el catálogo ya no bloquean el producto en ninguna de las
+dos plataformas soportadas: una persona configura el negocio, crea el
+administrador, entra, crea una categoría y un producto, y lo encuentra tras
+reiniciar. En Windows la custodia del archivo de autorización, del directorio de
+instalación y de los archivos SQLite se verifica contra propietario y DACL
+reales; en Unix, contra bits POSIX y propietario efectivo. El E2E de esas filas
+es un test de integración Rust sobre el esquema productivo; **no** es un E2E
+gráfico de WebView2, que sigue pendiente.
 
 Con esta matriz **no** se puede retirar Java todavía. Faltan:
 
 1. Handlers IPC de caja, ventas, inventario y compras con sus ACL.
 2. Pantallas React de esos flujos.
-3. Seguridad nativa de Windows (DACL/owner) para provisioning y archivos.
-4. E2E gráfico de escritorio y Docker que ejerza el flujo comercial completo.
+3. E2E gráfico de escritorio y Docker que ejerza el flujo comercial completo.
+4. Ratificación de D-AUTH-09 y del perfil de conformidad normativa.
 
 ## Siguiente orden de corte
 

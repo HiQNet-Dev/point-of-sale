@@ -9,8 +9,9 @@
 //! [`LocalState::bootstrap_install`] solo actúa sobre un derecho vivo y deja la
 //! autorización consumida en la misma transacción que crea el administrador.
 //!
-//! En Windows la lectura permanece fail-closed hasta que el componente nativo de
-//! DACL/owner esté aprobado y probado.
+//! La custodia del archivo la resuelve cada plataforma: bits POSIX en Unix y
+//! propietario/DACL verificados sobre el handle en Windows (ADR-0029); el resto
+//! de plataformas responde `UNSUPPORTED_PLATFORM`.
 
 use pos_application::bootstrap::{
     BootstrapRequest, ProvisioningProof, provision_initial_installation_with_proof,
@@ -88,8 +89,9 @@ impl LocalState {
     /// [`IpcError::Unauthorized`] si la autorización falta o no está viva,
     /// [`IpcError::Forbidden`] si el archivo no es privado,
     /// [`IpcError::ValidationError`] si los datos no cumplen el contrato,
-    /// [`IpcError::OperationNotAvailable`] en laboratorio o Windows y
-    /// [`IpcError::InternalError`] si la persistencia falla.
+    /// [`IpcError::OperationNotAvailable`] en laboratorio o en plataformas sin
+    /// custodia verificable, y [`IpcError::InternalError`] si la persistencia
+    /// falla.
     pub async fn bootstrap_install(
         &self,
         request: BootstrapInstallRequestDto,

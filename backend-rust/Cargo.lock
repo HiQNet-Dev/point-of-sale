@@ -968,6 +968,7 @@ dependencies = [
  "pos-core",
  "pos-credentials",
  "pos-storage-sqlite",
+ "pos-windows-security",
  "sqlx",
  "tempfile",
  "tokio",
@@ -983,6 +984,7 @@ dependencies = [
  "pos-application",
  "pos-core",
  "pos-credentials",
+ "pos-windows-security",
  "serde_json",
  "sha2 0.11.1",
  "sqlx",
@@ -990,6 +992,14 @@ dependencies = [
  "thiserror",
  "tokio",
  "zeroize",
+]
+
+[[package]]
+name = "pos-windows-security"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+ "windows-sys",
 ]
 
 [[package]]

@@ -21,6 +21,8 @@ mod installation_dir;
 #[cfg(test)]
 mod ipc_tests;
 mod purchasing;
+#[cfg(test)]
+mod test_support;
 
 use std::error::Error;
 

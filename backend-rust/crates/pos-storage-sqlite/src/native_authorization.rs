@@ -1,17 +1,17 @@
-//! Lectura protegida del archivo de autorización de provisioning.
+//! Módulo de lectura protegida del archivo de autorización de provisioning.
 //!
 //! El emisor administrativo (`pos-local --provision-token-issue`) entrega el
 //! token en un archivo privado dentro del directorio de la instalación. Este
 //! módulo lo lee desde el proceso nativo —nunca desde JavaScript— y aplica la
-//! misma política de custodia en Unix:
+//! misma política de custodia por plataforma:
 //!
-//! - el directorio no puede ser un enlace;
-//! - el directorio no puede conceder bits de grupo/otros y debe pertenecer al
-//!   usuario efectivo;
-//! - el archivo debe ser regular, no un enlace, privado y del mismo owner.
-//!
-//! En Windows el comportamiento es **fail-closed** hasta que exista el
-//! componente nativo de DACL/owner aprobado.
+//! - **Unix**: el directorio no puede ser un enlace; no puede conceder bits de
+//!   grupo/otros y debe pertenecer al usuario efectivo; el archivo debe ser
+//!   regular, no un enlace, privado y del mismo owner.
+//! - **Windows**: propietario y DACL se verifican con `pos-windows-security`
+//!   sobre el handle abierto, y los bytes se leen de ese mismo handle, de modo
+//!   que una sustitución entre comprobación y uso no altera lo que se lee.
+//! - **Otras plataformas**: fallo cerrado.
 
 use std::path::Path;
 
@@ -25,7 +25,7 @@ use sqlx::SqlitePool;
 /// Fallo de custodia o lectura del archivo de autorización.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthorizationFileError {
-    /// La plataforma no permite verificar owner/DACL todavía.
+    /// La plataforma no ofrece custodia de archivos verificable.
     UnsupportedPlatform,
     /// Directorio o archivo con permisos, owner o tipo inseguros.
     Insecure,
@@ -101,10 +101,7 @@ pub enum NativeAuthorizationState {
 pub fn read_native_authorization(
     directory: &Path,
 ) -> Result<NativeAuthorization, AuthorizationFileError> {
-    validate_directory(directory)?;
-    let path = directory.join(NATIVE_AUTHORIZATION_FILE);
-    validate_file(&path)?;
-    let contents = std::fs::read_to_string(&path).map_err(|_| AuthorizationFileError::Missing)?;
+    let contents = read_authorization(directory)?;
     parse_authorization(&contents)
 }
 
@@ -192,11 +189,6 @@ fn validate_directory(path: &Path) -> Result<(), AuthorizationFileError> {
     Ok(())
 }
 
-#[cfg(not(unix))]
-fn validate_directory(_path: &Path) -> Result<(), AuthorizationFileError> {
-    Err(AuthorizationFileError::UnsupportedPlatform)
-}
-
 #[cfg(unix)]
 fn validate_file(path: &Path) -> Result<(), AuthorizationFileError> {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
@@ -220,7 +212,30 @@ fn validate_file(path: &Path) -> Result<(), AuthorizationFileError> {
     Ok(())
 }
 
-#[cfg(not(unix))]
-fn validate_file(_path: &Path) -> Result<(), AuthorizationFileError> {
+#[cfg(unix)]
+fn read_authorization(directory: &Path) -> Result<String, AuthorizationFileError> {
+    validate_directory(directory)?;
+    validate_file(&directory.join(NATIVE_AUTHORIZATION_FILE))?;
+    std::fs::read_to_string(directory.join(NATIVE_AUTHORIZATION_FILE))
+        .map_err(|_| AuthorizationFileError::Missing)
+}
+
+/// En Windows la custodia y la lectura se resuelven sobre el mismo handle.
+#[cfg(windows)]
+fn read_authorization(directory: &Path) -> Result<String, AuthorizationFileError> {
+    let bytes = pos_windows_security::read_private_file(directory, NATIVE_AUTHORIZATION_FILE)
+        .map_err(|error| match error {
+            pos_windows_security::SecurityError::UnsupportedPlatform => {
+                AuthorizationFileError::UnsupportedPlatform
+            }
+            pos_windows_security::SecurityError::Missing => AuthorizationFileError::Missing,
+            pos_windows_security::SecurityError::InvalidName => AuthorizationFileError::Invalid,
+            _ => AuthorizationFileError::Insecure,
+        })?;
+    String::from_utf8(bytes).map_err(|_| AuthorizationFileError::Invalid)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn read_authorization(_directory: &Path) -> Result<String, AuthorizationFileError> {
     Err(AuthorizationFileError::UnsupportedPlatform)
 }

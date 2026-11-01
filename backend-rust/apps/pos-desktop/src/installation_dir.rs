@@ -8,10 +8,14 @@
 //!
 //! - Debe ser un directorio real, nunca un archivo ni un enlace simbólico.
 //! - En Windows también se rechazan *junctions* y otros puntos de reanálisis.
-//! - Se crea si falta, con permisos de propietario en Unix.
-//! - En Unix se rechaza acceso de grupo u otros usuarios al directorio final;
-//!   no se modifican silenciosamente los permisos de instalaciones existentes.
-//! - El archivo de base de datos tampoco puede ser un enlace simbólico.
+//! - Se crea si falta: en Unix con permisos de propietario y en Windows con una
+//!   DACL protegida, heredable por los archivos de la instalación.
+//! - En Unix se rechaza acceso de grupo u otros usuarios al directorio final; en
+//!   Windows se exigen propietario efectivo y DACL privada mediante
+//!   `pos-windows-security`. No se modifican silenciosamente los permisos de
+//!   instalaciones existentes: una ruta insegura se rechaza.
+//! - El archivo de base de datos tampoco puede ser un enlace simbólico y, en
+//!   Windows, debe conservar la custodia privada.
 //!
 //! # Límites conocidos
 //!
@@ -53,7 +57,7 @@ pub enum DirectoryError {
     /// La ruta o el archivo de base de datos es un enlace simbólico.
     Symlink,
     /// Los permisos permiten que otro usuario sustituya la instalación.
-    #[cfg_attr(not(unix), allow(dead_code))] // Solo evaluable con bits POSIX.
+    #[cfg_attr(not(any(unix, windows)), allow(dead_code))] // Bits POSIX o DACL.
     InsecurePermissions,
     /// El sistema operativo no expone un directorio de datos para el usuario.
     ApplicationDataUnavailable,
@@ -158,10 +162,7 @@ impl InstallationDirectory {
                     return Err(DirectoryError::InvalidPath);
                 }
             }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                fs::create_dir_all(path).map_err(|_| DirectoryError::Unavailable)?;
-                restrict_to_owner(path)?;
-            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => create_directory(path)?,
             Err(_) => return Err(DirectoryError::Unavailable),
         }
         ensure_private_directory(path)?;
@@ -184,6 +185,7 @@ impl InstallationDirectory {
     pub fn acquire_lock(&self) -> Result<fs::File, DirectoryError> {
         validate_ancestors(&self.path)?;
         self.validate_database_file()?;
+        prepare_lock_file(&self.path)?;
         let mut options = fs::OpenOptions::new();
         options.read(true).write(true).create(true).truncate(false);
         #[cfg(unix)]
@@ -221,7 +223,7 @@ impl InstallationDirectory {
             LOCK_FILE_NAME.to_owned(),
         ];
         for name in files {
-            let file = self.path.join(name);
+            let file = self.path.join(&name);
             match fs::symlink_metadata(&file) {
                 Ok(metadata) => {
                     if is_redirect(&metadata) {
@@ -230,6 +232,7 @@ impl InstallationDirectory {
                     if !metadata.is_file() {
                         return Err(DirectoryError::InvalidPath);
                     }
+                    verify_private_member(&self.path, &name)?;
                 }
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {}
                 Err(_) => return Err(DirectoryError::Unavailable),
@@ -282,17 +285,77 @@ fn is_redirect(metadata: &fs::Metadata) -> bool {
 }
 
 #[cfg(unix)]
-fn restrict_to_owner(path: &Path) -> Result<(), DirectoryError> {
+fn create_directory(path: &Path) -> Result<(), DirectoryError> {
     use std::os::unix::fs::PermissionsExt;
+    fs::create_dir_all(path).map_err(|_| DirectoryError::Unavailable)?;
     fs::set_permissions(path, fs::Permissions::from_mode(0o700))
         .map_err(|_| DirectoryError::Unavailable)
 }
 
-#[cfg(not(unix))]
-fn restrict_to_owner(_path: &Path) -> Result<(), DirectoryError> {
-    // Las rutas del perfil suelen heredar un ACL privado; los directorios de
-    // recuperación explícitos requieren verificación administrativa del ACL.
+/// Crea la instalación con una DACL privada aplicada de forma atómica.
+#[cfg(windows)]
+fn create_directory(path: &Path) -> Result<(), DirectoryError> {
+    pos_windows_security::create_private_directory(path).map_err(security_error)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn create_directory(path: &Path) -> Result<(), DirectoryError> {
+    fs::create_dir_all(path).map_err(|_| DirectoryError::Unavailable)
+}
+
+#[cfg(windows)]
+fn ensure_private_directory(path: &Path) -> Result<(), DirectoryError> {
+    pos_windows_security::verify_private_directory(path).map_err(security_error)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn ensure_private_directory(_path: &Path) -> Result<(), DirectoryError> {
+    // Sin custodia verificable no se declara privado un directorio.
+    Err(DirectoryError::Unavailable)
+}
+
+/// En Windows cada archivo existente debe conservar propietario y DACL.
+#[cfg(windows)]
+fn verify_private_member(directory: &Path, name: &str) -> Result<(), DirectoryError> {
+    match pos_windows_security::verify_private_file(directory, name) {
+        Ok(()) | Err(pos_windows_security::SecurityError::Missing) => Ok(()),
+        Err(pos_windows_security::SecurityError::Redirect) => Err(DirectoryError::Symlink),
+        Err(_) => Err(DirectoryError::InsecurePermissions),
+    }
+}
+
+#[cfg(not(windows))]
+fn verify_private_member(_directory: &Path, _name: &str) -> Result<(), DirectoryError> {
     Ok(())
+}
+
+/// Crea el archivo de candado con DACL privada antes de abrirlo.
+#[cfg(windows)]
+fn prepare_lock_file(directory: &Path) -> Result<(), DirectoryError> {
+    match pos_windows_security::create_private_file(directory, LOCK_FILE_NAME, b"") {
+        Ok(()) | Err(pos_windows_security::SecurityError::AlreadyExists) => Ok(()),
+        Err(error) => Err(security_error(error)),
+    }
+}
+
+#[cfg(not(windows))]
+fn prepare_lock_file(_directory: &Path) -> Result<(), DirectoryError> {
+    Ok(())
+}
+
+#[cfg(windows)]
+fn security_error(error: pos_windows_security::SecurityError) -> DirectoryError {
+    use pos_windows_security::SecurityError;
+    match error {
+        SecurityError::Missing => DirectoryError::Unavailable,
+        SecurityError::Redirect => DirectoryError::Symlink,
+        SecurityError::NotExpectedType | SecurityError::InvalidName => DirectoryError::InvalidPath,
+        SecurityError::UnsupportedPlatform
+        | SecurityError::AlreadyExists
+        | SecurityError::WrongOwner
+        | SecurityError::InsecureDacl => DirectoryError::InsecurePermissions,
+        SecurityError::Native => DirectoryError::Unavailable,
+    }
 }
 
 #[cfg(unix)]
@@ -305,12 +368,6 @@ fn ensure_private_directory(path: &Path) -> Result<(), DirectoryError> {
     if mode & 0o077 != 0 {
         return Err(DirectoryError::InsecurePermissions);
     }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn ensure_private_directory(_path: &Path) -> Result<(), DirectoryError> {
-    // Sin bits POSIX no se puede evaluar el ACL sin dependencias adicionales.
     Ok(())
 }
 

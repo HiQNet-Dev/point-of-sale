@@ -1,5 +1,11 @@
 //! Pruebas del composition root: modos, persistencia y límites de autorización.
-use std::error::Error;
+use std::{error::Error, path::Path};
+
+use pos_core::identity::{ProvisioningAuthorization, ProvisioningPurpose};
+use pos_credentials::ProvisioningToken;
+use pos_storage_sqlite::{
+    native_authorization::NATIVE_AUTHORIZATION_FILE, provisioning::SqliteProvisioningStore,
+};
 
 use super::*;
 use crate::dto::{
@@ -128,7 +134,7 @@ fn lab_mode_has_no_persistent_installation() -> Result<(), Box<dyn Error>> {
 #[test]
 fn installation_persists_across_reopen() -> Result<(), Box<dyn Error>> {
     tauri::async_runtime::block_on(async {
-        let directory = tempfile::tempdir()?;
+        let directory = crate::test_support::Fixture::new()?;
         let first = LocalState::open_installation(directory.path()).await?;
         let created = first.installation_status()?;
         assert_eq!(created.state, "FIRST_INSTALL");
@@ -160,7 +166,7 @@ fn installation_persists_across_reopen() -> Result<(), Box<dyn Error>> {
 #[test]
 fn only_one_desktop_runtime_can_open_an_installation() -> Result<(), Box<dyn Error>> {
     tauri::async_runtime::block_on(async {
-        let directory = tempfile::tempdir()?;
+        let directory = crate::test_support::Fixture::new()?;
         let first = LocalState::open_installation(directory.path()).await?;
         assert!(matches!(
             LocalState::open_installation(directory.path()).await,
@@ -177,7 +183,7 @@ fn only_one_desktop_runtime_can_open_an_installation() -> Result<(), Box<dyn Err
 #[test]
 fn changed_checksum_is_rejected_and_startup_releases_the_lock() -> Result<(), Box<dyn Error>> {
     tauri::async_runtime::block_on(async {
-        let directory = tempfile::tempdir()?;
+        let directory = crate::test_support::Fixture::new()?;
         let database = directory.path().join(DATABASE_FILE_NAME);
         let pool = pos_storage_sqlite::open(&database, Duration::from_secs(5)).await?;
         pos_storage_sqlite::migrate(&pool).await?;
@@ -200,7 +206,7 @@ fn changed_checksum_is_rejected_and_startup_releases_the_lock() -> Result<(), Bo
 #[test]
 fn newer_schema_is_rejected_at_startup() -> Result<(), Box<dyn Error>> {
     tauri::async_runtime::block_on(async {
-        let directory = tempfile::tempdir()?;
+        let directory = crate::test_support::Fixture::new()?;
         let database = directory.path().join(DATABASE_FILE_NAME);
         let pool = pos_storage_sqlite::open(&database, Duration::from_secs(5)).await?;
         pos_storage_sqlite::migrate(&pool).await?;
@@ -226,7 +232,7 @@ fn newer_schema_is_rejected_at_startup() -> Result<(), Box<dyn Error>> {
 #[test]
 fn product_mode_rejects_every_lab_command() -> Result<(), Box<dyn Error>> {
     tauri::async_runtime::block_on(async {
-        let directory = tempfile::tempdir()?;
+        let directory = crate::test_support::Fixture::new()?;
         let state = LocalState::open_installation(directory.path()).await?;
         assert_eq!(
             state
@@ -263,7 +269,7 @@ fn authentication_commands_are_gated_by_mode_and_session() -> Result<(), Box<dyn
 
         // Una instalación sin sesión no autoriza nada y el login llega al caso
         // de uso real, que responde con el error genérico.
-        let directory = tempfile::tempdir()?;
+        let directory = crate::test_support::Fixture::new()?;
         let state = LocalState::open_installation(directory.path()).await?;
         assert_eq!(state.auth_me().await.err(), Some(IpcError::Unauthorized));
         assert_eq!(state.auth_logout().await, Ok(()));
@@ -299,12 +305,11 @@ fn first_installation_is_gated_by_platform_custody() -> Result<(), Box<dyn Error
         );
         lab.shutdown().await;
 
-        let directory = tempfile::tempdir()?;
+        // Unix y Windows resuelven la custodia de forma distinta pero producen el
+        // mismo estado: sin autorización entregada no se instala nada.
+        let directory = crate::test_support::Fixture::new()?;
         let state = LocalState::open_installation(directory.path()).await?;
         let status = state.bootstrap_status().await?;
-        #[cfg(windows)]
-        assert_eq!(status.state, "UNSUPPORTED_PLATFORM");
-        #[cfg(unix)]
         assert_eq!(status.state, "AWAITING_AUTHORIZATION");
         assert!(status.expires_at.is_none());
 
@@ -318,9 +323,6 @@ fn first_installation_is_gated_by_platform_custody() -> Result<(), Box<dyn Error
                 currency: Some("MXN".to_owned()),
             })
             .await;
-        #[cfg(windows)]
-        assert_eq!(installed.err(), Some(IpcError::OperationNotAvailable));
-        #[cfg(unix)]
         assert_eq!(installed.err(), Some(IpcError::Unauthorized));
 
         // Ningún intento sin autorización crea identidad.
@@ -332,6 +334,127 @@ fn first_installation_is_gated_by_platform_custody() -> Result<(), Box<dyn Error
         state.shutdown().await;
         Ok(())
     })
+}
+
+#[test]
+fn first_installation_from_a_native_authorization_creates_the_administrator()
+-> Result<(), Box<dyn Error>> {
+    tauri::async_runtime::block_on(async {
+        let directory = crate::test_support::Fixture::new()?;
+        let state = LocalState::open_installation(directory.path()).await?;
+        let pool = state.product_installation()?.pool.clone();
+        deliver_authorization(directory.path(), &pool).await?;
+
+        // El asistente ve un derecho vivo con su ventana real.
+        let ready = state.bootstrap_status().await?;
+        assert_eq!(ready.state, "READY");
+        assert!(ready.expires_at.is_some());
+
+        state
+            .bootstrap_install(BootstrapInstallRequestDto {
+                business_name: "Café Central".to_owned(),
+                business_code: None,
+                administrator_name: "Administradora".to_owned(),
+                email: "admin@cafe.test".to_owned(),
+                password: "contraseña-larga-2k".to_owned(),
+                currency: Some("MXN".to_owned()),
+            })
+            .await?;
+        assert_eq!(state.bootstrap_status().await?.state, "ALREADY_PROVISIONED");
+
+        // El administrador creado se autentica y obtiene sus permisos reales.
+        let session = state
+            .auth_login(LoginRequestDto {
+                email: "admin@cafe.test".to_owned(),
+                password: "contraseña-larga-2k".to_owned(),
+            })
+            .await?;
+        assert_eq!(session.display_name, "Administradora");
+        assert!(session.permissions.contains(&"product.create".to_owned()));
+        assert_eq!(state.auth_me().await?.email, "admin@cafe.test");
+
+        state.auth_logout().await?;
+        assert_eq!(state.auth_me().await.err(), Some(IpcError::Unauthorized));
+
+        // Reapertura: la identidad persiste y el derecho ya no se puede reutilizar.
+        state.shutdown().await;
+        let reopened = LocalState::open_installation(directory.path()).await?;
+        assert_eq!(
+            reopened.bootstrap_status().await?.state,
+            "ALREADY_PROVISIONED"
+        );
+        let again = reopened
+            .auth_login(LoginRequestDto {
+                email: "admin@cafe.test".to_owned(),
+                password: "contraseña-larga-2k".to_owned(),
+            })
+            .await?;
+        assert_eq!(again.user_id, session.user_id);
+        reopened.shutdown().await;
+        Ok(())
+    })
+}
+
+/// Emisor administrativo: instalación provisional, derecho vivo y archivo privado.
+async fn deliver_authorization(
+    directory: &Path,
+    pool: &sqlx::SqlitePool,
+) -> Result<(), Box<dyn Error>> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs();
+    let now = i64::try_from(now)?;
+    let installation_id = EntityId::parse("00000000-0000-0000-0000-00000000c0f0")?;
+    let authorization_id = EntityId::parse("00000000-0000-0000-0000-00000000c1a0")?;
+    let event_id = EntityId::parse("00000000-0000-0000-0000-00000000c1e0")?;
+    let token = ProvisioningToken::generate()?;
+
+    let store = SqliteProvisioningStore::new(pool.clone());
+    store
+        .ensure_provisional_installation(&installation_id, "local:desktop-test", now)
+        .await?;
+    let authorization = ProvisioningAuthorization::issue(
+        authorization_id.clone(),
+        installation_id.clone(),
+        ProvisioningPurpose::Bootstrap,
+        &token.digest().hex(),
+        now,
+        now + 600,
+    )?;
+    store.issue(&authorization, &event_id, now).await?;
+
+    let contents = format!(
+        "installation_id={}\nauthorization_id={}\ntoken={}\n",
+        installation_id.as_str(),
+        authorization_id.as_str(),
+        token.expose()
+    );
+    write_private_authorization(directory, &contents)
+}
+
+#[cfg(unix)]
+fn write_private_authorization(directory: &Path, contents: &str) -> Result<(), Box<dyn Error>> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(directory.join(NATIVE_AUTHORIZATION_FILE))?;
+    file.write_all(contents.as_bytes())?;
+    file.sync_all()?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn write_private_authorization(directory: &Path, contents: &str) -> Result<(), Box<dyn Error>> {
+    pos_windows_security::create_private_file(
+        directory,
+        NATIVE_AUTHORIZATION_FILE,
+        contents.as_bytes(),
+    )?;
+    Ok(())
 }
 
 #[test]
@@ -353,7 +476,7 @@ fn catalog_commands_require_a_session_and_reject_the_laboratory() -> Result<(), 
         );
         lab.shutdown().await;
 
-        let directory = tempfile::tempdir()?;
+        let directory = crate::test_support::Fixture::new()?;
         let state = LocalState::open_installation(directory.path()).await?;
         for result in [
             state.catalog_list_categories(page()).await.err(),
@@ -434,7 +557,7 @@ fn duplicate_sku_is_a_conflict_and_invalid_price_is_rejected() -> Result<(), Box
 #[test]
 fn installation_directory_must_not_be_a_file() -> Result<(), Box<dyn Error>> {
     tauri::async_runtime::block_on(async {
-        let directory = tempfile::tempdir()?;
+        let directory = crate::test_support::Fixture::new()?;
         let file = directory.path().join("archivo");
         std::fs::write(&file, b"no es un directorio")?;
         assert!(matches!(

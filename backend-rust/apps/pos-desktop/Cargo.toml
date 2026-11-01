@@ -14,6 +14,7 @@ pos-core = { path = "../../crates/pos-core" }
 pos-application = { path = "../../crates/pos-application" }
 pos-credentials = { path = "../../crates/pos-credentials" }
 pos-storage-sqlite = { path = "../../crates/pos-storage-sqlite" }
+pos-windows-security = { path = "../../crates/pos-windows-security" }
 pos-lab = { path = "../../tools/pos-lab" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

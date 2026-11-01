@@ -189,6 +189,7 @@ class RustWorkflowTest(unittest.TestCase):
                 "result": normative_result,
                 "outputs": {"status": normative_status, "exit_code": "2"},
             },
+            "windows-security": {"result": windows_result},
             "windows-desktop": {"result": windows_result},
             "frontend": {"result": "skipped"},
             "compose": {"result": "skipped"},
@@ -542,6 +543,36 @@ class RustWorkflowTest(unittest.TestCase):
             names.index("Build the desktop binary (bundling stays disabled)"),
         )
         self.assertIn("windows-desktop", self.jobs["ci-gate"]["needs"])
+
+    def test_windows_security_job_covers_native_custody(self):
+        custody = self.jobs["windows-security"]
+        self.assertEqual("Windows Native Custody", custody["name"])
+        self.assertEqual("needs.changes.outputs.rust_run == 'true'", custody["if"])
+        self.assertEqual("windows-latest", custody["runs-on"])
+        self.assertEqual("bash", custody["defaults"]["run"]["shell"])
+        self.assertEqual(
+            "backend-rust", custody["defaults"]["run"]["working-directory"]
+        )
+        self.assertEqual("1.99.1", custody["env"]["RUSTUP_TOOLCHAIN"])
+        steps = custody["steps"]
+        self.assertFalse(custody.get("continue-on-error"))
+        self.assertFalse(any(step.get("continue-on-error") for step in steps))
+        commands = "\n".join(step.get("run", "") for step in steps)
+        for command in (
+            "git ls-files --error-unmatch backend-rust/Cargo.lock",
+            "cargo fmt --all -- --check",
+            "cargo clippy --locked -p pos-windows-security --all-targets -- -D warnings",
+            "cargo test --locked -p pos-windows-security",
+            "cargo test --locked -p pos-local --bins",
+            "cargo test --locked -p pos-storage-sqlite",
+        ):
+            self.assertIn(command, commands)
+        self.assertIn("windows-security", self.jobs["ci-gate"]["needs"])
+
+    def test_windows_security_result_is_required_for_rust_changes(self):
+        self.assertTrue(self.gate_result("true", "success"))
+        self.assertFalse(self.gate_result("true", "success", windows_result="failure"))
+        self.assertFalse(self.gate_result("true", "success", windows_result="skipped"))
 
     def test_security_scans_are_pinned_and_blocking(self):
         rust = self.jobs["rust"]
