@@ -77,6 +77,28 @@ fn exposes_a_canonical_effective_sid() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn reports_the_created_descriptor_for_diagnosis() -> Result<(), Box<dyn Error>> {
+    let root = tempfile::tempdir()?;
+    let directory = root.path().join("com.hiqnet.pos");
+    let owner = owner_sid()?;
+    eprintln!("effective_owner={owner}");
+    eprintln!(
+        "root_sddl={:?}",
+        native::owner_and_sddl(native::open_directory(root.path())?.raw())
+    );
+    match create_private_directory(&directory) {
+        Ok(()) => eprintln!("created=ok"),
+        Err(error) => eprintln!("created={error:?}"),
+    }
+    let handle = native::open_directory(&directory)?;
+    let (actual_owner, sddl) = native::owner_and_sddl(handle.raw())?;
+    eprintln!("actual_owner={actual_owner}");
+    eprintln!("sddl={sddl}");
+    eprintln!("parsed={:?}", parse_dacl(&sddl));
+    Ok(())
+}
+
+#[test]
 fn creates_a_private_directory_owned_by_the_effective_user() -> Result<(), Box<dyn Error>> {
     let root = tempfile::tempdir()?;
     let directory = root.path().join("com.hiqnet.pos");
