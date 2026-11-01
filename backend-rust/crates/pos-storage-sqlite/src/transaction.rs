@@ -218,6 +218,40 @@ impl SqliteTransaction {
         })
     }
 
+    /// Número de sucursales de la organización dentro de la transacción abierta.
+    ///
+    /// No distingue estado: la capacidad de la edición se decide sobre el total,
+    /// no sobre las activas, para no poder eludirla desactivando otra sucursal.
+    pub async fn count_branches(
+        &mut self,
+        organization_id: &EntityId,
+    ) -> Result<u64, OrganizationBranchStorageError> {
+        let total =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM branch WHERE organization_id = ?")
+                .bind(organization_id.as_str())
+                .fetch_one(&mut *self.transaction)
+                .await
+                .map_err(|_| OrganizationBranchStorageError::Database)?;
+        u64::try_from(total).map_err(|_| OrganizationBranchStorageError::InvalidRow)
+    }
+
+    /// Indica si el código de sucursal ya existe dentro de la organización.
+    pub async fn branch_code_exists(
+        &mut self,
+        organization_id: &EntityId,
+        code: &pos_core::organization_branch::BusinessCode,
+    ) -> Result<bool, OrganizationBranchStorageError> {
+        let exists = sqlx::query_scalar::<_, i64>(
+            "SELECT EXISTS(SELECT 1 FROM branch WHERE organization_id = ? AND code = ?)",
+        )
+        .bind(organization_id.as_str())
+        .bind(code.as_str())
+        .fetch_one(&mut *self.transaction)
+        .await
+        .map_err(|_| OrganizationBranchStorageError::Database)?;
+        Ok(exists != 0)
+    }
+
     /// Confirma todos los efectos ya ejecutados sobre esta conexión.
     pub async fn commit(self) -> Result<(), OrganizationBranchStorageError> {
         self.transaction

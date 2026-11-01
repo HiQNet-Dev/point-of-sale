@@ -31,9 +31,10 @@ pub mod installation;
 pub mod inventory;
 /// Lectura protegida de la autorización de provisioning entregada por el emisor.
 pub mod native_authorization;
+/// Compras persistentes sobre el esquema productivo `0016`.
+pub mod organization_admin;
 mod organization_branch;
 mod prelude;
-/// Compras persistentes sobre el esquema productivo `0016`.
 pub mod purchasing;
 
 pub mod provisioning;
@@ -46,6 +47,7 @@ mod transaction;
 pub use connection::{
     StorageError, approved_schema_version, checkpoint, migrate, open, verify_health,
 };
+pub use organization_admin::SqliteOrganizationAdministration;
 pub use organization_branch::{
     OrganizationBranchStorageError, SqliteBranchApplication, SqliteOrganizationApplication,
     SqliteOrganizationBranchStore,
@@ -76,6 +78,8 @@ mod identity_lab_tests;
 mod inventory_store_tests;
 #[cfg(all(test, any(unix, windows)))]
 mod native_authorization_tests;
+#[cfg(test)]
+mod organization_admin_tests;
 #[cfg(test)]
 mod provisioning_flow_tests;
 #[cfg(test)]
