@@ -30,8 +30,8 @@ use windows_sys::Win32::{
     Security::{
         Authorization::{
             ConvertSecurityDescriptorToStringSecurityDescriptorW, ConvertSidToStringSidW,
-            ConvertStringSecurityDescriptorToSecurityDescriptorW, GetSecurityInfo, SDDL_REVISION_1,
-            SE_FILE_OBJECT,
+            ConvertStringSecurityDescriptorToSecurityDescriptorW, ConvertStringSidToSidW,
+            GetSecurityInfo, SDDL_REVISION_1, SE_FILE_OBJECT,
         },
         DACL_SECURITY_INFORMATION, GetTokenInformation, OWNER_SECURITY_INFORMATION,
         PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenUser,
@@ -203,6 +203,23 @@ pub(super) fn current_user_sid() -> Result<String, SecurityError> {
     // que sigue vivo durante toda la expresión.
     let user: &TOKEN_USER = unsafe { &*buffer.as_ptr().cast::<TOKEN_USER>() };
     let sid = user.User.Sid;
+    sid_to_string(sid)
+}
+
+/// Resuelve un SID escrito en forma canónica o como alias SDDL (`LA`, `BA`…).
+///
+/// El sistema puede devolver alias en la representación SDDL de una DACL —por
+/// ejemplo `LA` para la cuenta de administrador integrada, cuyo SID depende de
+/// la máquina—, así que la comparación con identidades se hace siempre sobre el
+/// SID canónico.
+pub(super) fn sid_from_text(text: &str) -> Result<String, SecurityError> {
+    let units = wide(OsStr::new(text))?;
+    let mut sid: PSID = ptr::null_mut();
+    // SAFETY: la cadena está terminada en cero y la salida es un puntero local.
+    if unsafe { ConvertStringSidToSidW(units.as_ptr(), &mut sid) } == 0 || sid.is_null() {
+        return Err(SecurityError::Native);
+    }
+    let _memory = LocalMemory(sid.cast());
     sid_to_string(sid)
 }
 

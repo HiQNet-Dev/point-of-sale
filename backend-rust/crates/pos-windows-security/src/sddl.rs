@@ -23,8 +23,14 @@ pub(crate) enum AceEffect {
 pub(crate) struct DaclAce {
     /// Efecto de la entrada.
     pub effect: AceEffect,
-    /// Identidad normalizada a su forma `S-1-...` cuando es un alias conocido.
-    pub sid: String,
+    /// Cuenta tal como la escribe el descriptor: un SID canónico o un alias
+    /// SDDL del tipo `LA`, `BA` o `SY`.
+    ///
+    /// El alias no se interpreta aquí porque algunos —como `LA`, el
+    /// administrador integrado— dependen de la máquina. La resolución a SID
+    /// canónico la hace el adaptador nativo, que es el único que puede hacerlo,
+    /// y una cuenta que no se pueda resolver se rechaza.
+    pub account: String,
 }
 
 /// Grupo de administradores locales.
@@ -105,58 +111,30 @@ fn parse_ace(entry: &str) -> Result<DaclAce, ()> {
     }
     Ok(DaclAce {
         effect,
-        sid: normalize_sid(account),
+        account: account.to_owned(),
     })
-}
-
-/// Traduce los alias SDDL habituales a su forma canónica `S-1-...`.
-///
-/// Un alias no reconocido se conserva tal cual: al no coincidir con la lista de
-/// identidades autorizadas, una concesión con ese alias queda rechazada.
-fn normalize_sid(account: &str) -> String {
-    if account.len() > 2 && account.starts_with("S-1-") {
-        return account.to_ascii_uppercase();
-    }
-    let canonical = match account {
-        "SY" => "S-1-5-18",
-        "BA" => "S-1-5-32-544",
-        "CO" => "S-1-3-0",
-        "OW" => "S-1-3-4",
-        "WD" => "S-1-1-0",
-        "AU" => "S-1-5-11",
-        "BU" => "S-1-5-32-545",
-        "BG" => "S-1-5-32-546",
-        "PU" => "S-1-5-32-547",
-        "IU" => "S-1-5-4",
-        "SU" => "S-1-5-6",
-        "AN" => "S-1-5-7",
-        "LS" => "S-1-5-19",
-        "NS" => "S-1-5-20",
-        "NU" => "S-1-5-2",
-        "RC" => "S-1-5-12",
-        "RD" => "S-1-5-32-555",
-        "ED" => "S-1-5-9",
-        "AG" => "S-1-5-32-551",
-        "SO" => "S-1-5-32-549",
-        "RE" => "S-1-5-32-552",
-        other => other,
-    };
-    canonical.to_ascii_uppercase()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        AceEffect, DaclAce, is_acceptable_owner, is_allowed_identity, normalize_sid, parse_dacl,
-    };
+    use super::{AceEffect, DaclAce, is_acceptable_owner, is_allowed_identity, parse_dacl};
 
     const OWNER: &str = "S-1-5-21-1111111111-2222222222-3333333333-1001";
 
-    fn grant(sid: &str) -> DaclAce {
+    fn grant(account: &str) -> DaclAce {
         DaclAce {
             effect: AceEffect::Grant,
-            sid: sid.to_owned(),
+            account: account.to_owned(),
         }
+    }
+
+    fn granted(sddl: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        Ok(parse_dacl(sddl)
+            .map_err(|()| "descriptor ilegible")?
+            .into_iter()
+            .filter(|ace| ace.effect == AceEffect::Grant)
+            .map(|ace| ace.account)
+            .collect())
     }
 
     #[test]
@@ -165,34 +143,24 @@ mod tests {
             format!("O:{OWNER}G:{OWNER}D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;;FA;;;{OWNER})");
         assert_eq!(
             parse_dacl(&sddl).map_err(|()| "descriptor ilegible")?,
-            vec![grant("S-1-5-18"), grant("S-1-5-32-544"), grant(OWNER)]
+            vec![grant("SY"), grant("BA"), grant(OWNER)]
         );
         Ok(())
     }
 
     #[test]
     fn exposes_a_shared_grant() -> Result<(), Box<dyn std::error::Error>> {
+        // `WD` es `Everyone`: la cuenta se devuelve tal cual y el adaptador la
+        // resuelve a su SID, que no estara en la lista de identidades admitidas.
         let sddl = format!("O:{OWNER}D:PAI(A;;FA;;;SY)(A;;FA;;;WD)(A;;FA;;;{OWNER})");
-        let aces = parse_dacl(&sddl).map_err(|()| "descriptor ilegible")?;
-        let shared: Vec<&str> = aces
-            .iter()
-            .filter(|ace| ace.effect == AceEffect::Grant)
-            .map(|ace| ace.sid.as_str())
-            .filter(|sid| !is_allowed_identity(sid, OWNER))
-            .collect();
-        assert_eq!(shared, ["S-1-1-0"]);
+        assert_eq!(granted(&sddl)?, ["SY", "WD", OWNER]);
         Ok(())
     }
 
     #[test]
     fn ignores_denials_audits_and_labels() -> Result<(), Box<dyn std::error::Error>> {
         let sddl = format!("O:{OWNER}D:PAI(D;;FR;;;WD)(AU;;FA;;;WD)(ML;;NW;;;HI)(A;;FA;;;{OWNER})");
-        let aces = parse_dacl(&sddl).map_err(|()| "descriptor ilegible")?;
-        assert!(
-            aces.iter()
-                .filter(|ace| ace.effect == AceEffect::Grant)
-                .all(|ace| is_allowed_identity(&ace.sid, OWNER))
-        );
+        assert_eq!(granted(&sddl)?, [OWNER]);
         Ok(())
     }
 
@@ -215,17 +183,8 @@ mod tests {
     #[test]
     fn separates_the_sacl_section() -> Result<(), Box<dyn std::error::Error>> {
         let sddl = format!("O:{OWNER}D:P(A;;FA;;;{OWNER})S:(AU;SA;FA;;;WD)");
-        let aces = parse_dacl(&sddl).map_err(|()| "descriptor ilegible")?;
-        assert_eq!(aces, vec![grant(OWNER)]);
+        assert_eq!(granted(&sddl)?, [OWNER]);
         Ok(())
-    }
-
-    #[test]
-    fn normalizes_aliases_and_keeps_unknown_ones() {
-        assert_eq!(normalize_sid("SY"), "S-1-5-18");
-        assert_eq!(normalize_sid("these"), "THESE");
-        assert_eq!(normalize_sid("s-1-5-21-1-2-3-1001"), "S-1-5-21-1-2-3-1001");
-        assert_eq!(normalize_sid(OWNER), OWNER);
     }
 
     #[test]
@@ -242,7 +201,7 @@ mod tests {
         for allowed in [OWNER, "S-1-5-18", "S-1-5-32-544", "S-1-3-0", "S-1-3-4"] {
             assert!(is_allowed_identity(allowed, OWNER), "{allowed}");
         }
-        for rejected in ["S-1-1-0", "S-1-5-11", "S-1-5-32-545", "S-1-5-4", "THESE"] {
+        for rejected in ["S-1-1-0", "S-1-5-11", "S-1-5-32-545", "S-1-5-4", "LA"] {
             assert!(!is_allowed_identity(rejected, OWNER), "{rejected}");
         }
     }

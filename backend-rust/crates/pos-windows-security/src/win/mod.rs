@@ -186,11 +186,17 @@ fn assert_private(handle: Handle, owner_sid: &str) -> Result<(), SecurityError> 
         return Err(SecurityError::WrongOwner);
     }
     let aces = parse_dacl(&sddl).map_err(|()| SecurityError::InsecureDacl)?;
-    let shared = aces
-        .iter()
-        .any(|ace| ace.effect == AceEffect::Grant && !is_allowed_identity(&ace.sid, owner_sid));
-    if shared {
-        return Err(SecurityError::InsecureDacl);
+    for ace in aces {
+        if ace.effect != AceEffect::Grant {
+            continue;
+        }
+        // El descriptor puede nombrar identidades por alias (`LA`, `BA`…). Un
+        // alias que no se pueda resolver se trata como concesión no autorizada:
+        // nunca se asume que un descriptor ilegible es privado.
+        let sid = native::sid_from_text(&ace.account).map_err(|_| SecurityError::InsecureDacl)?;
+        if !is_allowed_identity(&sid, owner_sid) {
+            return Err(SecurityError::InsecureDacl);
+        }
     }
     Ok(())
 }

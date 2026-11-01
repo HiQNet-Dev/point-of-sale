@@ -41,11 +41,14 @@ fn grant_sids(path: &Path, directory: bool) -> Result<Vec<String>, Box<dyn Error
     };
     let (_, sddl) = native::owner_and_sddl(handle.raw())?;
     let aces = parse_dacl(&sddl).map_err(|()| failure("la DACL no pudo interpretarse"))?;
-    Ok(aces
+    let mut sids = Vec::new();
+    for ace in aces
         .into_iter()
         .filter(|ace| ace.effect == AceEffect::Grant)
-        .map(|ace| ace.sid)
-        .collect())
+    {
+        sids.push(native::sid_from_text(&ace.account)?);
+    }
+    Ok(sids)
 }
 
 fn assert_private_grants(path: &Path, directory: bool) -> Result<(), Box<dyn Error>> {
@@ -77,25 +80,40 @@ fn exposes_a_canonical_effective_sid() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-fn reports_the_created_descriptor_for_diagnosis() -> Result<(), Box<dyn Error>> {
-    let root = tempfile::tempdir()?;
-    let directory = root.path().join("com.hiqnet.pos");
-    let owner = owner_sid()?;
-    eprintln!("effective_owner={owner}");
-    eprintln!(
-        "root_sddl={:?}",
-        native::owner_and_sddl(native::open_directory(root.path())?.raw())
-    );
-    match create_private_directory(&directory) {
-        Ok(()) => eprintln!("created=ok"),
-        Err(error) => eprintln!("created={error:?}"),
+fn resolves_sddl_aliases_to_canonical_sids() -> Result<(), Box<dyn Error>> {
+    // El descriptor real puede nombrar la cuenta integrada de administrador con
+    // el alias `LA`, cuyo SID depende de la máquina. La política compara siempre
+    // SIDs canónicos.
+    for alias in ["SY", "BA", "WD", "LA"] {
+        let sid = native::sid_from_text(alias)?;
+        if !sid.starts_with("S-1-") {
+            return Err(failure(&format!("{alias} no se resolvió a un SID")));
+        }
     }
-    let handle = native::open_directory(&directory)?;
-    let (actual_owner, sddl) = native::owner_and_sddl(handle.raw())?;
-    eprintln!("actual_owner={actual_owner}");
-    eprintln!("sddl={sddl}");
-    eprintln!("parsed={:?}", parse_dacl(&sddl));
-    Ok(())
+    match native::sid_from_text("no-es-una-cuenta") {
+        Err(SecurityError::Native) => Ok(()),
+        other => Err(failure(&format!("se esperaba un rechazo, llegó {other:?}"))),
+    }
+}
+
+#[test]
+fn rejects_a_grant_to_the_integrated_administrator_of_another_account() -> Result<(), Box<dyn Error>>
+{
+    let integrated = native::sid_from_text("LA")?;
+    let own = owner_sid()?;
+    let root = tempfile::tempdir()?;
+    let shared = root.path().join("administrador-integrado");
+    // La concesión al usuario efectivo permite abrir el objeto y leer su
+    // descriptor; la concesión a `LA` es la que la política debe evaluar.
+    native::create_directory_with(&shared, &format!("D:(A;;FA;;;{own})(A;;FA;;;LA)"))?;
+    let own_grant = integrated.eq_ignore_ascii_case(&own);
+    match verify_private_directory(&shared) {
+        Ok(()) if own_grant => Ok(()),
+        Err(SecurityError::InsecureDacl) if !own_grant => Ok(()),
+        other => Err(failure(&format!(
+            "resultado inesperado con LA={integrated}: {other:?}"
+        ))),
+    }
 }
 
 #[test]
@@ -140,13 +158,17 @@ fn rejects_inherited_group_grants() -> Result<(), Box<dyn Error>> {
     let handle = native::open_directory(&directory)?;
     let (_, sddl) = native::owner_and_sddl(handle.raw())?;
     let owner = owner_sid()?;
-    let shared: Vec<String> = parse_dacl(&sddl)
+    let mut shared: Vec<String> = Vec::new();
+    for ace in parse_dacl(&sddl)
         .map_err(|()| failure("la DACL no pudo interpretarse"))?
         .into_iter()
         .filter(|ace| ace.effect == AceEffect::Grant)
-        .map(|ace| ace.sid)
-        .filter(|sid| !crate::sddl::is_allowed_identity(sid, &owner))
-        .collect();
+    {
+        let sid = native::sid_from_text(&ace.account)?;
+        if !crate::sddl::is_allowed_identity(&sid, &owner) {
+            shared.push(sid);
+        }
+    }
     if shared.is_empty() {
         // Un perfil sin grupos heredados no aporta evidencia; el caso contrario
         // sí debe rechazarse.
