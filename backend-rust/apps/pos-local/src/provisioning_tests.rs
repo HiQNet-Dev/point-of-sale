@@ -1,11 +1,17 @@
 //! Pruebas del emisor nativo y del recorrido completo sobre el esquema productivo.
+//!
+//! Se ejecutan en Unix y en Windows: la custodia del archivo entregado la
+//! resuelve cada plataforma, pero el contrato (archivo privado, consumo único,
+//! estado del derecho) es el mismo.
 
-#![cfg(unix)]
+#![cfg(any(unix, windows))]
 #![allow(clippy::panic)]
 
-use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 use pos_application::bootstrap::{
     BootstrapRequest, ProvisioningProof, provision_initial_installation_with_proof,
@@ -48,15 +54,62 @@ fn capability() -> BootstrapProvisioning {
         .unwrap_or_else(|_| panic!("capacidad"))
 }
 
-async fn candidate_directory()
--> Result<(tempfile::TempDir, std::path::PathBuf), Box<dyn std::error::Error>> {
+/// Directorio de instalación con base migrada, listo para emitir.
+async fn candidate_directory() -> Result<(tempfile::TempDir, PathBuf), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
-    std::fs::set_permissions(temp.path(), std::fs::Permissions::from_mode(0o700))?;
-    let database = temp.path().join(DATABASE_FILE);
+    let directory = prepare_candidate_directory(temp.path())?;
+    let database = directory.join(DATABASE_FILE);
     let pool = open(&database, Duration::from_millis(75)).await?;
     migrate(&pool).await?;
     pool.close().await;
-    Ok((temp, database))
+    Ok((temp, directory))
+}
+
+#[cfg(unix)]
+fn prepare_candidate_directory(root: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700))?;
+    Ok(root.to_path_buf())
+}
+
+#[cfg(windows)]
+fn prepare_candidate_directory(root: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let directory = root.join("com.hiqnet.pos");
+    pos_windows_security::create_private_directory(&directory)?;
+    Ok(directory)
+}
+
+/// Deja el directorio en un estado que el emisor debe rechazar.
+#[cfg(unix)]
+fn make_directory_shared(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
+    Ok(())
+}
+
+/// Concede control total a `Everyone` mediante su SID, sin depender del idioma.
+#[cfg(windows)]
+fn make_directory_shared(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let status = std::process::Command::new("icacls")
+        .arg(path)
+        .args(["/grant", "*S-1-1-0:(OI)(CI)F"])
+        .status()?;
+    if !status.success() {
+        return Err("icacls no pudo ampliar la DACL".into());
+    }
+    Ok(())
+}
+
+/// Comprueba la custodia del archivo entregado con la regla de la plataforma.
+#[cfg(unix)]
+fn assert_authorization_is_private(directory: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let metadata = std::fs::symlink_metadata(directory.join(AUTHORIZATION_FILE))?;
+    assert_eq!(metadata.permissions().mode() & 0o077, 0);
+    Ok(())
+}
+
+#[cfg(windows)]
+fn assert_authorization_is_private(directory: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    pos_windows_security::verify_private_file(directory, AUTHORIZATION_FILE)?;
+    Ok(())
 }
 
 /// Instante real del recorrido; la autorización se emite con el reloj de
@@ -80,17 +133,15 @@ fn read_file(directory: &Path) -> Result<Vec<(String, String)>, Box<dyn std::err
 #[tokio::test]
 async fn issue_delivers_a_private_file_and_a_pending_authorization()
 -> Result<(), Box<dyn std::error::Error>> {
-    let (temp, database) = candidate_directory().await?;
+    let (_temp, directory) = candidate_directory().await?;
     execute(ProvisioningCommand::Issue {
-        directory: temp.path().to_path_buf(),
+        directory: directory.clone(),
         ttl_seconds: 600,
     })
     .await?;
 
-    let file = temp.path().join(AUTHORIZATION_FILE);
-    let metadata = std::fs::symlink_metadata(&file)?;
-    assert_eq!(metadata.permissions().mode() & 0o077, 0);
-    let fields = read_file(temp.path())?;
+    assert_authorization_is_private(&directory)?;
+    let fields = read_file(&directory)?;
     let token = fields
         .iter()
         .find(|(key, _)| key == "token")
@@ -103,7 +154,7 @@ async fn issue_delivers_a_private_file_and_a_pending_authorization()
         .map(|(_, value)| value)
         .ok_or("authorization_id")?;
 
-    let pool = open(&database, Duration::from_millis(75)).await?;
+    let pool = open(&directory.join(DATABASE_FILE), Duration::from_millis(75)).await?;
     let store = SqliteProvisioningStore::new(pool.clone());
     let stored = store
         .get(&EntityId::parse(authorization_id)?)
@@ -116,39 +167,28 @@ async fn issue_delivers_a_private_file_and_a_pending_authorization()
 }
 
 #[tokio::test]
-async fn issue_refuses_an_insecure_directory_a_second_file_and_a_missing_database()
+async fn issue_refuses_a_second_file_and_a_missing_database()
 -> Result<(), Box<dyn std::error::Error>> {
-    let (temp, _database) = candidate_directory().await?;
+    let (_temp, directory) = candidate_directory().await?;
     execute(ProvisioningCommand::Issue {
-        directory: temp.path().to_path_buf(),
+        directory: directory.clone(),
         ttl_seconds: 600,
     })
     .await?;
     assert_eq!(
         execute(ProvisioningCommand::Issue {
-            directory: temp.path().to_path_buf(),
+            directory: directory.clone(),
             ttl_seconds: 600,
         })
         .await,
         Err(crate::provisioning::ProvisioningError::AlreadyExists)
     );
 
-    let loose = tempfile::tempdir()?;
-    std::fs::set_permissions(loose.path(), std::fs::Permissions::from_mode(0o755))?;
-    assert_eq!(
-        execute(ProvisioningCommand::Issue {
-            directory: loose.path().to_path_buf(),
-            ttl_seconds: 600,
-        })
-        .await,
-        Err(crate::provisioning::ProvisioningError::InsecureDirectory)
-    );
-
     let empty = tempfile::tempdir()?;
-    std::fs::set_permissions(empty.path(), std::fs::Permissions::from_mode(0o700))?;
+    let empty = prepare_candidate_directory(empty.path())?;
     assert_eq!(
         execute(ProvisioningCommand::Issue {
-            directory: empty.path().to_path_buf(),
+            directory: empty,
             ttl_seconds: 600,
         })
         .await,
@@ -158,30 +198,50 @@ async fn issue_refuses_an_insecure_directory_a_second_file_and_a_missing_databas
 }
 
 #[tokio::test]
+async fn issue_refuses_an_insecure_directory() -> Result<(), Box<dyn std::error::Error>> {
+    let (temp, directory) = candidate_directory().await?;
+    let shared = temp.path().join("compartida");
+    std::fs::create_dir(&shared)?;
+    make_directory_shared(&shared)?;
+    assert_eq!(
+        execute(ProvisioningCommand::Issue {
+            directory: shared.clone(),
+            ttl_seconds: 600,
+        })
+        .await,
+        Err(crate::provisioning::ProvisioningError::InsecureDirectory)
+    );
+    // Ninguna entrega parcial debe quedar en el directorio compartido.
+    assert!(!shared.join(AUTHORIZATION_FILE).exists());
+    assert!(directory.join(DATABASE_FILE).exists());
+    Ok(())
+}
+
+#[tokio::test]
 async fn status_and_revoke_report_state_without_the_token() -> Result<(), Box<dyn std::error::Error>>
 {
-    let (temp, database) = candidate_directory().await?;
+    let (_temp, directory) = candidate_directory().await?;
     execute(ProvisioningCommand::Issue {
-        directory: temp.path().to_path_buf(),
+        directory: directory.clone(),
         ttl_seconds: 600,
     })
     .await?;
     execute(ProvisioningCommand::Status {
-        directory: temp.path().to_path_buf(),
+        directory: directory.clone(),
     })
     .await?;
     execute(ProvisioningCommand::Revoke {
-        directory: temp.path().to_path_buf(),
+        directory: directory.clone(),
     })
     .await?;
 
-    let fields = read_file(temp.path())?;
+    let fields = read_file(&directory)?;
     let authorization_id = fields
         .iter()
         .find(|(key, _)| key == "authorization_id")
         .map(|(_, value)| value)
         .ok_or("authorization_id")?;
-    let pool = open(&database, Duration::from_millis(75)).await?;
+    let pool = open(&directory.join(DATABASE_FILE), Duration::from_millis(75)).await?;
     let store = SqliteProvisioningStore::new(pool.clone());
     assert_eq!(
         store
@@ -197,13 +257,14 @@ async fn status_and_revoke_report_state_without_the_token() -> Result<(), Box<dy
 #[tokio::test]
 async fn the_issued_token_provisions_once_and_cannot_be_replayed()
 -> Result<(), Box<dyn std::error::Error>> {
-    let (temp, database) = candidate_directory().await?;
+    let (_temp, directory) = candidate_directory().await?;
+    let database = directory.join(DATABASE_FILE);
     execute(ProvisioningCommand::Issue {
-        directory: temp.path().to_path_buf(),
+        directory: directory.clone(),
         ttl_seconds: 600,
     })
     .await?;
-    let fields = read_file(temp.path())?;
+    let fields = read_file(&directory)?;
     let value = |name: &str| {
         fields
             .iter()

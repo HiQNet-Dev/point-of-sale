@@ -6,10 +6,18 @@
 //! argumentos, stdout, logs ni variables públicas, y el archivo completo se trata
 //! como material sensible.
 //!
-//! En Windows la entrega falla cerrada: la verificación efectiva de propietario y
-//! DACL requiere un componente nativo aislado que todavía no existe.
+//! # Custodia por plataforma
+//!
+//! - **Unix**: bits POSIX (`0700`/`0600`) y propietario igual al usuario
+//!   efectivo, comprobados antes de escribir.
+//! - **Windows**: propietario y DACL verificados por `pos-windows-security`,
+//!   creación atómica con DACL protegida y lectura vinculada al handle abierto.
+//! - **Otras plataformas**: fallo cerrado.
 
-use std::{fmt, fs, path::PathBuf, time::Duration, time::SystemTime, time::UNIX_EPOCH};
+use std::{fmt, path::PathBuf, time::Duration, time::SystemTime, time::UNIX_EPOCH};
+
+#[cfg(unix)]
+use std::fs;
 
 use pos_core::{
     identity::{ProvisioningAuthorization, ProvisioningPurpose},
@@ -298,9 +306,30 @@ fn prepare_directory(path: &std::path::Path) -> Result<(), ProvisioningError> {
     Ok(())
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn prepare_directory(path: &std::path::Path) -> Result<(), ProvisioningError> {
+    pos_windows_security::create_private_directory(path).map_err(security_error)
+}
+
+#[cfg(not(any(unix, windows)))]
 fn prepare_directory(_path: &std::path::Path) -> Result<(), ProvisioningError> {
     Err(ProvisioningError::UnsupportedPlatform)
+}
+
+/// Traduce un fallo de la frontera nativa sin revelar rutas ni descriptores.
+#[cfg(windows)]
+fn security_error(error: pos_windows_security::SecurityError) -> ProvisioningError {
+    use pos_windows_security::SecurityError;
+    match error {
+        SecurityError::UnsupportedPlatform => ProvisioningError::UnsupportedPlatform,
+        SecurityError::AlreadyExists => ProvisioningError::AlreadyExists,
+        SecurityError::Missing => ProvisioningError::MissingDatabase,
+        SecurityError::InvalidName => ProvisioningError::InvalidFile,
+        SecurityError::InsecureDacl | SecurityError::WrongOwner | SecurityError::Redirect => {
+            ProvisioningError::InsecureDirectory
+        }
+        SecurityError::NotExpectedType | SecurityError::Native => ProvisioningError::Storage,
+    }
 }
 
 #[cfg(unix)]
@@ -333,7 +362,21 @@ fn write_authorization_file(
     file.sync_all().map_err(|_| ProvisioningError::Storage)
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn write_authorization_file(
+    directory: &std::path::Path,
+    installation_id: &str,
+    authorization_id: &str,
+    token: &str,
+) -> Result<(), ProvisioningError> {
+    let contents = format!(
+        "installation_id={installation_id}\nauthorization_id={authorization_id}\ntoken={token}\n"
+    );
+    pos_windows_security::create_private_file(directory, AUTHORIZATION_FILE, contents.as_bytes())
+        .map_err(security_error)
+}
+
+#[cfg(not(any(unix, windows)))]
 fn write_authorization_file(
     _directory: &std::path::Path,
     _installation_id: &str,
@@ -344,11 +387,35 @@ fn write_authorization_file(
 }
 
 fn read_authorization_id(directory: &std::path::Path) -> Result<EntityId, ProvisioningError> {
-    let contents = fs::read_to_string(directory.join(AUTHORIZATION_FILE))
-        .map_err(|_| ProvisioningError::MissingAuthorization)?;
+    let contents = read_authorization_contents(directory)?;
     let value = contents
         .lines()
         .find_map(|line| line.strip_prefix("authorization_id="))
         .ok_or(ProvisioningError::InvalidFile)?;
     parse_id(value.trim())
+}
+
+#[cfg(unix)]
+fn read_authorization_contents(directory: &std::path::Path) -> Result<String, ProvisioningError> {
+    fs::read_to_string(directory.join(AUTHORIZATION_FILE))
+        .map_err(|_| ProvisioningError::MissingAuthorization)
+}
+
+#[cfg(windows)]
+fn read_authorization_contents(directory: &std::path::Path) -> Result<String, ProvisioningError> {
+    let bytes = pos_windows_security::read_private_file(directory, AUTHORIZATION_FILE).map_err(
+        |error| match error {
+            pos_windows_security::SecurityError::Missing => ProvisioningError::MissingAuthorization,
+            pos_windows_security::SecurityError::UnsupportedPlatform => {
+                ProvisioningError::UnsupportedPlatform
+            }
+            other => security_error(other),
+        },
+    )?;
+    String::from_utf8(bytes).map_err(|_| ProvisioningError::InvalidFile)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn read_authorization_contents(_directory: &std::path::Path) -> Result<String, ProvisioningError> {
+    Err(ProvisioningError::UnsupportedPlatform)
 }
