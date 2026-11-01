@@ -147,6 +147,13 @@ pub enum ApplicationError {
     OwnershipMismatch,
     /// Una entrada de catálogo incumple el contrato de dominio.
     InvalidCatalogInput,
+    /// Una entrada de configuración de negocio incumple el contrato de dominio.
+    InvalidOrganizationInput,
+    /// La edición en curso no admite una sucursal más.
+    ///
+    /// Free Local v1 opera con una única sucursal; la regla se aplica en la capa
+    /// de aplicación y no depende de lo que muestre la interfaz.
+    BranchCapacityReached,
     /// Credenciales rechazadas sin revelar si el usuario existe.
     ///
     /// Es el único error visible de autenticación: usuario inexistente,
@@ -245,6 +252,12 @@ impl fmt::Display for ApplicationError {
             Self::Domain(error) => error.fmt(formatter),
             Self::Storage => formatter.write_str("operación de almacenamiento fallida"),
             Self::Audit => formatter.write_str("auditoría obligatoria fallida"),
+            Self::InvalidOrganizationInput => {
+                formatter.write_str("configuración de negocio no válida")
+            }
+            Self::BranchCapacityReached => {
+                formatter.write_str("la edición no admite otra sucursal")
+            }
         }
     }
 }
