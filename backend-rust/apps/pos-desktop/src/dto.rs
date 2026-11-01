@@ -174,6 +174,116 @@ pub struct CatalogItemRequestDto {
     pub id: String,
 }
 
+/// Configuración de la organización del principal.
+///
+/// `revision` viaja como texto decimal exacto: la revisión es de 64 bits y un
+/// `number` de JavaScript no garantiza precisión.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct OrganizationDto {
+    /// UUID canónico; no editable.
+    pub id: String,
+    /// Código inmutable del negocio.
+    pub code: String,
+    /// Nombre comercial.
+    pub name: String,
+    /// `ACTIVE` o `INACTIVE`; solo lectura mientras no exista contrato de baja.
+    pub status: String,
+    /// Zona horaria raíz.
+    pub timezone: String,
+    /// Moneda; solo lectura para no reinterpretar importes persistidos.
+    pub currency: String,
+    /// Configuración regional.
+    pub locale: String,
+    /// `STRICT` o `ALLOW_NEGATIVE` (ADR-0013).
+    pub negative_stock_policy: String,
+    /// Revisión optimista en texto decimal.
+    pub revision: String,
+}
+
+/// Edición de la configuración del negocio.
+///
+/// No contiene identidad, código, estado ni moneda: el contrato no permite
+/// expresar esos cambios. Un campo ausente conserva el valor actual.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateOrganizationRequestDto {
+    /// Revisión leída por el cliente, en texto decimal.
+    pub expected_revision: String,
+    /// Nombre comercial nuevo.
+    pub name: Option<String>,
+    /// Zona horaria raíz nueva.
+    pub timezone: Option<String>,
+    /// Configuración regional nueva.
+    pub locale: Option<String>,
+    /// Política de inventario negativo nueva.
+    pub negative_stock_policy: Option<String>,
+}
+
+/// Operación explícita sobre la zona horaria de una sucursal.
+///
+/// `KEEP`, `SET` e `INHERIT` son operaciones distintas y no se colapsan en un
+/// valor nulo ambiguo.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TimezoneOverrideRequestDto {
+    /// `KEEP`, `SET` o `INHERIT`.
+    pub mode: String,
+    /// Zona horaria requerida únicamente con `SET`.
+    pub timezone: Option<String>,
+}
+
+/// Sucursal con la zona horaria efectiva ya resuelta.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchAdminDto {
+    /// UUID canónico; no editable.
+    pub id: String,
+    /// Código inmutable dentro de la organización.
+    pub code: String,
+    /// Nombre visible.
+    pub name: String,
+    /// `ACTIVE` o `INACTIVE`; solo lectura mientras no exista contrato de baja.
+    pub status: String,
+    /// Override propio, si existe.
+    pub timezone_override: Option<String>,
+    /// Zona horaria aplicable tras resolver la herencia.
+    pub effective_timezone: String,
+    /// Indica si la sucursal sobrescribe la zona de la organización.
+    pub inherits_timezone: bool,
+    /// Revisión optimista en texto decimal.
+    pub revision: String,
+}
+
+/// Alta de la sucursal inicial del negocio.
+///
+/// Free Local admite una única sucursal: el caso de uso rechaza cualquier alta
+/// posterior aunque el principal tenga `branch.create`.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateBranchRequestDto {
+    /// Código de la sucursal, único dentro del negocio.
+    pub code: String,
+    /// Nombre visible.
+    pub name: String,
+    /// Zona horaria propia opcional; si falta, hereda la del negocio.
+    pub timezone: Option<String>,
+}
+
+/// Edición de una sucursal existente.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateBranchRequestDto {
+    /// UUID de la sucursal dentro de la organización del principal.
+    pub branch_id: String,
+    /// Revisión leída por el cliente, en texto decimal.
+    pub expected_revision: String,
+    /// Nombre nuevo; si falta, se conserva.
+    pub name: Option<String>,
+    /// Operación sobre la zona horaria.
+    pub timezone: TimezoneOverrideRequestDto,
+}
+
 /// Alta de categoría por el administrador autenticado.
 #[derive(Debug, Deserialize, Type)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -293,15 +403,18 @@ impl From<pos_core::organization_branch::ApplicationError> for IpcError {
             }
             ApplicationError::InvalidSessionInput
             | ApplicationError::InvalidCatalogInput
+            | ApplicationError::InvalidOrganizationInput
             | ApplicationError::InvalidPurchaseInput
             | ApplicationError::OverReceipt => Self::ValidationError,
             ApplicationError::BranchNotFound
+            | ApplicationError::OrganizationNotFound
             | ApplicationError::SupplierNotFound
             | ApplicationError::PurchaseOrderNotFound
             | ApplicationError::PurchaseOrderLineNotFound
             | ApplicationError::PurchaseReceiptNotFound
             | ApplicationError::InventoryItemNotFound => Self::NotFound,
             ApplicationError::ConcurrentModification
+            | ApplicationError::BranchCapacityReached
             | ApplicationError::SupplierCodeAlreadyExists
             | ApplicationError::PurchaseOrderCodeAlreadyExists
             | ApplicationError::SupplierInactive

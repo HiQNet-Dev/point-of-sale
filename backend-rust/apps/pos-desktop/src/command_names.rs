@@ -22,6 +22,12 @@ pub const COMMAND_NAMES: &[&str] = &[
     "auth_logout_all",
     "auth_select_branch",
     "auth_list_branches",
+    "organization_get",
+    "organization_update",
+    "branch_list",
+    "branch_get",
+    "branch_create",
+    "branch_update",
 ];
 
 /// Comandos del laboratorio sintético; no existen en el modo instalación.
@@ -57,4 +63,19 @@ pub const CATALOG_COMMAND_NAMES: &[&str] = &[
     "catalog_create_category",
     "catalog_create_product",
     "catalog_update_product",
+];
+
+/// Comandos de configuración del negocio; requieren sesión y permisos propios.
+///
+/// `branch_create` existe únicamente para configurar la sucursal inicial: la
+/// capacidad de Free Local se aplica en la capa de aplicación y rechaza la
+/// segunda alta.
+#[allow(dead_code)] // Consumido por las pruebas del dispatcher.
+pub const ORGANIZATION_COMMAND_NAMES: &[&str] = &[
+    "organization_get",
+    "organization_update",
+    "branch_list",
+    "branch_get",
+    "branch_create",
+    "branch_update",
 ];

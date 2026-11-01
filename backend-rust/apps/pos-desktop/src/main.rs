@@ -20,6 +20,7 @@ mod dto;
 mod installation_dir;
 #[cfg(test)]
 mod ipc_tests;
+mod organization;
 mod purchasing;
 #[cfg(test)]
 mod test_support;

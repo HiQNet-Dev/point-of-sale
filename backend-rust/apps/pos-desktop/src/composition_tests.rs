@@ -9,8 +9,9 @@ use pos_storage_sqlite::{
 
 use super::*;
 use crate::dto::{
-    BootstrapInstallRequestDto, CreateProductRequest, LoginRequestDto, PageRequest,
-    SelectBranchRequestDto,
+    BootstrapInstallRequestDto, CreateBranchRequestDto, CreateProductRequest, LoginRequestDto,
+    PageRequest, SelectBranchRequestDto, TimezoneOverrideRequestDto, UpdateBranchRequestDto,
+    UpdateOrganizationRequestDto,
 };
 
 fn page() -> PageRequest {
@@ -454,6 +455,258 @@ fn write_private_authorization(directory: &Path, contents: &str) -> Result<(), B
         NATIVE_AUTHORIZATION_FILE,
         contents.as_bytes(),
     )?;
+    Ok(())
+}
+
+#[test]
+fn business_configuration_requires_a_session_and_rejects_the_laboratory()
+-> Result<(), Box<dyn Error>> {
+    tauri::async_runtime::block_on(async {
+        let lab = LocalState::synthetic().await?;
+        assert_eq!(
+            lab.organization_get().await.err(),
+            Some(IpcError::OperationNotAvailable)
+        );
+        assert_eq!(
+            lab.branch_list().await.err(),
+            Some(IpcError::OperationNotAvailable)
+        );
+        assert_eq!(
+            lab.branch_get("00000000-0000-0000-0000-000000000001")
+                .await
+                .err(),
+            Some(IpcError::OperationNotAvailable)
+        );
+        lab.shutdown().await;
+
+        // Instalación sin sesión: ningún dato de negocio sale del proceso.
+        let directory = crate::test_support::Fixture::new()?;
+        let state = LocalState::open_installation(directory.path()).await?;
+        assert_eq!(
+            state.organization_get().await.err(),
+            Some(IpcError::Unauthorized)
+        );
+        assert_eq!(
+            state.branch_list().await.err(),
+            Some(IpcError::Unauthorized)
+        );
+        state.shutdown().await;
+        Ok(())
+    })
+}
+
+#[test]
+fn business_configuration_round_trip_survives_a_restart() -> Result<(), Box<dyn Error>> {
+    tauri::async_runtime::block_on(async {
+        let directory = crate::test_support::Fixture::new()?;
+        let state = LocalState::open_installation(directory.path()).await?;
+        deliver_authorization(directory.path(), &state.product_installation()?.pool).await?;
+        install_and_login(&state).await?;
+
+        // Configuración inicial derivada del bootstrap.
+        let organization = state.organization_get().await?;
+        assert_eq!(organization.name, "Café Central");
+        assert_eq!(organization.code, "caf-central");
+        assert_eq!(organization.currency, "MXN");
+        assert_eq!(organization.status, "ACTIVE");
+        assert_eq!(organization.negative_stock_policy, "STRICT");
+        assert_eq!(organization.revision, "0");
+
+        // Edición de los campos permitidos: nombre, zona, política.
+        let updated = state
+            .organization_update(UpdateOrganizationRequestDto {
+                expected_revision: organization.revision.clone(),
+                name: Some("Café Central Norte".to_owned()),
+                timezone: Some("America/Tijuana".to_owned()),
+                locale: None,
+                negative_stock_policy: Some("ALLOW_NEGATIVE".to_owned()),
+            })
+            .await?;
+        assert_eq!(updated.name, "Café Central Norte");
+        assert_eq!(updated.timezone, "America/Tijuana");
+        assert_eq!(updated.negative_stock_policy, "ALLOW_NEGATIVE");
+        assert_eq!(updated.revision, "1");
+        // Moneda y estado quedan intactos: el contrato no los expone.
+        assert_eq!(updated.currency, "MXN");
+        assert_eq!(updated.status, "ACTIVE");
+
+        // Una revisión obsoleta no modifica nada.
+        assert_eq!(
+            state
+                .organization_update(UpdateOrganizationRequestDto {
+                    expected_revision: "0".to_owned(),
+                    name: Some("Otro".to_owned()),
+                    timezone: None,
+                    locale: None,
+                    negative_stock_policy: None,
+                })
+                .await
+                .err(),
+            Some(IpcError::Conflict)
+        );
+        assert_eq!(state.organization_get().await?.revision, "1");
+
+        // La instalación nace sin sucursal: se configura la inicial.
+        assert!(state.branch_list().await?.is_empty());
+        let branch = state
+            .branch_create(CreateBranchRequestDto {
+                code: "centro".to_owned(),
+                name: "Sucursal Centro".to_owned(),
+                timezone: None,
+            })
+            .await?;
+        assert_eq!(branch.code, "centro");
+        assert!(branch.inherits_timezone);
+        assert_eq!(branch.effective_timezone, "America/Tijuana");
+
+        // La segunda sucursal la rechaza la capa de aplicación.
+        assert_eq!(
+            state
+                .branch_create(CreateBranchRequestDto {
+                    code: "norte".to_owned(),
+                    name: "Sucursal Norte".to_owned(),
+                    timezone: None,
+                })
+                .await
+                .err(),
+            Some(IpcError::Conflict)
+        );
+
+        // Triestado de zona horaria sobre la sucursal existente.
+        let overridden = state
+            .branch_update(UpdateBranchRequestDto {
+                branch_id: branch.id.clone(),
+                expected_revision: branch.revision.clone(),
+                name: Some("Sucursal Centro Histórico".to_owned()),
+                timezone: TimezoneOverrideRequestDto {
+                    mode: "SET".to_owned(),
+                    timezone: Some("America/Cancun".to_owned()),
+                },
+            })
+            .await?;
+        assert!(!overridden.inherits_timezone);
+        assert_eq!(
+            overridden.timezone_override.as_deref(),
+            Some("America/Cancun")
+        );
+        assert_eq!(overridden.effective_timezone, "America/Cancun");
+        assert_eq!(overridden.revision, "1");
+
+        // `SET` sin zona horaria es ambiguo y se rechaza.
+        assert_eq!(
+            state
+                .branch_update(UpdateBranchRequestDto {
+                    branch_id: branch.id.clone(),
+                    expected_revision: overridden.revision.clone(),
+                    name: None,
+                    timezone: TimezoneOverrideRequestDto {
+                        mode: "SET".to_owned(),
+                        timezone: None,
+                    },
+                })
+                .await
+                .err(),
+            Some(IpcError::ValidationError)
+        );
+
+        // `INHERIT` elimina el override.
+        let inherited = state
+            .branch_update(UpdateBranchRequestDto {
+                branch_id: branch.id.clone(),
+                expected_revision: overridden.revision.clone(),
+                name: None,
+                timezone: TimezoneOverrideRequestDto {
+                    mode: "INHERIT".to_owned(),
+                    timezone: None,
+                },
+            })
+            .await?;
+        assert!(inherited.inherits_timezone);
+        assert_eq!(inherited.effective_timezone, "America/Tijuana");
+
+        // La lectura individual coincide con el listado.
+        let listed = state.branch_list().await?;
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, branch.id);
+        assert_eq!(
+            state.branch_get(&branch.id).await?.name,
+            "Sucursal Centro Histórico"
+        );
+
+        // Cierre y reapertura: la configuración persiste.
+        state.auth_logout().await?;
+        state.shutdown().await;
+        let reopened = LocalState::open_installation(directory.path()).await?;
+        reopened
+            .auth_login(LoginRequestDto {
+                email: "admin@cafe.test".to_owned(),
+                password: "contraseña-larga-2k".to_owned(),
+            })
+            .await?;
+        let persisted = reopened.organization_get().await?;
+        assert_eq!(persisted.name, "Café Central Norte");
+        assert_eq!(persisted.revision, "1");
+        let persisted_branch = reopened.branch_list().await?;
+        assert_eq!(persisted_branch.len(), 1);
+        assert_eq!(persisted_branch[0].name, "Sucursal Centro Histórico");
+        assert!(persisted_branch[0].inherits_timezone);
+        reopened.shutdown().await;
+        Ok(())
+    })
+}
+
+#[test]
+fn removing_organization_update_is_effective_on_the_next_call() -> Result<(), Box<dyn Error>> {
+    tauri::async_runtime::block_on(async {
+        let directory = crate::test_support::Fixture::new()?;
+        let state = LocalState::open_installation(directory.path()).await?;
+        let pool = state.product_installation()?.pool.clone();
+        deliver_authorization(directory.path(), &pool).await?;
+        install_and_login(&state).await?;
+        assert_eq!(state.organization_get().await?.revision, "0");
+
+        // Se retira el permiso en SQLite: la siguiente llamada ya no autoriza.
+        sqlx::query("DELETE FROM role_permission WHERE permission_code = 'organization.update'")
+            .execute(&pool)
+            .await?;
+        assert_eq!(
+            state
+                .organization_update(UpdateOrganizationRequestDto {
+                    expected_revision: "0".to_owned(),
+                    name: Some("Sin permiso".to_owned()),
+                    timezone: None,
+                    locale: None,
+                    negative_stock_policy: None,
+                })
+                .await
+                .err(),
+            Some(IpcError::Forbidden)
+        );
+        // La lectura sigue autorizada por su propio permiso.
+        assert_eq!(state.organization_get().await?.name, "Café Central");
+        state.shutdown().await;
+        Ok(())
+    })
+}
+
+/// Instala el negocio y deja una sesión activa para el administrador.
+async fn install_and_login(state: &LocalState) -> Result<(), Box<dyn Error>> {
+    state
+        .bootstrap_install(BootstrapInstallRequestDto {
+            business_name: "Café Central".to_owned(),
+            business_code: None,
+            administrator_name: "Administradora".to_owned(),
+            email: "admin@cafe.test".to_owned(),
+            password: "contraseña-larga-2k".to_owned(),
+            currency: Some("MXN".to_owned()),
+        })
+        .await?;
+    state
+        .auth_login(LoginRequestDto {
+            email: "admin@cafe.test".to_owned(),
+            password: "contraseña-larga-2k".to_owned(),
+        })
+        .await?;
     Ok(())
 }
 
