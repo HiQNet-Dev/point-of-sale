@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/pos-core", "crates/pos-application", "crates/pos-credentials", "crates/pos-storage-sqlite", "apps/pos-local", "tools/migration-lab", "tools/pos-lab"]
+members = ["crates/pos-core", "crates/pos-application", "crates/pos-credentials", "crates/pos-storage-sqlite", "crates/pos-windows-security", "apps/pos-local", "tools/migration-lab", "tools/pos-lab"]
 resolver = "3"
 
 [workspace.package]
@@ -13,6 +13,8 @@ pos-core = { path = "crates/pos-core" }
 pos-application = { path = "crates/pos-application" }
 pos-credentials = { path = "crates/pos-credentials" }
 pos-storage-sqlite = { path = "crates/pos-storage-sqlite" }
+pos-windows-security = { path = "crates/pos-windows-security" }
+windows-sys = "0.61.2"
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
 tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 serde = { version = "1.0.229", features = ["derive"] }

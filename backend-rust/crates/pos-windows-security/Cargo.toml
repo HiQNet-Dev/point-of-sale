@@ -1,0 +1,34 @@
+[package]
+name = "pos-windows-security"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Frontera de plataforma para la custodia de archivos privados de HiQNet POS en Windows"
+
+[dependencies]
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Threading",
+] }
+
+# Este crate es la única frontera autorizada para invocar APIs nativas de
+# seguridad de Windows. `unsafe` se limita a `win/`, se documenta su invariante
+# y no se reexporta. El resto de crates conserva `unsafe_code = "forbid"`.
+[lints.rust]
+unsafe_code = "allow"
+missing_docs = "warn"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
