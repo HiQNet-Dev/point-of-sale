@@ -1,4 +1,4 @@
-import { commands, type BootstrapInstallRequestDto_Deserialize, type CreateProductRequest_Deserialize, type IpcError, type UpdateProductRequestDto_Deserialize } from './desktop.generated'
+import { commands, type BootstrapInstallRequestDto_Deserialize, type CreateBranchRequestDto_Deserialize, type CreateProductRequest_Deserialize, type IpcError, type UpdateBranchRequestDto_Deserialize, type UpdateOrganizationRequestDto_Deserialize, type UpdateProductRequestDto_Deserialize } from './desktop.generated'
 
 /** Errores públicos del adaptador IPC, sin diagnósticos de almacenamiento. */
 export class DesktopCommandError extends Error {
@@ -56,4 +56,17 @@ export const desktopService = {
   catalogCreateCategory: (code: string, name: string) => unwrap(commands.catalogCreateCategory({ code, name })),
   catalogCreateProduct: (request: CreateProductRequest_Deserialize) => unwrap(commands.catalogCreateProduct(request)),
   catalogUpdateProduct: (request: UpdateProductRequestDto_Deserialize) => unwrap(commands.catalogUpdateProduct(request)),
+
+  /**
+   * Configuración del negocio de la organización autenticada.
+   *
+   * La organización y el actor los resuelve Rust; aquí solo viajan datos de
+   * configuración y la revisión leída, que es texto decimal exacto.
+   */
+  organizationGet: () => unwrap(commands.organizationGet()),
+  organizationUpdate: (request: UpdateOrganizationRequestDto_Deserialize) => unwrap(commands.organizationUpdate(request)),
+  branchList: () => unwrap(commands.branchList()),
+  branchGet: (id: string) => unwrap(commands.branchGet({ id })),
+  branchCreate: (request: CreateBranchRequestDto_Deserialize) => unwrap(commands.branchCreate(request)),
+  branchUpdate: (request: UpdateBranchRequestDto_Deserialize) => unwrap(commands.branchUpdate(request)),
 }
