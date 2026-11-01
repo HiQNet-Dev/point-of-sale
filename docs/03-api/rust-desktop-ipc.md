@@ -98,6 +98,12 @@ Fuente verificable: `apps/pos-desktop/src/commands.rs` + `dto.rs`, relativa a
 | `catalog_create_category` | Instalación | `{ "request": { "code", "name" } }` | `CategoryDto` | `category.create` | Organización del principal |
 | `catalog_create_product` | Instalación | `{ "request": { "sku", "name", "unitPrice", "categoryId?", "barcode?", "description?" } }` | `CreatedProductDto` | `product.create` | Organización del principal |
 | `catalog_update_product` | Instalación | `{ "request": { "productId", "expectedVersion", "name?", "unitPrice?", "categoryId?", "status?" } }` | `ProductDto_Serialize` | `product.update` | Organización del principal |
+| `organization_get` | Instalación | `{}` | `OrganizationDto` | `organization.read` | Scope propio del principal |
+| `organization_update` | Instalación | `{ "request": { "expectedRevision", "name?", "timezone?", "locale?", "negativeStockPolicy?" } }` | `OrganizationDto` | `organization.update` | Scope propio del principal |
+| `branch_list` | Instalación | `{}` | `BranchAdminDto[]` | `branch.read` | Organización del principal |
+| `branch_get` | Instalación | `{ "request": { "id" } }` | `BranchAdminDto` | `branch.read` | Organización del principal |
+| `branch_create` | Instalación | `{ "request": { "code", "name", "timezone?" } }` | `BranchAdminDto` | `branch.create` | Organización del principal |
+| `branch_update` | Instalación | `{ "request": { "branchId", "expectedRevision", "name?", "timezone": { "mode", "timezone?" } } }` | `BranchAdminDto` | `branch.update` | Organización del principal |
 
 ### Primera instalación
 
@@ -112,6 +118,54 @@ autorización. Diseño en [ADR-0028](../01-architecture/adr/0028-guided-first-in
 Los seis comandos `catalog_*` revalidan la sesión nativa en cada llamada y
 resuelven organización y permisos en SQLite. El cliente aporta solo datos de
 negocio y la versión que leyó; el precio viaja como texto decimal de escala 4.
+
+### Configuración del negocio
+
+Cinco comandos administran la organización y su sucursal. La organización **nunca**
+llega por IPC: se deriva del `VerifiedPrincipal`, y el permiso se resuelve contra
+el scope exacto ya resuelto en SQLite. Los DTO declaran `denyUnknownFields`, así
+que un campo ajeno al contrato es un error de validación y no un cambio ignorado.
+
+Campos editables y campos que el contrato **no puede expresar**:
+
+| Campo | Estado | Motivo |
+| --- | --- | --- |
+| `organization.name` | editable | Visible sin efecto operativo |
+| `organization.timezone` | editable | Base de la herencia de sucursal |
+| `organization.locale` | editable | Visible sin efecto operativo |
+| `organization.negativeStockPolicy` | editable | Contrato aprobado en ADR-0013 |
+| `organization.status` | solo lectura | Sin contrato de baja ni recuperación |
+| `organization.currency` | solo lectura | Reinterpretaría importes persistidos |
+| `branch.name` | editable | Visible sin efecto operativo |
+| `branch.timezone` (`mode`) | editable | Triestado explícito |
+| `branch.status` | solo lectura | Desactivar la única sucursal dejaría la instalación inoperable |
+| `branch.code`, `branch.id` | inmutables | Identidad del agregado |
+
+`branch_update.timezone` usa un triestado explícito que no se colapsa en `null`:
+
+| `mode` | `timezone` | Efecto |
+| --- | --- | --- |
+| `KEEP` | debe faltar | Conserva la configuración |
+| `SET` | obligatorio | Define zona propia |
+| `INHERIT` | debe faltar | Elimina el override y hereda |
+
+`BranchAdminDto` incluye `effectiveTimezone` y `inheritsTimezone` ya resueltos
+por el dominio, de modo que la interfaz no reimplementa la herencia.
+
+Las revisiones viajan como **texto decimal exacto** (`"4"`), nunca como número de
+JavaScript. Una revisión obsoleta responde `CONFLICT`; un patch sin cambios
+materiales no incrementa la revisión ni genera auditoría.
+
+**Capacidad de Free Local.** La edición admite una única sucursal. La primera
+alta configura la sucursal inicial de la instalación; cualquier intento posterior
+responde `CONFLICT` desde la capa de aplicación aunque el principal tenga
+`branch.create`. No es una restricción de interfaz.
+
+**Limitación conocida y no introducida aquí.** `auth_select_branch` resuelve los
+permisos del scope de sucursal solo desde `branch_membership`; sin membresía el
+principal queda sin permisos en ese scope. La administración de usuarios,
+membresías y roles es el siguiente vertical, y hasta entonces la configuración
+del negocio y de la sucursal se opera en el scope de organización.
 
 ### Autenticación Local
 
@@ -256,12 +310,9 @@ comerciales a fixtures. Contratos, pruebas y bloqueos:
 
 ## Bloqueos y siguiente vertical
 
-No hay login comercial ni escritura IPC. D-AUTH, D-INST, D-CAT, D-CASH, D-SALES,
-D-INV y ADR-0022 siguen sujetos al expediente canónico; D-AUTH-09 continúa
-bloqueada y el paquete de firma está en
-[`rust-increment-1y-approval-package.md`](../05-development/rust-increment-1y-approval-package.md).
-No se promueve DDL candidato ni se resuelve SYSTEM por introducir un transporte.
-Próxima vertical: sesión comercial autorizada y lectura de catálogo sobre la
-instalación persistente; después escritura CAS con auditoría, sólo cuando el
-bloque físico y de seguridad correspondiente esté aceptado. Spring Boot no se
+La organización y su sucursal ya se administran por IPC con sesión real, CAS y
+auditoría transaccional. Siguen abiertos: administración de usuarios y
+membresías por IPC, caja/turnos, ventas, inventario, compras y E2E gráfico de
+WebView2. D-AUTH-09 continúa sin ratificar y el gate normativo sigue `BLOCKED`
+para `main`; nada de eso cambia por tener este vertical verde. Spring Boot no se
 retira.
