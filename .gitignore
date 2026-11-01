@@ -45,3 +45,6 @@ Thumbs.db
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+# Artefactos de ejecución local de los scripts de CI.
+__pycache__/
+*.pyc
