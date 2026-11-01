@@ -26,15 +26,20 @@ una falsa sensación de custodia.
    (`windows-sys` 0.61, mantenido por Microsoft); la política se escribe en Rust
    seguro.
 2. **Política de acceso explícita.** Un objeto es privado si su propietario es el
-   usuario efectivo del proceso y ninguna entrada de *concesión* de su DACL
+   usuario efectivo o el grupo `Administrators` —un proceso elevado crea objetos
+   a nombre de ese grupo, que ya puede tomar posesión de cualquier archivo, así
+   que aceptarlo no amplía el acceso— y ninguna entrada de *concesión* de su DACL
    apunta a otra identidad. Solo se admiten el propio usuario, `SYSTEM`
    (`S-1-5-18`) y `Administrators` (`S-1-5-32-544`), más `CREATOR OWNER` y
    `OWNER RIGHTS`, que Windows resuelve al propietario. Las entradas de denegación
    y las etiquetas de integridad se ignoran: no amplían el acceso.
-3. **DACL privada y heredable.** Directorios y archivos se crean con
+3. **DACL privada y heredable.** Directorios y archivos se crean con el
+   propietario explícito y
    `D:P(A;OICI;FA;;;<usuario>)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)`: protegida frente
    a la herencia del padre y heredable por los hijos, de modo que el archivo
-   SQLite, `-wal`, `-shm`, `-journal` y el candado nacen con la misma custodia.
+   SQLite, `-wal`, `-shm`, `-journal` y el candado nacen con la misma DACL. El
+   propietario se declara en el descriptor para que el objeto quede a nombre del
+   usuario efectivo aunque el proceso se ejecute elevado.
 4. **Creación atómica.** La DACL se aplica en la misma llamada que crea el objeto
    (`CreateDirectoryW` / `CreateFileW` con `SECURITY_ATTRIBUTES`), sin ventana en
    la que un archivo con el token exista con permisos heredados. Los archivos se
@@ -74,13 +79,13 @@ auxiliares y candado).
 
 ## Evidencia
 
-En Windows nativo (`cargo test -p pos-windows-security`, 25 pruebas; el resto de
+En Windows nativo (`cargo test -p pos-windows-security`, 27 pruebas; el resto de
 la suite del workspace y del escritorio ejecutada en el mismo entorno):
 
 - directorio creado con propietario efectivo, DACL protegida y solo las tres
-  identidades admitidas;
+  identidades admitidas, también si el proceso se ejecuta elevado;
 - rechazo de DACL compartida en directorio y archivo, en lectura y en escritura;
-- rechazo de propietario distinto del esperado;
+- rechazo de propietario distinto del usuario y de `Administrators`;
 - rechazo de junction, enlace simbólico, punto de reanálisis y archivo fuera del
   directorio validado;
 - creación exclusiva con un único ganador entre cuatro procesos concurrentes;

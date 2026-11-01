@@ -206,10 +206,28 @@ fn rejects_a_descriptor_whose_owner_is_not_the_expected_identity() -> Result<(),
     create_private_file(&directory, AUTHORIZATION, SECRET)?;
 
     let handle = native::open_regular_file(&directory.join(AUTHORIZATION))?;
-    match assert_private(handle.raw(), "S-1-5-32-544") {
+    // `SYSTEM` no puede ser propietario de una instalación de usuario.
+    match assert_private(handle.raw(), "S-1-5-18") {
         Err(SecurityError::WrongOwner) => Ok(()),
         other => Err(failure(&format!("se esperaba WrongOwner, llegó {other:?}"))),
     }
+}
+
+#[test]
+fn creates_the_object_under_the_effective_owner_even_when_elevated() -> Result<(), Box<dyn Error>> {
+    // El propietario se declara en el descriptor: un proceso elevado no hereda
+    // el propietario por defecto `Administrators`.
+    let root = tempfile::tempdir()?;
+    let directory = root.path().join("com.hiqnet.pos");
+    create_private_directory(&directory)?;
+    create_private_file(&directory, AUTHORIZATION, SECRET)?;
+
+    let handle = native::open_regular_file(&directory.join(AUTHORIZATION))?;
+    let (owner, _) = native::owner_and_sddl(handle.raw())?;
+    if !owner.eq_ignore_ascii_case(&owner_sid()?) {
+        return Err(failure("el archivo no quedó a nombre del usuario efectivo"));
+    }
+    Ok(())
 }
 
 #[test]

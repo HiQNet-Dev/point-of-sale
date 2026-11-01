@@ -32,7 +32,7 @@ mod native;
 #[path = "tests.rs"]
 mod tests;
 
-use super::sddl::{AceEffect, is_allowed_identity, parse_dacl};
+use super::sddl::{AceEffect, is_acceptable_owner, is_allowed_identity, parse_dacl};
 
 /// SID del usuario efectivo del proceso en forma `S-1-...`.
 ///
@@ -143,15 +143,19 @@ fn open_verified_file(directory: &Path, name: &str) -> Result<OwnedHandle, Secur
     Ok(file)
 }
 
-/// DACL privada: propietario, `SYSTEM` y `Administrators`, sin herencia del
-/// padre pero heredable por los hijos.
+/// DACL privada: propietario explícito, `SYSTEM` y `Administrators`, sin
+/// herencia del padre pero heredable por los hijos.
+///
+/// El propietario se declara explícitamente para que el objeto quede a nombre
+/// del usuario efectivo aunque el proceso se ejecute elevado; un proceso
+/// elevado usaría `Administrators` como propietario por defecto.
 ///
 /// `P` protege el objeto de heredar entradas del padre; `OICI` propaga la misma
 /// DACL a los archivos y subdirectorios creados dentro (por ejemplo, el propio
 /// archivo SQLite y sus auxiliares); `FA` concede control total a esas tres
 /// identidades, que son las únicas admitidas por la política.
 fn private_sddl(owner_sid: &str) -> String {
-    format!("D:P(A;OICI;FA;;;{owner_sid})(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
+    format!("O:{owner_sid}D:P(A;OICI;FA;;;{owner_sid})(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
 }
 
 fn assert_directory(handle: Handle) -> Result<(), SecurityError> {
@@ -178,7 +182,7 @@ fn assert_regular_file(handle: Handle) -> Result<(), SecurityError> {
 
 fn assert_private(handle: Handle, owner_sid: &str) -> Result<(), SecurityError> {
     let (actual_owner, sddl) = native::owner_and_sddl(handle)?;
-    if !actual_owner.eq_ignore_ascii_case(owner_sid) {
+    if !is_acceptable_owner(&actual_owner, owner_sid) {
         return Err(SecurityError::WrongOwner);
     }
     let aces = parse_dacl(&sddl).map_err(|()| SecurityError::InsecureDacl)?;

@@ -27,11 +27,14 @@ pub(crate) struct DaclAce {
     pub sid: String,
 }
 
+/// Grupo de administradores locales.
+const ADMINISTRATORS: &str = "S-1-5-32-544";
+
 /// Identidades a las que la política permite conceder acceso.
 ///
 /// `S-1-3-0` y `S-1-3-4` se resuelven al propietario del objeto cuando Windows
 /// propaga entradas heredadas, por lo que se aceptan como equivalentes.
-const SHARED_ALLOWED: [&str; 4] = ["S-1-5-18", "S-1-5-32-544", "S-1-3-0", "S-1-3-4"];
+const SHARED_ALLOWED: [&str; 4] = ["S-1-5-18", ADMINISTRATORS, "S-1-3-0", "S-1-3-4"];
 
 /// Indica si la identidad puede recibir una concesión explícita.
 pub(crate) fn is_allowed_identity(sid: &str, owner_sid: &str) -> bool {
@@ -39,6 +42,17 @@ pub(crate) fn is_allowed_identity(sid: &str, owner_sid: &str) -> bool {
         || SHARED_ALLOWED
             .iter()
             .any(|allowed| sid.eq_ignore_ascii_case(allowed))
+}
+
+/// Indica si la identidad puede ser propietaria del objeto.
+///
+/// Se admite el usuario efectivo y el grupo `Administrators`. Un proceso
+/// elevado crea objetos cuyo propietario por defecto es `Administrators`, y ese
+/// grupo puede tomar posesión de cualquier archivo de todos modos, así que
+/// aceptarlo no amplía el acceso real. Cualquier otra identidad —otro usuario,
+/// `SYSTEM`, un grupo ajeno— se rechaza.
+pub(crate) fn is_acceptable_owner(sid: &str, effective_sid: &str) -> bool {
+    sid.eq_ignore_ascii_case(effective_sid) || sid.eq_ignore_ascii_case(ADMINISTRATORS)
 }
 
 /// Extrae e interpreta la DACL del descriptor SDDL.
@@ -132,7 +146,9 @@ fn normalize_sid(account: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{AceEffect, DaclAce, is_allowed_identity, normalize_sid, parse_dacl};
+    use super::{
+        AceEffect, DaclAce, is_acceptable_owner, is_allowed_identity, normalize_sid, parse_dacl,
+    };
 
     const OWNER: &str = "S-1-5-21-1111111111-2222222222-3333333333-1001";
 
@@ -210,6 +226,15 @@ mod tests {
         assert_eq!(normalize_sid("these"), "THESE");
         assert_eq!(normalize_sid("s-1-5-21-1-2-3-1001"), "S-1-5-21-1-2-3-1001");
         assert_eq!(normalize_sid(OWNER), OWNER);
+    }
+
+    #[test]
+    fn accepts_only_a_user_or_administrators_owner() {
+        assert!(is_acceptable_owner(OWNER, OWNER));
+        assert!(is_acceptable_owner("S-1-5-32-544", OWNER));
+        for rejected in ["S-1-5-18", "S-1-5-32-545", "S-1-5-21-9-9-9-1002"] {
+            assert!(!is_acceptable_owner(rejected, OWNER), "{rejected}");
+        }
     }
 
     #[test]
