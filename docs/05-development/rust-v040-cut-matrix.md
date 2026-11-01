@@ -1,6 +1,6 @@
 # Matriz de corte v0.4.0 — HiQNet POS Free Local (Rust)
 
-**Estado a 2026-11-01, tras fusionar #92 y la custodia nativa de Windows.**
+**Estado a 2026-11-01, tras el vertical de configuración del negocio.**
 
 Estados admitidos por columna: `IMPLEMENTED`, `TESTED`, `INTEGRATED`, `BLOCKED`,
 `DEFERRED`. No se usan porcentajes.
@@ -19,13 +19,13 @@ ninguna fila comprometida quede en `BLOCKED`.
 
 | Módulo | Java AS-IS | Rust | SQLite | IPC | UI | E2E | Decisión |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Organización | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Mantener; falta IPC/UI comercial |
-| Sucursales | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Mantener; lectura solo en laboratorio |
+| Organización | IMPLEMENTED | IMPLEMENTED | TESTED | INTEGRATED | IMPLEMENTED | TESTED | Configuración editable con CAS y auditoría; estado y moneda en solo lectura |
+| Sucursales | IMPLEMENTED | IMPLEMENTED | TESTED | INTEGRATED | IMPLEMENTED | TESTED | Sucursal única: alta inicial, edición y zona horaria triestado |
 | Bootstrap administrativo | IMPLEMENTED | IMPLEMENTED | TESTED | INTEGRATED | IMPLEMENTED | TESTED | Instalación guiada desde el archivo de autorización nativa |
 | Provisioning (token/CLI) | IMPLEMENTED (secreto) | IMPLEMENTED | TESTED | INTEGRATED | IMPLEMENTED | TESTED | Emisor, lectura y custodia operativos en Unix y Windows ([ADR-0029](../01-architecture/adr/0029-windows-native-file-custody.md)) |
-| Usuarios | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Login operativo; falta administración de usuarios |
+| Usuarios | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Alta por bootstrap; falta administración de usuarios |
 | Autenticación / sesión | IMPLEMENTED | IMPLEMENTED | TESTED | INTEGRATED | IMPLEMENTED | TESTED | Sesión nativa, RBAC y reapertura demostrados sobre SQLite real |
-| RBAC / memberships | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Mantener; resolución probada |
+| RBAC / memberships | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Resolución probada; falta administración |
 | Auditoría | IMPLEMENTED | IMPLEMENTED | TESTED | DEFERRED | DEFERRED | DEFERRED | Mantener; no se expone UI en v0.4.0 |
 | Catálogo (categorías, productos) | IMPLEMENTED | IMPLEMENTED | TESTED | INTEGRATED | IMPLEMENTED | TESTED | Operativo: crear, listar, consultar y editar con sesión real |
 | Modificadores | IMPLEMENTED | IMPLEMENTED | TESTED | DEFERRED | DEFERRED | DEFERRED | Mantener persistencia y snapshots |
@@ -59,13 +59,13 @@ gráfico de WebView2, que sigue pendiente.
 Con esta matriz **no** se puede retirar Java todavía. Faltan:
 
 1. Handlers IPC de caja, ventas, inventario y compras con sus ACL.
-2. Pantallas React de esos flujos.
+2. Pantallas React de esos flujos y administración de usuarios.
 3. E2E gráfico de escritorio y Docker que ejerza el flujo comercial completo.
 4. Ratificación de D-AUTH-09 y del perfil de conformidad normativa.
 
 ## Siguiente orden de corte
 
-1. Organización y administración de sucursales por IPC/UI.
+1. Administración local de usuarios, membresías y roles por IPC/UI.
 2. Caja y turnos.
 3. Ventas y pagos.
 4. Inventario y consumo.

@@ -29,8 +29,8 @@ las tablas `*_lab` exclusivas de pruebas; no equivalen a persistencia productiva
 
 | Módulo Java | Estado Rust | Evidencia | Falta |
 | --- | --- | --- | --- |
-| Organization | `APPLICATION` | `pos-core::organization_branch`, `SqliteOrganizationApplication`, `SqliteUnitOfWork`, pruebas de CAS/rollback/lock sobre `0001` aprobado | IPC y UI canónicos |
-| Branch | `APPLICATION` | `BranchApplication`, `SqliteBranchApplication`, pruebas de ownership y timezone | IPC y UI canónicos |
+| Organization | `INTEGRATED` | `pos-core::organization_branch`, `OrganizationAdministrationApplication` sobre SQLite real: lectura, edición con CAS, auditoría `organization.updated`, no-op sin revisión ni evento y reapertura; IPC `organization_get`/`organization_update` y pantalla «Negocio» | Administración de la baja del negocio (gate de contrato) |
+| Branch | `INTEGRATED` | `BranchAdministration` sobre SQLite real: alta de la sucursal inicial con capacidad de edición, edición de nombre y zona horaria triestado, CAS y auditoría; IPC `branch_list`/`branch_get`/`branch_create`/`branch_update` y pantalla «Sucursales» | Baja de sucursal (gate de contrato) |
 | Audit | `APPLICATION` | `pos-core::audit` (metadata ≤16 KiB, USER/SYSTEM), `0006` aprobado con triggers append-only, `SqliteAuditWriter` transaccional | IPC de consulta |
 | Users / Auth | `APPLICATION` | `pos-core::identity`, `0002`–`0004` aprobados, `pos-credentials`; login/logout/sesión comercial por IPC con custodia nativa del handle y revalidación DB-authoritative | Administración de usuarios y UI de recuperación |
 | RBAC | `PERSISTENCE` | Catálogo exacto de 59 permisos, override de organización, modo recuperación, resolución contextual probada | IPC de administración de roles |
@@ -46,9 +46,9 @@ las tablas `*_lab` exclusivas de pruebas; no equivalen a persistencia productiva
 | Proveedores | `APPLICATION` | `pos-core::supplier`, `PurchasingApplication` (crear/consultar/listar/actualizar con CAS), `0016` aprobado, pruebas de slug duplicado y aislamiento | IPC y pantallas |
 | Recetas y efectos de modificador | `PERSISTENCE` | `pos-core::recipe`, `0014` aprobado, resolución de consumo y snapshots usados por checkout | Mantenimiento administrativo e IPC |
 | API HTTP / OpenAPI | `NOT_STARTED` | — | No es requisito de Free Local: el transporte es IPC Tauri |
-| Transporte Local | `IPC` | Tauri v2: `bootstrap_*`, `auth_*` y `catalog_*` con handle solo en memoria nativa; [contrato](../03-api/rust-desktop-ipc.md), ADR-0027 y ADR-0028 | Handlers de caja, ventas, inventario y compras |
+| Transporte Local | `IPC` | Tauri v2: `bootstrap_*`, `auth_*`, `catalog_*` y `organization_*`/`branch_*` con handle solo en memoria nativa; [contrato](../03-api/rust-desktop-ipc.md), ADR-0027, ADR-0028 y ADR-0029 | Handlers de caja, ventas, inventario y compras |
 | Instalación Local persistente | `PERSISTENCE` | `apps/pos-desktop --installation <dir>`: migrador aprobado `0001`–`0017`, clasificación primera instalación/reapertura, rechazo de esquema posterior, cierre con checkpoint; directorio, archivos SQLite y candado con custodia nativa en Unix y Windows; E2E Windows de dos arranques y smoke Docker | Directorio canónico por plataforma (`app_data_dir`) e identificador estable de aplicación |
-| Integración React | `INTEGRATED` | Instalación guiada, login, sesión, permisos, sucursal, logout y catálogo operativo sobre IPC | Caja, ventas, inventario y compras |
+| Integración React | `INTEGRATED` | Instalación guiada, login, sesión, permisos, sucursal, logout, catálogo y configuración del negocio y su sucursal operativos sobre IPC | Caja, ventas, inventario, compras y administración de usuarios |
 | Arnés Docker Local | `DEV HARNESS (validated)` | `backend-rust/Dockerfile` multi-stage, runtime no-root, volumen, healthcheck funcional (`verify_health`: integridad + migraciones), reinicio, cierre con checkpoint | No es distribución Free Local ni expone red |
 | Arnés sintético extremo a extremo | `E2E (synthetic)` | `tools/pos-lab`: bootstrap → admin → sesión → RBAC → sucursal → categoría → producto → inventario → receta → caja → turno → venta → checkout → consumo → `COMPLETED` → auditoría → cierre → reapertura; matriz ejecutable de dependencias `0002`–`0017` aplicada sobre `0001` con `foreign_key_check` por paso | No es E2E de escritorio ni sustituye la verificación comercial |
 

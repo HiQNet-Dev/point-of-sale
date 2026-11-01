@@ -42,6 +42,18 @@ export const commands = {
 	authSelectBranch: (request: SelectBranchRequestDto) => typedError<SessionIdentityDto_Serialize, IpcError>(__TAURI_INVOKE("auth_select_branch", { request })),
 	/**  Lista las sucursales descubribles por la sesión actual. */
 	authListBranches: () => typedError<BranchDto[], IpcError>(__TAURI_INVOKE("auth_list_branches")),
+	/**  Configuración de la organización autenticada: organization.read. */
+	organizationGet: () => typedError<OrganizationDto, IpcError>(__TAURI_INVOKE("organization_get")),
+	/**  Edición de la configuración del negocio: organization.update. */
+	organizationUpdate: (request: UpdateOrganizationRequestDto_Deserialize) => typedError<OrganizationDto, IpcError>(__TAURI_INVOKE("organization_update", { request })),
+	/**  Sucursales de la organización con su zona horaria efectiva: branch.read. */
+	branchList: () => typedError<BranchAdminDto_Serialize[], IpcError>(__TAURI_INVOKE("branch_list")),
+	/**  Sucursal concreta del principal: branch.read. */
+	branchGet: (request: CatalogItemRequestDto) => typedError<BranchAdminDto_Serialize, IpcError>(__TAURI_INVOKE("branch_get", { request })),
+	/**  Alta de la sucursal inicial: branch.create con capacidad de edición. */
+	branchCreate: (request: CreateBranchRequestDto_Deserialize) => typedError<BranchAdminDto_Serialize, IpcError>(__TAURI_INVOKE("branch_create", { request })),
+	/**  Edición de una sucursal existente: branch.update. */
+	branchUpdate: (request: UpdateBranchRequestDto_Deserialize) => typedError<BranchAdminDto_Serialize, IpcError>(__TAURI_INVOKE("branch_update", { request })),
 };
 
 /* Types */
@@ -137,6 +149,49 @@ export type BootstrapStatusDto_Serialize = {
 	expiresAt: number | null,
 };
 
+/**  Sucursal con la zona horaria efectiva ya resuelta. */
+export type BranchAdminDto = BranchAdminDto_Serialize | BranchAdminDto_Deserialize;
+
+/**  Sucursal con la zona horaria efectiva ya resuelta. */
+export type BranchAdminDto_Deserialize = {
+	/**  UUID canónico; no editable. */
+	id: string,
+	/**  Código inmutable dentro de la organización. */
+	code: string,
+	/**  Nombre visible. */
+	name: string,
+	/**  `ACTIVE` o `INACTIVE`; solo lectura mientras no exista contrato de baja. */
+	status: string,
+	/**  Override propio, si existe. */
+	timezoneOverride?: string | null,
+	/**  Zona horaria aplicable tras resolver la herencia. */
+	effectiveTimezone: string,
+	/**  Indica si la sucursal sobrescribe la zona de la organización. */
+	inheritsTimezone: boolean,
+	/**  Revisión optimista en texto decimal. */
+	revision: string,
+};
+
+/**  Sucursal con la zona horaria efectiva ya resuelta. */
+export type BranchAdminDto_Serialize = {
+	/**  UUID canónico; no editable. */
+	id: string,
+	/**  Código inmutable dentro de la organización. */
+	code: string,
+	/**  Nombre visible. */
+	name: string,
+	/**  `ACTIVE` o `INACTIVE`; solo lectura mientras no exista contrato de baja. */
+	status: string,
+	/**  Override propio, si existe. */
+	timezoneOverride: string | null,
+	/**  Zona horaria aplicable tras resolver la herencia. */
+	effectiveTimezone: string,
+	/**  Indica si la sucursal sobrescribe la zona de la organización. */
+	inheritsTimezone: boolean,
+	/**  Revisión optimista en texto decimal. */
+	revision: string,
+};
+
 /**  Resumen de una sucursal visible para el principal. */
 export type BranchDto = {
 	/**  UUID canónico. */
@@ -165,6 +220,44 @@ export type CategoryDto = {
 	name: string,
 	/**  Versión decimal entera, nunca number de JavaScript. */
 	version: string,
+};
+
+/**
+ *  Alta de la sucursal inicial del negocio.
+ *
+ *  Free Local admite una única sucursal: el caso de uso rechaza cualquier alta
+ *  posterior aunque el principal tenga `branch.create`.
+ */
+export type CreateBranchRequestDto = CreateBranchRequestDto_Serialize | CreateBranchRequestDto_Deserialize;
+
+/**
+ *  Alta de la sucursal inicial del negocio.
+ *
+ *  Free Local admite una única sucursal: el caso de uso rechaza cualquier alta
+ *  posterior aunque el principal tenga `branch.create`.
+ */
+export type CreateBranchRequestDto_Deserialize = {
+	/**  Código de la sucursal, único dentro del negocio. */
+	code: string,
+	/**  Nombre visible. */
+	name: string,
+	/**  Zona horaria propia opcional; si falta, hereda la del negocio. */
+	timezone?: string | null,
+};
+
+/**
+ *  Alta de la sucursal inicial del negocio.
+ *
+ *  Free Local admite una única sucursal: el caso de uso rechaza cualquier alta
+ *  posterior aunque el principal tenga `branch.create`.
+ */
+export type CreateBranchRequestDto_Serialize = {
+	/**  Código de la sucursal, único dentro del negocio. */
+	code: string,
+	/**  Nombre visible. */
+	name: string,
+	/**  Zona horaria propia opcional; si falta, hereda la del negocio. */
+	timezone: string | null,
 };
 
 /**  Petición de creación de producto; nunca incluye organización ni actor. */
@@ -292,6 +385,33 @@ export type NewCategoryRequestDto = {
 	name: string,
 };
 
+/**
+ *  Configuración de la organización del principal.
+ *
+ *  `revision` viaja como texto decimal exacto: la revisión es de 64 bits y un
+ *  `number` de JavaScript no garantiza precisión.
+ */
+export type OrganizationDto = {
+	/**  UUID canónico; no editable. */
+	id: string,
+	/**  Código inmutable del negocio. */
+	code: string,
+	/**  Nombre comercial. */
+	name: string,
+	/**  `ACTIVE` o `INACTIVE`; solo lectura mientras no exista contrato de baja. */
+	status: string,
+	/**  Zona horaria raíz. */
+	timezone: string,
+	/**  Moneda; solo lectura para no reinterpretar importes persistidos. */
+	currency: string,
+	/**  Configuración regional. */
+	locale: string,
+	/**  `STRICT` o `ALLOW_NEGATIVE` (ADR-0013). */
+	negativeStockPolicy: string,
+	/**  Revisión optimista en texto decimal. */
+	revision: string,
+};
+
 /**  Página explícita, sin organización ni actor controlados por el consumidor. */
 export type PageRequest = {
 	/**  Límite de 1 a 100, validado por Application. */
@@ -386,6 +506,113 @@ export type SessionIdentityDto_Serialize = {
 	branchId: string | null,
 	/**  Permisos efectivos resueltos en SQLite. */
 	permissions: string[],
+};
+
+/**
+ *  Operación explícita sobre la zona horaria de una sucursal.
+ *
+ *  `KEEP`, `SET` e `INHERIT` son operaciones distintas y no se colapsan en un
+ *  valor nulo ambiguo.
+ */
+export type TimezoneOverrideRequestDto = TimezoneOverrideRequestDto_Serialize | TimezoneOverrideRequestDto_Deserialize;
+
+/**
+ *  Operación explícita sobre la zona horaria de una sucursal.
+ *
+ *  `KEEP`, `SET` e `INHERIT` son operaciones distintas y no se colapsan en un
+ *  valor nulo ambiguo.
+ */
+export type TimezoneOverrideRequestDto_Deserialize = {
+	/**  `KEEP`, `SET` o `INHERIT`. */
+	mode: string,
+	/**  Zona horaria requerida únicamente con `SET`. */
+	timezone?: string | null,
+};
+
+/**
+ *  Operación explícita sobre la zona horaria de una sucursal.
+ *
+ *  `KEEP`, `SET` e `INHERIT` son operaciones distintas y no se colapsan en un
+ *  valor nulo ambiguo.
+ */
+export type TimezoneOverrideRequestDto_Serialize = {
+	/**  `KEEP`, `SET` o `INHERIT`. */
+	mode: string,
+	/**  Zona horaria requerida únicamente con `SET`. */
+	timezone: string | null,
+};
+
+/**  Edición de una sucursal existente. */
+export type UpdateBranchRequestDto = UpdateBranchRequestDto_Serialize | UpdateBranchRequestDto_Deserialize;
+
+/**  Edición de una sucursal existente. */
+export type UpdateBranchRequestDto_Deserialize = {
+	/**  UUID de la sucursal dentro de la organización del principal. */
+	branchId: string,
+	/**  Revisión leída por el cliente, en texto decimal. */
+	expectedRevision: string,
+	/**  Nombre nuevo; si falta, se conserva. */
+	name?: string | null,
+	/**  Operación sobre la zona horaria. */
+	timezone: TimezoneOverrideRequestDto_Deserialize,
+};
+
+/**  Edición de una sucursal existente. */
+export type UpdateBranchRequestDto_Serialize = {
+	/**  UUID de la sucursal dentro de la organización del principal. */
+	branchId: string,
+	/**  Revisión leída por el cliente, en texto decimal. */
+	expectedRevision: string,
+	/**  Nombre nuevo; si falta, se conserva. */
+	name: string | null,
+	/**  Operación sobre la zona horaria. */
+	timezone: TimezoneOverrideRequestDto_Serialize,
+};
+
+/**
+ *  Edición de la configuración del negocio.
+ *
+ *  No contiene identidad, código, estado ni moneda: el contrato no permite
+ *  expresar esos cambios. Un campo ausente conserva el valor actual.
+ */
+export type UpdateOrganizationRequestDto = UpdateOrganizationRequestDto_Serialize | UpdateOrganizationRequestDto_Deserialize;
+
+/**
+ *  Edición de la configuración del negocio.
+ *
+ *  No contiene identidad, código, estado ni moneda: el contrato no permite
+ *  expresar esos cambios. Un campo ausente conserva el valor actual.
+ */
+export type UpdateOrganizationRequestDto_Deserialize = {
+	/**  Revisión leída por el cliente, en texto decimal. */
+	expectedRevision: string,
+	/**  Nombre comercial nuevo. */
+	name?: string | null,
+	/**  Zona horaria raíz nueva. */
+	timezone?: string | null,
+	/**  Configuración regional nueva. */
+	locale?: string | null,
+	/**  Política de inventario negativo nueva. */
+	negativeStockPolicy?: string | null,
+};
+
+/**
+ *  Edición de la configuración del negocio.
+ *
+ *  No contiene identidad, código, estado ni moneda: el contrato no permite
+ *  expresar esos cambios. Un campo ausente conserva el valor actual.
+ */
+export type UpdateOrganizationRequestDto_Serialize = {
+	/**  Revisión leída por el cliente, en texto decimal. */
+	expectedRevision: string,
+	/**  Nombre comercial nuevo. */
+	name: string | null,
+	/**  Zona horaria raíz nueva. */
+	timezone: string | null,
+	/**  Configuración regional nueva. */
+	locale: string | null,
+	/**  Política de inventario negativo nueva. */
+	negativeStockPolicy: string | null,
 };
 
 /**

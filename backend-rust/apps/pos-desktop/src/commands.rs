@@ -2,10 +2,12 @@
 use crate::{
     composition::LocalState,
     dto::{
-        BootstrapInstallRequestDto, BootstrapStatusDto, BranchDto, CatalogItemRequestDto,
-        CategoryDto, CreateProductRequest, CreatedProductDto, InstallationStatusDto, IpcError,
-        LoginRequestDto, LogoutAllDto, NewCategoryRequestDto, PageRequest, ProductDto,
-        SelectBranchRequestDto, SessionIdentityDto, UpdateProductRequestDto,
+        BootstrapInstallRequestDto, BootstrapStatusDto, BranchAdminDto, BranchDto,
+        CatalogItemRequestDto, CategoryDto, CreateBranchRequestDto, CreateProductRequest,
+        CreatedProductDto, InstallationStatusDto, IpcError, LoginRequestDto, LogoutAllDto,
+        NewCategoryRequestDto, OrganizationDto, PageRequest, ProductDto, SelectBranchRequestDto,
+        SessionIdentityDto, UpdateBranchRequestDto, UpdateOrganizationRequestDto,
+        UpdateProductRequestDto,
     },
 };
 use tauri::State;
@@ -15,6 +17,60 @@ use tauri::State;
 #[specta::specta]
 pub async fn lab_list_branches(state: State<'_, LocalState>) -> Result<Vec<BranchDto>, IpcError> {
     state.branches().await
+}
+
+/// Configuración de la organización autenticada: organization.read.
+#[tauri::command]
+#[specta::specta]
+pub async fn organization_get(state: State<'_, LocalState>) -> Result<OrganizationDto, IpcError> {
+    state.organization_get().await
+}
+
+/// Edición de la configuración del negocio: organization.update.
+#[tauri::command]
+#[specta::specta]
+pub async fn organization_update(
+    state: State<'_, LocalState>,
+    request: UpdateOrganizationRequestDto,
+) -> Result<OrganizationDto, IpcError> {
+    state.organization_update(request).await
+}
+
+/// Sucursales de la organización con su zona horaria efectiva: branch.read.
+#[tauri::command]
+#[specta::specta]
+pub async fn branch_list(state: State<'_, LocalState>) -> Result<Vec<BranchAdminDto>, IpcError> {
+    state.branch_list().await
+}
+
+/// Sucursal concreta del principal: branch.read.
+#[tauri::command]
+#[specta::specta]
+pub async fn branch_get(
+    state: State<'_, LocalState>,
+    request: CatalogItemRequestDto,
+) -> Result<BranchAdminDto, IpcError> {
+    state.branch_get(&request.id).await
+}
+
+/// Alta de la sucursal inicial: branch.create con capacidad de edición.
+#[tauri::command]
+#[specta::specta]
+pub async fn branch_create(
+    state: State<'_, LocalState>,
+    request: CreateBranchRequestDto,
+) -> Result<BranchAdminDto, IpcError> {
+    state.branch_create(request).await
+}
+
+/// Edición de una sucursal existente: branch.update.
+#[tauri::command]
+#[specta::specta]
+pub async fn branch_update(
+    state: State<'_, LocalState>,
+    request: UpdateBranchRequestDto,
+) -> Result<BranchAdminDto, IpcError> {
+    state.branch_update(request).await
 }
 
 /// Consulta categorías: category.read, página administrativa de organización.
@@ -205,5 +261,11 @@ pub fn registry<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         auth_logout_all,
         auth_select_branch,
         auth_list_branches,
+        organization_get,
+        organization_update,
+        branch_list,
+        branch_get,
+        branch_create,
+        branch_update,
     ])
 }
