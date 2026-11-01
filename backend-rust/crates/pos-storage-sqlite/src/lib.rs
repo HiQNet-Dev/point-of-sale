@@ -74,7 +74,7 @@ mod credential_lab_tests;
 mod identity_lab_tests;
 #[cfg(test)]
 mod inventory_store_tests;
-#[cfg(all(test, unix))]
+#[cfg(all(test, any(unix, windows)))]
 mod native_authorization_tests;
 #[cfg(test)]
 mod provisioning_flow_tests;

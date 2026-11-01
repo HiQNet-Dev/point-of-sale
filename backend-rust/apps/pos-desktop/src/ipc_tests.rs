@@ -128,7 +128,7 @@ fn registered_handlers_use_application_and_reject_invalid_pages() -> Result<(), 
 
 #[test]
 fn installation_mode_exposes_only_its_status() -> Result<(), Box<dyn Error>> {
-    let directory = tempfile::tempdir()?;
+    let directory = crate::test_support::Fixture::new()?;
     let state = tauri::async_runtime::block_on(crate::composition::LocalState::open_installation(
         directory.path(),
     ))?;

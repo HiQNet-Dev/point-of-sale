@@ -24,5 +24,8 @@ tempfile.workspace = true
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.29.0", features = ["user"] }
 
+[target.'cfg(windows)'.dependencies]
+pos-windows-security.workspace = true
+
 [lints]
 workspace = true

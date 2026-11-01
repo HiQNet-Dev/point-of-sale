@@ -3,14 +3,18 @@
 //! Cubre los rechazos de permisos, owner y enlaces, la clasificación del derecho
 //! frente a la base y el recorrido completo: archivo privado → autorización
 //! nativa → bootstrap atómico → login sobre SQLite productiva.
+//!
+//! El recorrido completo se ejecuta también en Windows, donde la custodia la
+//! resuelve `pos-windows-security` con propietario y DACL reales.
 #![allow(clippy::panic)]
 
 use std::{
-    io::Write,
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
-    path::Path,
+    path::{Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
+#[cfg(unix)]
+use std::{io::Write, os::unix::fs::OpenOptionsExt, os::unix::fs::PermissionsExt};
 
 use pos_application::{
     bootstrap::{
@@ -76,24 +80,117 @@ async fn iso_now(pool: &sqlx::SqlitePool) -> String {
         .unwrap_or_else(|error| panic!("iso: {error}"))
 }
 
+#[cfg(unix)]
 fn private_directory(path: &Path) {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
         .unwrap_or_else(|error| panic!("permisos: {error}"));
 }
 
-fn write_authorization(directory: &Path, mode: u32, token: &ProvisioningToken) {
-    let path = directory.join(NATIVE_AUTHORIZATION_FILE);
+/// Contenido exacto del archivo que entrega el emisor.
+fn authorization_contents(token: &ProvisioningToken) -> String {
+    format!(
+        "installation_id={INSTALLATION}\nauthorization_id={AUTHORIZATION}\ntoken={}\n",
+        token.expose()
+    )
+}
+
+/// Escribe la autorización con permisos deliberadamente laxos (solo Unix).
+#[cfg(unix)]
+fn write_loose_authorization(directory: &Path, mode: u32, token: &ProvisioningToken) {
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(mode)
-        .open(&path)
+        .open(directory.join(NATIVE_AUTHORIZATION_FILE))
         .unwrap_or_else(|error| panic!("archivo: {error}"));
-    writeln!(file, "installation_id={INSTALLATION}")
-        .and_then(|()| writeln!(file, "authorization_id={AUTHORIZATION}"))
-        .and_then(|()| writeln!(file, "token={}", token.expose()))
+    file.write_all(authorization_contents(token).as_bytes())
         .and_then(|()| file.sync_all())
         .unwrap_or_else(|error| panic!("escritura: {error}"));
+}
+
+/// Directorio de instalación listo para el bootstrap, con la custodia propia de
+/// cada plataforma.
+#[cfg(unix)]
+fn prepare_installation_directory(root: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    private_directory(root);
+    Ok(root.to_path_buf())
+}
+
+/// En Windows el directorio se crea con DACL privada, igual que el producto.
+#[cfg(windows)]
+fn prepare_installation_directory(root: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let directory = root.join("com.hiqnet.pos");
+    pos_windows_security::create_private_directory(&directory)?;
+    Ok(directory)
+}
+
+/// Escribe la autorización entregada, con el mismo contrato que el emisor.
+fn deliver_authorization(
+    directory: &Path,
+    token: &ProvisioningToken,
+) -> Result<(), Box<dyn std::error::Error>> {
+    write_authorization_contents(directory, &authorization_contents(token))
+}
+
+#[cfg(unix)]
+fn write_authorization_contents(
+    directory: &Path,
+    contents: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(directory.join(NATIVE_AUTHORIZATION_FILE))?;
+    file.write_all(contents.as_bytes())?;
+    file.sync_all()?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn write_authorization_contents(
+    directory: &Path,
+    contents: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    pos_windows_security::create_private_file(
+        directory,
+        NATIVE_AUTHORIZATION_FILE,
+        contents.as_bytes(),
+    )?;
+    Ok(())
+}
+
+/// En Windows el archivo ausente y la redirección de directorio se rechazan con
+/// la misma clasificación que aplica el producto.
+#[cfg(windows)]
+#[tokio::test]
+async fn rejects_a_missing_or_redirected_authorization_on_windows()
+-> Result<(), Box<dyn std::error::Error>> {
+    let temp = tempfile::tempdir()?;
+    let directory = prepare_installation_directory(temp.path())?;
+    assert_eq!(
+        read_native_authorization(&directory).err(),
+        Some(AuthorizationFileError::Missing)
+    );
+
+    // Una junction oculta el destino: no se sigue.
+    let target = temp.path().join("otro");
+    pos_windows_security::create_private_directory(&target)?;
+    let junction = temp.path().join("enlace");
+    let created = std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(&junction)
+        .arg(&target)
+        .output()?;
+    if !created.status.success() {
+        eprintln!("el entorno no permite crear junctions; comprobación no ejecutada");
+        return Ok(());
+    }
+    assert_eq!(
+        read_native_authorization(&junction).err(),
+        Some(AuthorizationFileError::Insecure)
+    );
+    Ok(())
 }
 
 async fn provisional_store(
@@ -143,6 +240,7 @@ impl BootstrapSecretVerifier for TokenVerifier<'_> {
     }
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn reads_only_a_private_file_owned_by_the_current_user()
 -> Result<(), Box<dyn std::error::Error>> {
@@ -153,7 +251,7 @@ async fn reads_only_a_private_file_owned_by_the_current_user()
     let token = ProvisioningToken::generate()?;
     let now = now_epoch();
     provisional_store(&pool, &token, now, now + 600).await?;
-    write_authorization(temp.path(), 0o600, &token);
+    deliver_authorization(temp.path(), &token)?;
 
     let authorization = read_native_authorization(temp.path())?;
     assert_eq!(authorization.installation_id, id(INSTALLATION));
@@ -168,6 +266,7 @@ async fn reads_only_a_private_file_owned_by_the_current_user()
     Ok(())
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn rejects_insecure_directory_file_and_symlink() -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
@@ -177,14 +276,14 @@ async fn rejects_insecure_directory_file_and_symlink() -> Result<(), Box<dyn std
     // Directorio con permiso de grupo.
     let loose = tempfile::tempdir()?;
     std::fs::set_permissions(loose.path(), std::fs::Permissions::from_mode(0o750))?;
-    write_authorization(loose.path(), 0o600, &token);
+    write_loose_authorization(loose.path(), 0o600, &token);
     assert_eq!(
         read_native_authorization(loose.path()).err(),
         Some(AuthorizationFileError::Insecure)
     );
 
     // Archivo legible por otros.
-    write_authorization(temp.path(), 0o644, &token);
+    write_loose_authorization(temp.path(), 0o644, &token);
     assert_eq!(
         read_native_authorization(temp.path()).err(),
         Some(AuthorizationFileError::Insecure)
@@ -216,14 +315,14 @@ async fn rejects_insecure_directory_file_and_symlink() -> Result<(), Box<dyn std
 async fn classifies_expired_revoked_consumed_and_unknown_rights()
 -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
-    private_directory(temp.path());
-    let pool = open(&temp.path().join("auth.sqlite"), Duration::from_millis(75)).await?;
+    let directory = prepare_installation_directory(temp.path())?;
+    let pool = open(&directory.join("auth.sqlite"), Duration::from_millis(75)).await?;
     migrate(&pool).await?;
     let token = ProvisioningToken::generate()?;
     let now = now_epoch();
     provisional_store(&pool, &token, now - 1_000, now - 400).await?;
-    write_authorization(temp.path(), 0o600, &token);
-    let authorization = read_native_authorization(temp.path())?;
+    deliver_authorization(&directory, &token)?;
+    let authorization = read_native_authorization(&directory)?;
     // La ventana ya terminó: el derecho no es consumible.
     assert_eq!(
         native_authorization_state(&pool, &authorization, now).await?,
@@ -232,7 +331,7 @@ async fn classifies_expired_revoked_consumed_and_unknown_rights()
 
     // Un token distinto del persistido no identifica el derecho.
     let other = ProvisioningToken::generate()?;
-    let mut spoofed = read_native_authorization(temp.path())?;
+    let mut spoofed = read_native_authorization(&directory)?;
     spoofed.token = other;
     assert_eq!(
         native_authorization_state(&pool, &spoofed, now).await?,
@@ -254,18 +353,18 @@ impl IdentityGenerator for TestIdentities {
 async fn first_installation_consumes_the_native_authorization_and_logs_in()
 -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
-    private_directory(temp.path());
-    let database = temp.path().join("first.sqlite");
+    let directory = prepare_installation_directory(temp.path())?;
+    let database = directory.join("first.sqlite");
     let pool = open(&database, Duration::from_millis(500)).await?;
     migrate(&pool).await?;
     let now = now_epoch();
     let occurred_at = iso_now(&pool).await;
     let token = ProvisioningToken::generate()?;
     provisional_store(&pool, &token, now, now + 600).await?;
-    write_authorization(temp.path(), 0o600, &token);
+    deliver_authorization(&directory, &token)?;
 
     // La autorización se lee en Rust; el token no vuelve a aparecer.
-    let authorization = read_native_authorization(temp.path())?;
+    let authorization = read_native_authorization(&directory)?;
     let capability = authorize_bootstrap(
         &TokenVerifier(&authorization.token),
         authorization.token.expose().as_bytes(),
