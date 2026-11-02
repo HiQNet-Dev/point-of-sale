@@ -7,14 +7,17 @@
 //! # Organización
 //!
 //! Por responsabilidad: [`errors`], [`user`], [`credential`], [`session`],
-//! [`principal`], [`service`] y [`provisioning`]. La API pública se reexporta aquí.
+//! [`principal`], [`service`], [`provisioning`], [`roles`] y [`membership`]. La
+//! API pública se reexporta aquí.
 
 use serde_json::Value;
 
 mod credential;
 mod errors;
+mod membership;
 mod principal;
 mod provisioning;
+mod roles;
 mod service;
 mod session;
 mod user;
@@ -31,6 +34,7 @@ pub use credential::{
     LockoutPolicy, NewCredential, SecretHash,
 };
 pub use errors::IdentityError;
+pub use membership::{BranchMembership, MembershipPatch, membership_changed_fields};
 pub use principal::{
     AuthorizationError, PERMISSION_CATALOG, PermissionCode, PrincipalScope, ScopeMode,
     VerifiedPrincipal,
@@ -39,6 +43,7 @@ pub use provisioning::{
     MAX_PROVISIONING_TTL_SECONDS, MIN_PROVISIONING_TTL_SECONDS, ProvisioningAuthorization,
     ProvisioningError, ProvisioningPurpose, ProvisioningState, TOKEN_DIGEST_HEX_LEN,
 };
+pub use roles::{Role, RolePatch, role_changed_fields};
 pub use service::{LocalIdentityRepository, LocalPrincipalService, PermissionAuthority};
 pub use session::{LocalSession, LocalSessionState, SessionHash, UtcSeconds};
 pub use user::{NormalizedEmail, PosUser, PosUserPatch, PosUserStatus};

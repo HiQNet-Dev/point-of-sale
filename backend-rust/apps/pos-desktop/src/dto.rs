@@ -365,6 +365,205 @@ impl std::fmt::Debug for BootstrapInstallRequestDto {
     }
 }
 
+/// Alta de un usuario de la organización.
+///
+/// La contraseña solo existe durante la llamada: se deriva, se persiste como
+/// hash Argon2id y el renderer nunca recibe material criptográfico.
+#[derive(Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NewUserRequestDto {
+    /// Nombre visible.
+    pub display_name: String,
+    /// Correo del usuario; se normaliza en Rust.
+    pub email: String,
+    /// Contraseña inicial en claro solo para esta llamada.
+    pub password: String,
+}
+
+impl std::fmt::Debug for NewUserRequestDto {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("NewUserRequestDto")
+            .field("display_name", &self.display_name)
+            .field("email", &self.email)
+            .field("password", &"<redacted>")
+            .finish()
+    }
+}
+
+/// Edición de un usuario existente.
+///
+/// No contiene organización, identidad ni credenciales: el contrato no permite
+/// expresar esos cambios.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateUserRequestDto {
+    /// UUID del usuario dentro de la organización del principal.
+    pub user_id: String,
+    /// Revisión leída por el cliente, en texto decimal.
+    pub expected_revision: String,
+    /// Nombre nuevo; si falta, se conserva.
+    pub display_name: Option<String>,
+    /// Email nuevo; si falta, se conserva.
+    pub email: Option<String>,
+    /// `ACTIVE` o `INACTIVE`; si falta, se conserva.
+    pub status: Option<String>,
+}
+
+/// Reemplazo de los roles de organización de un usuario.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SetUserRolesRequestDto {
+    /// UUID del usuario.
+    pub user_id: String,
+    /// Roles de organización completos; el conjunto sustituye al anterior.
+    pub role_ids: Vec<String>,
+}
+
+/// Rol resumido para referencias dentro de usuarios y membresías.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleRefDto {
+    /// UUID canónico.
+    pub id: String,
+    /// Código inmutable dentro de la organización.
+    pub code: String,
+    /// Nombre visible.
+    pub name: String,
+    /// `ACTIVE` o `INACTIVE`.
+    pub status: String,
+    /// Revisión optimista en texto decimal.
+    pub revision: String,
+}
+
+/// Usuario administrativo con sus roles de organización.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct UserDto {
+    /// UUID canónico.
+    pub id: String,
+    /// Nombre visible.
+    pub display_name: String,
+    /// Email normalizado.
+    pub email: String,
+    /// `ACTIVE` o `INACTIVE`.
+    pub status: String,
+    /// Revisión optimista en texto decimal.
+    pub revision: String,
+    /// Roles de organización asignados.
+    pub roles: Vec<RoleRefDto>,
+}
+
+/// Alta de un rol de organización.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NewRoleRequestDto {
+    /// Código slug único dentro de la organización.
+    pub code: String,
+    /// Nombre visible.
+    pub name: String,
+    /// Permisos iniciales; vacío crea un rol sin permisos.
+    pub permission_codes: Vec<String>,
+}
+
+/// Edición del nombre o el estado de un rol.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateRoleRequestDto {
+    /// UUID del rol.
+    pub role_id: String,
+    /// Revisión leída por el cliente, en texto decimal.
+    pub expected_revision: String,
+    /// Nombre nuevo; si falta, se conserva.
+    pub name: Option<String>,
+    /// `ACTIVE` o `INACTIVE`; si falta, se conserva.
+    pub status: Option<String>,
+}
+
+/// Reemplazo del conjunto de permisos de un rol.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SetRolePermissionsRequestDto {
+    /// UUID del rol.
+    pub role_id: String,
+    /// Revisión leída por el cliente, en texto decimal.
+    pub expected_revision: String,
+    /// Códigos de permiso completos; el conjunto sustituye al anterior.
+    pub permission_codes: Vec<String>,
+}
+
+/// Rol con su conjunto de permisos.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleDto {
+    /// UUID canónico.
+    pub id: String,
+    /// Código inmutable.
+    pub code: String,
+    /// Nombre visible.
+    pub name: String,
+    /// `ACTIVE` o `INACTIVE`.
+    pub status: String,
+    /// Revisión optimista en texto decimal.
+    pub revision: String,
+    /// Códigos de permiso asignados.
+    pub permission_codes: Vec<String>,
+}
+
+/// Entrada del catálogo de permisos del sistema.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionDto {
+    /// Código canónico.
+    pub code: String,
+    /// Descripción de referencia.
+    pub description: String,
+}
+
+/// Alta de una membresía de sucursal.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateMembershipRequestDto {
+    /// UUID de la sucursal dentro de la organización.
+    pub branch_id: String,
+    /// UUID del usuario dentro de la organización.
+    pub user_id: String,
+    /// Roles de sucursal iniciales.
+    pub role_ids: Vec<String>,
+}
+
+/// Edición del estado y los roles de una membresía.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateMembershipRequestDto {
+    /// UUID de la membresía.
+    pub membership_id: String,
+    /// Revisión leída por el cliente, en texto decimal.
+    pub expected_revision: String,
+    /// `ACTIVE` o `INACTIVE`; si falta, se conserva.
+    pub status: Option<String>,
+    /// Roles completos; si falta, se conservan.
+    pub role_ids: Option<Vec<String>>,
+}
+
+/// Membresía de sucursal con sus roles.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct MembershipDto {
+    /// UUID canónico.
+    pub id: String,
+    /// Sucursal del vínculo.
+    pub branch_id: String,
+    /// Usuario del vínculo.
+    pub user_id: String,
+    /// `ACTIVE` o `INACTIVE`.
+    pub status: String,
+    /// Revisión optimista en texto decimal.
+    pub revision: String,
+    /// Roles de sucursal asignados.
+    pub roles: Vec<RoleRefDto>,
+}
+
 /// Error seguro; nunca contiene SQL ni material de sesión.
 #[derive(Debug, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "code", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -405,6 +604,7 @@ impl From<pos_core::organization_branch::ApplicationError> for IpcError {
             | ApplicationError::InvalidCatalogInput
             | ApplicationError::InvalidOrganizationInput
             | ApplicationError::InvalidPurchaseInput
+            | ApplicationError::InvalidAdministrationInput
             | ApplicationError::OverReceipt => Self::ValidationError,
             ApplicationError::BranchNotFound
             | ApplicationError::OrganizationNotFound
@@ -412,9 +612,16 @@ impl From<pos_core::organization_branch::ApplicationError> for IpcError {
             | ApplicationError::PurchaseOrderNotFound
             | ApplicationError::PurchaseOrderLineNotFound
             | ApplicationError::PurchaseReceiptNotFound
+            | ApplicationError::UserNotFound
+            | ApplicationError::RoleNotFound
+            | ApplicationError::MembershipNotFound
             | ApplicationError::InventoryItemNotFound => Self::NotFound,
             ApplicationError::ConcurrentModification
             | ApplicationError::BranchCapacityReached
+            | ApplicationError::UserEmailAlreadyExists
+            | ApplicationError::RoleCodeAlreadyExists
+            | ApplicationError::MembershipAlreadyExists
+            | ApplicationError::LastAdministrator
             | ApplicationError::SupplierCodeAlreadyExists
             | ApplicationError::PurchaseOrderCodeAlreadyExists
             | ApplicationError::SupplierInactive

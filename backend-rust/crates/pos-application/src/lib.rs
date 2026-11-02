@@ -22,6 +22,8 @@
 //! de catálogo, caja, ventas e inventario se moverán aquí en incrementos
 //! posteriores, preservando los contratos y las pruebas existentes.
 
+/// Administración de identidad: usuarios, roles y membresías de sucursal.
+pub mod administration;
 /// Construcción de eventos auditables y puerto de escritura transaccional.
 pub mod audit;
 /// Comprobaciones de scope y permiso previas a cualquier caso de uso.

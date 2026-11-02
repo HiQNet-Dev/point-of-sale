@@ -8,6 +8,7 @@ import { SetupWizard } from './SetupWizard'
 import { CatalogWorkspace } from './CatalogWorkspace'
 import { BusinessSettingsPage } from './BusinessSettingsPage'
 import { BranchesPage } from './BranchesPage'
+import { TeamPage } from './TeamPage'
 
 const stateLabels: Record<string, string> = {
   FIRST_INSTALL: 'Primera instalación',
@@ -73,7 +74,7 @@ export function SessionGate({ status }: { status: InstallationStatusDto }) {
  */
 function AuthenticatedHome({ identity, status }: { identity: SessionIdentityDto; status: InstallationStatusDto }) {
   const queryClient = useQueryClient()
-  const [section, setSection] = useState<'operation' | 'business' | 'branches'>('operation')
+  const [section, setSection] = useState<'operation' | 'business' | 'branches' | 'team'>('operation')
   const branches = useQuery({
     queryKey: ['rust-desktop', 'branches'],
     queryFn: desktopService.authListBranches,
@@ -88,11 +89,13 @@ function AuthenticatedHome({ identity, status }: { identity: SessionIdentityDto;
   })
   const logout = useMutation({
     mutationFn: () => desktopService.authLogout(),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['rust-desktop', 'auth'] }),
+    // Al cerrar sesión se descarta toda caché administrativa: los datos de una
+    // sesión anterior no deben reaparecer ante otra cuenta.
+    onSuccess: () => queryClient.removeQueries({ queryKey: ['rust-desktop'] }),
   })
   const logoutAll = useMutation({
     mutationFn: () => desktopService.authLogoutAll(),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['rust-desktop', 'auth'] }),
+    onSuccess: () => queryClient.removeQueries({ queryKey: ['rust-desktop'] }),
   })
 
   const branchesUnavailable = branches.isError && codeOf(branches.error) === 'FORBIDDEN'
@@ -121,7 +124,7 @@ function AuthenticatedHome({ identity, status }: { identity: SessionIdentityDto;
 
         <Tabs
           value={section}
-          onChange={(_, value: 'operation' | 'business' | 'branches') => setSection(value)}
+          onChange={(_, value: 'operation' | 'business' | 'branches' | 'team') => setSection(value)}
           aria-label="Secciones de la aplicación"
           variant="scrollable"
           allowScrollButtonsMobile
@@ -129,6 +132,7 @@ function AuthenticatedHome({ identity, status }: { identity: SessionIdentityDto;
           <Tab value="operation" label="Operación" id="section-operation" aria-controls="panel-operation" />
           <Tab value="business" label="Negocio" id="section-business" aria-controls="panel-business" />
           <Tab value="branches" label="Sucursales" id="section-branches" aria-controls="panel-branches" />
+          <Tab value="team" label="Equipo" id="section-team" aria-controls="panel-team" />
         </Tabs>
 
         {section === 'business' ? (
@@ -140,6 +144,12 @@ function AuthenticatedHome({ identity, status }: { identity: SessionIdentityDto;
         {section === 'branches' ? (
           <Box role="tabpanel" id="panel-branches" aria-labelledby="section-branches">
             <BranchesPage permissions={identity.permissions} />
+          </Box>
+        ) : null}
+
+        {section === 'team' ? (
+          <Box role="tabpanel" id="panel-team" aria-labelledby="section-team">
+            <TeamPage permissions={identity.permissions} currentUserId={identity.userId} />
           </Box>
         ) : null}
 

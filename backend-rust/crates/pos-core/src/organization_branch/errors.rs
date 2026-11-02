@@ -145,6 +145,25 @@ pub enum ApplicationError {
     PurchaseReceiptNotFound,
     /// La entidad referenciada pertenece a otra organización.
     OwnershipMismatch,
+    /// Usuario inexistente en la organización del principal.
+    UserNotFound,
+    /// Rol inexistente en la organización del principal.
+    RoleNotFound,
+    /// Membresía de sucursal inexistente en la organización del principal.
+    MembershipNotFound,
+    /// El usuario ya tiene una membresía para esa sucursal.
+    MembershipAlreadyExists,
+    /// Email ya usado por otro usuario de la misma organización.
+    UserEmailAlreadyExists,
+    /// Código de rol ya usado dentro de la organización.
+    RoleCodeAlreadyExists,
+    /// La operación dejaría la organización sin ningún administrador activo.
+    ///
+    /// Protege la continuidad operativa de Free Local: sin un usuario activo con
+    /// capacidad de administración no sería posible recuperar la instalación.
+    LastAdministrator,
+    /// Entrada de administración de identidad que no cumple el contrato.
+    InvalidAdministrationInput,
     /// Una entrada de catálogo incumple el contrato de dominio.
     InvalidCatalogInput,
     /// Una entrada de configuración de negocio incumple el contrato de dominio.
@@ -243,6 +262,20 @@ impl fmt::Display for ApplicationError {
             Self::PurchaseReceiptNotFound => formatter.write_str("recepción inexistente"),
             Self::OwnershipMismatch => {
                 formatter.write_str("la entidad pertenece a otra organización")
+            }
+            Self::UserNotFound => formatter.write_str("usuario inexistente"),
+            Self::RoleNotFound => formatter.write_str("rol inexistente"),
+            Self::MembershipNotFound => formatter.write_str("membresía de sucursal inexistente"),
+            Self::MembershipAlreadyExists => {
+                formatter.write_str("el usuario ya pertenece a esa sucursal")
+            }
+            Self::UserEmailAlreadyExists => formatter.write_str("email de usuario duplicado"),
+            Self::RoleCodeAlreadyExists => formatter.write_str("código de rol duplicado"),
+            Self::LastAdministrator => {
+                formatter.write_str("la organización quedaría sin administrador activo")
+            }
+            Self::InvalidAdministrationInput => {
+                formatter.write_str("entrada de administración no válida")
             }
             Self::InvalidCatalogInput => formatter.write_str("entrada de catálogo no válida"),
             Self::InvalidCredentials => formatter.write_str("credenciales no válidas"),

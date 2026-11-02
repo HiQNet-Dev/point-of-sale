@@ -28,6 +28,20 @@ pub const COMMAND_NAMES: &[&str] = &[
     "branch_get",
     "branch_create",
     "branch_update",
+    "user_list",
+    "user_get",
+    "user_create",
+    "user_update",
+    "user_set_roles",
+    "role_list",
+    "role_get",
+    "role_create",
+    "role_update",
+    "role_set_permissions",
+    "permission_list",
+    "membership_list",
+    "membership_create",
+    "membership_update",
 ];
 
 /// Comandos del laboratorio sintético; no existen en el modo instalación.
@@ -78,4 +92,26 @@ pub const ORGANIZATION_COMMAND_NAMES: &[&str] = &[
     "branch_get",
     "branch_create",
     "branch_update",
+];
+
+/// Comandos de administración de identidad; requieren sesión y permiso propio.
+///
+/// Ninguno acepta organización, actor ni permisos desde el renderer: la
+/// autorización se revalida en SQLite en cada llamada.
+#[allow(dead_code)] // Consumido por las pruebas del dispatcher.
+pub const ADMINISTRATION_COMMAND_NAMES: &[&str] = &[
+    "user_list",
+    "user_get",
+    "user_create",
+    "user_update",
+    "user_set_roles",
+    "role_list",
+    "role_get",
+    "role_create",
+    "role_update",
+    "role_set_permissions",
+    "permission_list",
+    "membership_list",
+    "membership_create",
+    "membership_update",
 ];

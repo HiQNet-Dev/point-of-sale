@@ -7,6 +7,8 @@
 //! contratos de caso de uso; esos viven en `pos-core` (dominio) y
 //! `pos-application` (aplicación).
 
+/// Administración de identidad: usuarios, roles y membresías de sucursal.
+pub mod administration;
 /// Escritor de auditoría sobre la tabla `audit_event`.
 pub mod audit;
 /// Snapshots consistentes y restauración a destino nuevo; sin exposición IPC.
@@ -44,6 +46,7 @@ pub mod sales;
 pub mod session;
 mod transaction;
 
+pub use administration::SqliteAdministrationApplication;
 pub use connection::{
     StorageError, approved_schema_version, checkpoint, migrate, open, verify_health,
 };
@@ -60,6 +63,8 @@ pub use transaction::{SqliteTransaction, SqliteUnitOfWork, TransactionalAuditWri
 #[cfg(test)]
 use sqlx::SqlitePool;
 
+#[cfg(test)]
+mod administration_store_tests;
 #[cfg(test)]
 mod audit_writer_tests;
 #[cfg(test)]
