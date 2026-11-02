@@ -54,6 +54,37 @@ export const commands = {
 	branchCreate: (request: CreateBranchRequestDto_Deserialize) => typedError<BranchAdminDto_Serialize, IpcError>(__TAURI_INVOKE("branch_create", { request })),
 	/**  Edición de una sucursal existente: branch.update. */
 	branchUpdate: (request: UpdateBranchRequestDto_Deserialize) => typedError<BranchAdminDto_Serialize, IpcError>(__TAURI_INVOKE("branch_update", { request })),
+	/**  Usuarios de la organización autenticada: user.read. */
+	userList: () => typedError<UserDto[], IpcError>(__TAURI_INVOKE("user_list")),
+	/**  Usuario concreto con sus roles: user.read. */
+	userGet: (request: CatalogItemRequestDto) => typedError<UserDto, IpcError>(__TAURI_INVOKE("user_get", { request })),
+	/**  Alta de usuario con contraseña inicial: user.create. */
+	userCreate: (request: NewUserRequestDto) => typedError<UserDto, IpcError>(__TAURI_INVOKE("user_create", { request })),
+	/**  Edición de nombre, email o estado: user.update. */
+	userUpdate: (request: UpdateUserRequestDto_Deserialize) => typedError<UserDto, IpcError>(__TAURI_INVOKE("user_update", { request })),
+	/**  Reemplazo de roles de organización: role.assign. */
+	userSetRoles: (request: SetUserRolesRequestDto) => typedError<UserDto, IpcError>(__TAURI_INVOKE("user_set_roles", { request })),
+	/**  Roles de la organización: role.read. */
+	roleList: () => typedError<RoleDto[], IpcError>(__TAURI_INVOKE("role_list")),
+	/**  Rol concreto con sus permisos: role.read. */
+	roleGet: (request: CatalogItemRequestDto) => typedError<RoleDto, IpcError>(__TAURI_INVOKE("role_get", { request })),
+	/**  Alta de rol: role.create y, al conceder permisos, role.permissions.manage. */
+	roleCreate: (request: NewRoleRequestDto) => typedError<RoleDto, IpcError>(__TAURI_INVOKE("role_create", { request })),
+	/**  Edición de nombre o estado de un rol: role.update. */
+	roleUpdate: (request: UpdateRoleRequestDto_Deserialize) => typedError<RoleDto, IpcError>(__TAURI_INVOKE("role_update", { request })),
+	/**  Reemplazo de permisos de un rol: role.permissions.manage. */
+	roleSetPermissions: (request: SetRolePermissionsRequestDto) => typedError<RoleDto, IpcError>(__TAURI_INVOKE("role_set_permissions", { request })),
+	/**  Catálogo de permisos del sistema: permission.read. */
+	permissionList: () => typedError<PermissionDto[], IpcError>(__TAURI_INVOKE("permission_list")),
+	/**  Membresías de sucursal: branch.membership.read. */
+	membershipList: () => typedError<MembershipDto[], IpcError>(__TAURI_INVOKE("membership_list")),
+	/**  Alta de membresía de sucursal: branch.membership.create. */
+	membershipCreate: (request: CreateMembershipRequestDto) => typedError<MembershipDto, IpcError>(__TAURI_INVOKE("membership_create", { request })),
+	/**
+	 *  Edición de estado o roles de una membresía: branch.membership.update y
+	 *  branch.membership.roles.manage.
+	 */
+	membershipUpdate: (request: UpdateMembershipRequestDto_Deserialize) => typedError<MembershipDto, IpcError>(__TAURI_INVOKE("membership_update", { request })),
 };
 
 /* Types */
@@ -260,6 +291,16 @@ export type CreateBranchRequestDto_Serialize = {
 	timezone: string | null,
 };
 
+/**  Alta de una membresía de sucursal. */
+export type CreateMembershipRequestDto = {
+	/**  UUID de la sucursal dentro de la organización. */
+	branchId: string,
+	/**  UUID del usuario dentro de la organización. */
+	userId: string,
+	/**  Roles de sucursal iniciales. */
+	roleIds: string[],
+};
+
 /**  Petición de creación de producto; nunca incluye organización ni actor. */
 export type CreateProductRequest = CreateProductRequest_Serialize | CreateProductRequest_Deserialize;
 
@@ -377,12 +418,53 @@ export type LogoutAllDto = {
 	revoked: number,
 };
 
+/**  Membresía de sucursal con sus roles. */
+export type MembershipDto = {
+	/**  UUID canónico. */
+	id: string,
+	/**  Sucursal del vínculo. */
+	branchId: string,
+	/**  Usuario del vínculo. */
+	userId: string,
+	/**  `ACTIVE` o `INACTIVE`. */
+	status: string,
+	/**  Revisión optimista en texto decimal. */
+	revision: string,
+	/**  Roles de sucursal asignados. */
+	roles: RoleRefDto[],
+};
+
 /**  Alta de categoría por el administrador autenticado. */
 export type NewCategoryRequestDto = {
 	/**  Código slug de la categoría. */
 	code: string,
 	/**  Nombre visible. */
 	name: string,
+};
+
+/**  Alta de un rol de organización. */
+export type NewRoleRequestDto = {
+	/**  Código slug único dentro de la organización. */
+	code: string,
+	/**  Nombre visible. */
+	name: string,
+	/**  Permisos iniciales; vacío crea un rol sin permisos. */
+	permissionCodes: string[],
+};
+
+/**
+ *  Alta de un usuario de la organización.
+ *
+ *  La contraseña solo existe durante la llamada: se deriva, se persiste como
+ *  hash Argon2id y el renderer nunca recibe material criptográfico.
+ */
+export type NewUserRequestDto = {
+	/**  Nombre visible. */
+	displayName: string,
+	/**  Correo del usuario; se normaliza en Rust. */
+	email: string,
+	/**  Contraseña inicial en claro solo para esta llamada. */
+	password: string,
 };
 
 /**
@@ -420,6 +502,14 @@ export type PageRequest = {
 	offset: number,
 };
 
+/**  Entrada del catálogo de permisos del sistema. */
+export type PermissionDto = {
+	/**  Código canónico. */
+	code: string,
+	/**  Descripción de referencia. */
+	description: string,
+};
+
 /**  Producto administrativo con precio histórico exacto. */
 export type ProductDto = ProductDto_Serialize | ProductDto_Deserialize;
 
@@ -453,6 +543,36 @@ export type ProductDto_Serialize = {
 	categoryId: string | null,
 	/**  Versión decimal entera. */
 	version: string,
+};
+
+/**  Rol con su conjunto de permisos. */
+export type RoleDto = {
+	/**  UUID canónico. */
+	id: string,
+	/**  Código inmutable. */
+	code: string,
+	/**  Nombre visible. */
+	name: string,
+	/**  `ACTIVE` o `INACTIVE`. */
+	status: string,
+	/**  Revisión optimista en texto decimal. */
+	revision: string,
+	/**  Códigos de permiso asignados. */
+	permissionCodes: string[],
+};
+
+/**  Rol resumido para referencias dentro de usuarios y membresías. */
+export type RoleRefDto = {
+	/**  UUID canónico. */
+	id: string,
+	/**  Código inmutable dentro de la organización. */
+	code: string,
+	/**  Nombre visible. */
+	name: string,
+	/**  `ACTIVE` o `INACTIVE`. */
+	status: string,
+	/**  Revisión optimista en texto decimal. */
+	revision: string,
 };
 
 /**  Sucursal elegida por la persona autenticada. */
@@ -506,6 +626,24 @@ export type SessionIdentityDto_Serialize = {
 	branchId: string | null,
 	/**  Permisos efectivos resueltos en SQLite. */
 	permissions: string[],
+};
+
+/**  Reemplazo del conjunto de permisos de un rol. */
+export type SetRolePermissionsRequestDto = {
+	/**  UUID del rol. */
+	roleId: string,
+	/**  Revisión leída por el cliente, en texto decimal. */
+	expectedRevision: string,
+	/**  Códigos de permiso completos; el conjunto sustituye al anterior. */
+	permissionCodes: string[],
+};
+
+/**  Reemplazo de los roles de organización de un usuario. */
+export type SetUserRolesRequestDto = {
+	/**  UUID del usuario. */
+	userId: string,
+	/**  Roles de organización completos; el conjunto sustituye al anterior. */
+	roleIds: string[],
 };
 
 /**
@@ -567,6 +705,33 @@ export type UpdateBranchRequestDto_Serialize = {
 	name: string | null,
 	/**  Operación sobre la zona horaria. */
 	timezone: TimezoneOverrideRequestDto_Serialize,
+};
+
+/**  Edición del estado y los roles de una membresía. */
+export type UpdateMembershipRequestDto = UpdateMembershipRequestDto_Serialize | UpdateMembershipRequestDto_Deserialize;
+
+/**  Edición del estado y los roles de una membresía. */
+export type UpdateMembershipRequestDto_Deserialize = {
+	/**  UUID de la membresía. */
+	membershipId: string,
+	/**  Revisión leída por el cliente, en texto decimal. */
+	expectedRevision: string,
+	/**  `ACTIVE` o `INACTIVE`; si falta, se conserva. */
+	status?: string | null,
+	/**  Roles completos; si falta, se conservan. */
+	roleIds?: string[] | null,
+};
+
+/**  Edición del estado y los roles de una membresía. */
+export type UpdateMembershipRequestDto_Serialize = {
+	/**  UUID de la membresía. */
+	membershipId: string,
+	/**  Revisión leída por el cliente, en texto decimal. */
+	expectedRevision: string,
+	/**  `ACTIVE` o `INACTIVE`; si falta, se conserva. */
+	status: string | null,
+	/**  Roles completos; si falta, se conservan. */
+	roleIds: string[] | null,
 };
 
 /**
@@ -663,6 +828,95 @@ export type UpdateProductRequestDto_Serialize = {
 	categoryId: string | null,
 	/**  `ACTIVE` o `INACTIVE`, si cambia. */
 	status: string | null,
+};
+
+/**  Edición del nombre o el estado de un rol. */
+export type UpdateRoleRequestDto = UpdateRoleRequestDto_Serialize | UpdateRoleRequestDto_Deserialize;
+
+/**  Edición del nombre o el estado de un rol. */
+export type UpdateRoleRequestDto_Deserialize = {
+	/**  UUID del rol. */
+	roleId: string,
+	/**  Revisión leída por el cliente, en texto decimal. */
+	expectedRevision: string,
+	/**  Nombre nuevo; si falta, se conserva. */
+	name?: string | null,
+	/**  `ACTIVE` o `INACTIVE`; si falta, se conserva. */
+	status?: string | null,
+};
+
+/**  Edición del nombre o el estado de un rol. */
+export type UpdateRoleRequestDto_Serialize = {
+	/**  UUID del rol. */
+	roleId: string,
+	/**  Revisión leída por el cliente, en texto decimal. */
+	expectedRevision: string,
+	/**  Nombre nuevo; si falta, se conserva. */
+	name: string | null,
+	/**  `ACTIVE` o `INACTIVE`; si falta, se conserva. */
+	status: string | null,
+};
+
+/**
+ *  Edición de un usuario existente.
+ *
+ *  No contiene organización, identidad ni credenciales: el contrato no permite
+ *  expresar esos cambios.
+ */
+export type UpdateUserRequestDto = UpdateUserRequestDto_Serialize | UpdateUserRequestDto_Deserialize;
+
+/**
+ *  Edición de un usuario existente.
+ *
+ *  No contiene organización, identidad ni credenciales: el contrato no permite
+ *  expresar esos cambios.
+ */
+export type UpdateUserRequestDto_Deserialize = {
+	/**  UUID del usuario dentro de la organización del principal. */
+	userId: string,
+	/**  Revisión leída por el cliente, en texto decimal. */
+	expectedRevision: string,
+	/**  Nombre nuevo; si falta, se conserva. */
+	displayName?: string | null,
+	/**  Email nuevo; si falta, se conserva. */
+	email?: string | null,
+	/**  `ACTIVE` o `INACTIVE`; si falta, se conserva. */
+	status?: string | null,
+};
+
+/**
+ *  Edición de un usuario existente.
+ *
+ *  No contiene organización, identidad ni credenciales: el contrato no permite
+ *  expresar esos cambios.
+ */
+export type UpdateUserRequestDto_Serialize = {
+	/**  UUID del usuario dentro de la organización del principal. */
+	userId: string,
+	/**  Revisión leída por el cliente, en texto decimal. */
+	expectedRevision: string,
+	/**  Nombre nuevo; si falta, se conserva. */
+	displayName: string | null,
+	/**  Email nuevo; si falta, se conserva. */
+	email: string | null,
+	/**  `ACTIVE` o `INACTIVE`; si falta, se conserva. */
+	status: string | null,
+};
+
+/**  Usuario administrativo con sus roles de organización. */
+export type UserDto = {
+	/**  UUID canónico. */
+	id: string,
+	/**  Nombre visible. */
+	displayName: string,
+	/**  Email normalizado. */
+	email: string,
+	/**  `ACTIVE` o `INACTIVE`. */
+	status: string,
+	/**  Revisión optimista en texto decimal. */
+	revision: string,
+	/**  Roles de organización asignados. */
+	roles: RoleRefDto[],
 };
 
 /* Tauri Specta runtime */

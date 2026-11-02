@@ -1,4 +1,4 @@
-import { commands, type BootstrapInstallRequestDto_Deserialize, type CreateBranchRequestDto_Deserialize, type CreateProductRequest_Deserialize, type IpcError, type UpdateBranchRequestDto_Deserialize, type UpdateOrganizationRequestDto_Deserialize, type UpdateProductRequestDto_Deserialize } from './desktop.generated'
+import { commands, type BootstrapInstallRequestDto_Deserialize, type CreateBranchRequestDto_Deserialize, type CreateMembershipRequestDto, type CreateProductRequest_Deserialize, type IpcError, type NewRoleRequestDto, type NewUserRequestDto, type SetRolePermissionsRequestDto, type SetUserRolesRequestDto, type UpdateBranchRequestDto_Deserialize, type UpdateMembershipRequestDto_Deserialize, type UpdateOrganizationRequestDto_Deserialize, type UpdateProductRequestDto_Deserialize, type UpdateRoleRequestDto_Deserialize, type UpdateUserRequestDto_Deserialize } from './desktop.generated'
 
 /** Errores públicos del adaptador IPC, sin diagnósticos de almacenamiento. */
 export class DesktopCommandError extends Error {
@@ -69,4 +69,26 @@ export const desktopService = {
   branchGet: (id: string) => unwrap(commands.branchGet({ id })),
   branchCreate: (request: CreateBranchRequestDto_Deserialize) => unwrap(commands.branchCreate(request)),
   branchUpdate: (request: UpdateBranchRequestDto_Deserialize) => unwrap(commands.branchUpdate(request)),
+
+  /**
+   * Administración de identidad de la organización autenticada.
+   *
+   * La organización, el actor y los permisos los resuelve Rust; aquí solo viajan
+   * datos administrativos y la revisión leída (siempre texto decimal exacto).
+   * La contraseña inicial se envía una sola vez y nunca se vuelve a leer.
+   */
+  userList: () => unwrap(commands.userList()),
+  userGet: (id: string) => unwrap(commands.userGet({ id })),
+  userCreate: (request: NewUserRequestDto) => unwrap(commands.userCreate(request)),
+  userUpdate: (request: UpdateUserRequestDto_Deserialize) => unwrap(commands.userUpdate(request)),
+  userSetRoles: (request: SetUserRolesRequestDto) => unwrap(commands.userSetRoles(request)),
+  roleList: () => unwrap(commands.roleList()),
+  roleGet: (id: string) => unwrap(commands.roleGet({ id })),
+  roleCreate: (request: NewRoleRequestDto) => unwrap(commands.roleCreate(request)),
+  roleUpdate: (request: UpdateRoleRequestDto_Deserialize) => unwrap(commands.roleUpdate(request)),
+  roleSetPermissions: (request: SetRolePermissionsRequestDto) => unwrap(commands.roleSetPermissions(request)),
+  permissionList: () => unwrap(commands.permissionList()),
+  membershipList: () => unwrap(commands.membershipList()),
+  membershipCreate: (request: CreateMembershipRequestDto) => unwrap(commands.membershipCreate(request)),
+  membershipUpdate: (request: UpdateMembershipRequestDto_Deserialize) => unwrap(commands.membershipUpdate(request)),
 }
