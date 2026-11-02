@@ -104,6 +104,20 @@ Fuente verificable: `apps/pos-desktop/src/commands.rs` + `dto.rs`, relativa a
 | `branch_get` | Instalación | `{ "request": { "id" } }` | `BranchAdminDto` | `branch.read` | Organización del principal |
 | `branch_create` | Instalación | `{ "request": { "code", "name", "timezone?" } }` | `BranchAdminDto` | `branch.create` | Organización del principal |
 | `branch_update` | Instalación | `{ "request": { "branchId", "expectedRevision", "name?", "timezone": { "mode", "timezone?" } } }` | `BranchAdminDto` | `branch.update` | Organización del principal |
+| `user_list` | Instalación | `{}` | `UserDto[]` | `user.read` | Organización del principal |
+| `user_get` | Instalación | `{ "request": { "id" } }` | `UserDto` | `user.read` | Organización del principal |
+| `user_create` | Instalación | `{ "request": { "displayName", "email", "password" } }` | `UserDto` | `user.create` | Organización del principal |
+| `user_update` | Instalación | `{ "request": { "userId", "expectedRevision", "displayName?", "email?", "status?" } }` | `UserDto` | `user.update` | Organización del principal |
+| `user_set_roles` | Instalación | `{ "request": { "userId", "roleIds" } }` | `UserDto` | `role.assign` | Organización del principal |
+| `role_list` | Instalación | `{}` | `RoleDto[]` | `role.read` | Organización del principal |
+| `role_get` | Instalación | `{ "request": { "id" } }` | `RoleDto` | `role.read` | Organización del principal |
+| `role_create` | Instalación | `{ "request": { "code", "name", "permissionCodes" } }` | `RoleDto` | `role.create` (+ `role.permissions.manage` si concede permisos) | Organización del principal |
+| `role_update` | Instalación | `{ "request": { "roleId", "expectedRevision", "name?", "status?" } }` | `RoleDto` | `role.update` | Organización del principal |
+| `role_set_permissions` | Instalación | `{ "request": { "roleId", "expectedRevision", "permissionCodes" } }` | `RoleDto` | `role.permissions.manage` | Organización del principal |
+| `permission_list` | Instalación | `{}` | `PermissionDto[]` | `permission.read` | Sistema |
+| `membership_list` | Instalación | `{}` | `MembershipDto[]` | `branch.membership.read` | Organización del principal |
+| `membership_create` | Instalación | `{ "request": { "branchId", "userId", "roleIds" } }` | `MembershipDto` | `branch.membership.create` (+ `branch.membership.roles.manage` si asigna roles) | Sucursal validada en la organización |
+| `membership_update` | Instalación | `{ "request": { "membershipId", "expectedRevision", "status?", "roleIds?" } }` | `MembershipDto` | `branch.membership.update` (+ `branch.membership.roles.manage` al cambiar roles) | Sucursal de la membresía |
 
 ### Primera instalación
 
@@ -161,11 +175,37 @@ alta configura la sucursal inicial de la instalación; cualquier intento posteri
 responde `CONFLICT` desde la capa de aplicación aunque el principal tenga
 `branch.create`. No es una restricción de interfaz.
 
-**Limitación conocida y no introducida aquí.** `auth_select_branch` resuelve los
-permisos del scope de sucursal solo desde `branch_membership`; sin membresía el
-principal queda sin permisos en ese scope. La administración de usuarios,
-membresías y roles es el siguiente vertical, y hasta entonces la configuración
-del negocio y de la sucursal se opera en el scope de organización.
+### Administración de identidad
+
+Catorce comandos administran usuarios, roles y accesos por sucursal. La
+organización, el actor y los permisos **nunca** llegan por IPC: se derivan del
+`VerifiedPrincipal` y se revalidan en SQLite en cada llamada.
+
+| Contrato | Efecto |
+| --- | --- |
+| `user_create` | Crea `pos_user` + `local_credential` Argon2id y audita `user.created` en la misma UoW |
+| `user_update` | CAS sobre `pos_user.version`; desactivar revoca las sesiones del usuario |
+| `user_set_roles` | Reemplaza `user_organization_role`; prohibido sobre el propio actor |
+| `role_create` / `role_update` | Código inmutable y único; nombre y estado editables |
+| `role_set_permissions` | Reemplaza `role_permission` validando el catálogo del sistema |
+| `membership_create` / `membership_update` | Alta y mantenimiento de `branch_membership` y sus roles |
+
+La contraseña inicial se envía **una sola vez**, se deriva en Rust y nunca se
+vuelve a leer. Ni el handle de sesión, ni el hash de la credencial, ni el digest
+de sesión aparecen en ninguna respuesta.
+
+**Reglas de continuidad.** Un administrador no puede cambiar sus propios roles ni
+desactivar su cuenta, y ninguna operación puede dejar la organización sin un
+usuario ACTIVO con rol ACTIVO que conceda `user.update`. El rechazo es
+`FORBIDDEN` para la auto-modificación y `CONFLICT` para la pérdida de
+administración.
+
+**Alcance de sucursal.** Una membresía ACTIVA con rol ACTIVO es la única vía por
+la que `auth_select_branch` obtiene permisos de sucursal. Crear la membresía y
+dotarla de roles es lo que habilita operar en caja, ventas e inventario.
+
+Diseño y consecuencias en
+[ADR-0030](../01-architecture/adr/0030-local-identity-administration.md).
 
 ### Autenticación Local
 
