@@ -13,6 +13,32 @@ pub enum Permission {
     BranchRead,
     /// Actualización de sucursal.
     BranchUpdate,
+    /// Lectura del catálogo de usuarios de la organización.
+    UserRead,
+    /// Alta de usuarios en la organización.
+    UserCreate,
+    /// Actualización de datos administrativos de un usuario.
+    UserUpdate,
+    /// Lectura del catálogo de permisos del sistema.
+    PermissionRead,
+    /// Lectura de roles y asignaciones.
+    RoleRead,
+    /// Alta de roles.
+    RoleCreate,
+    /// Actualización de nombre o estado de un rol.
+    RoleUpdate,
+    /// Reemplazo del conjunto de permisos de un rol.
+    RolePermissionsManage,
+    /// Reemplazo de los roles de organización de un usuario.
+    RoleAssign,
+    /// Lectura de membresías de sucursal.
+    BranchMembershipRead,
+    /// Alta de membresías de sucursal.
+    BranchMembershipCreate,
+    /// Actualización del estado de una membresía.
+    BranchMembershipUpdate,
+    /// Reemplazo de los roles de una membresía de sucursal.
+    BranchMembershipRolesManage,
     /// Alta de categoría de catálogo.
     CategoryCreate,
     /// Lectura de categorías.
@@ -94,6 +120,19 @@ impl Permission {
             Self::BranchCreate => Some("branch.create"),
             Self::BranchRead => Some("branch.read"),
             Self::BranchUpdate => Some("branch.update"),
+            Self::UserRead => Some("user.read"),
+            Self::UserCreate => Some("user.create"),
+            Self::UserUpdate => Some("user.update"),
+            Self::PermissionRead => Some("permission.read"),
+            Self::RoleRead => Some("role.read"),
+            Self::RoleCreate => Some("role.create"),
+            Self::RoleUpdate => Some("role.update"),
+            Self::RolePermissionsManage => Some("role.permissions.manage"),
+            Self::RoleAssign => Some("role.assign"),
+            Self::BranchMembershipRead => Some("branch.membership.read"),
+            Self::BranchMembershipCreate => Some("branch.membership.create"),
+            Self::BranchMembershipUpdate => Some("branch.membership.update"),
+            Self::BranchMembershipRolesManage => Some("branch.membership.roles.manage"),
             Self::CategoryCreate => Some("category.create"),
             Self::CategoryRead => Some("category.read"),
             Self::CategoryUpdate => Some("category.update"),
