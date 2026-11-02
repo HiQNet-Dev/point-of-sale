@@ -820,3 +820,59 @@ fn installation_directory_must_not_be_a_file() -> Result<(), Box<dyn Error>> {
         Ok(())
     })
 }
+
+#[test]
+fn administration_commands_require_a_session_and_reject_the_laboratory()
+-> Result<(), Box<dyn Error>> {
+    tauri::async_runtime::block_on(async {
+        let lab = LocalState::synthetic().await?;
+        for error in [
+            lab.user_list().await.err(),
+            lab.role_list().await.err(),
+            lab.permission_list().await.err(),
+            lab.membership_list().await.err(),
+        ] {
+            assert_eq!(error, Some(IpcError::OperationNotAvailable));
+        }
+        lab.shutdown().await;
+
+        // El laboratorio tampoco puede crear identidades comerciales.
+        let lab = LocalState::synthetic().await?;
+        assert_eq!(
+            lab.user_create(crate::dto::NewUserRequestDto {
+                display_name: "Lab".into(),
+                email: "lab@hiqnet.test".into(),
+                password: "clave-de-laboratorio".into(),
+            })
+            .await
+            .err(),
+            Some(IpcError::OperationNotAvailable)
+        );
+        lab.shutdown().await;
+
+        // Instalación sin sesión: ningún dato administrativo sale del proceso.
+        let directory = crate::test_support::Fixture::new()?;
+        let state = LocalState::open_installation(directory.path()).await?;
+        assert_eq!(state.user_list().await.err(), Some(IpcError::Unauthorized));
+        assert_eq!(state.role_list().await.err(), Some(IpcError::Unauthorized));
+        assert_eq!(
+            state.membership_list().await.err(),
+            Some(IpcError::Unauthorized)
+        );
+        assert_eq!(
+            state
+                .user_update(crate::dto::UpdateUserRequestDto {
+                    user_id: "00000000-0000-0000-0000-000000000001".into(),
+                    expected_revision: "0".into(),
+                    display_name: None,
+                    email: None,
+                    status: None,
+                })
+                .await
+                .err(),
+            Some(IpcError::Unauthorized)
+        );
+        state.shutdown().await;
+        Ok(())
+    })
+}

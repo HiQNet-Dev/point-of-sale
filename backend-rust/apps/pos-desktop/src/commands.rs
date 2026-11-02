@@ -3,11 +3,13 @@ use crate::{
     composition::LocalState,
     dto::{
         BootstrapInstallRequestDto, BootstrapStatusDto, BranchAdminDto, BranchDto,
-        CatalogItemRequestDto, CategoryDto, CreateBranchRequestDto, CreateProductRequest,
-        CreatedProductDto, InstallationStatusDto, IpcError, LoginRequestDto, LogoutAllDto,
-        NewCategoryRequestDto, OrganizationDto, PageRequest, ProductDto, SelectBranchRequestDto,
-        SessionIdentityDto, UpdateBranchRequestDto, UpdateOrganizationRequestDto,
-        UpdateProductRequestDto,
+        CatalogItemRequestDto, CategoryDto, CreateBranchRequestDto, CreateMembershipRequestDto,
+        CreateProductRequest, CreatedProductDto, InstallationStatusDto, IpcError, LoginRequestDto,
+        LogoutAllDto, MembershipDto, NewCategoryRequestDto, NewRoleRequestDto, NewUserRequestDto,
+        OrganizationDto, PageRequest, PermissionDto, ProductDto, RoleDto, SelectBranchRequestDto,
+        SessionIdentityDto, SetRolePermissionsRequestDto, SetUserRolesRequestDto,
+        UpdateBranchRequestDto, UpdateMembershipRequestDto, UpdateOrganizationRequestDto,
+        UpdateProductRequestDto, UpdateRoleRequestDto, UpdateUserRequestDto, UserDto,
     },
 };
 use tauri::State;
@@ -239,6 +241,135 @@ pub async fn auth_list_branches(state: State<'_, LocalState>) -> Result<Vec<Bran
     state.auth_list_branches().await
 }
 
+/// Usuarios de la organización autenticada: user.read.
+#[tauri::command]
+#[specta::specta]
+pub async fn user_list(state: State<'_, LocalState>) -> Result<Vec<UserDto>, IpcError> {
+    state.user_list().await
+}
+
+/// Usuario concreto con sus roles: user.read.
+#[tauri::command]
+#[specta::specta]
+pub async fn user_get(
+    state: State<'_, LocalState>,
+    request: CatalogItemRequestDto,
+) -> Result<UserDto, IpcError> {
+    state.user_get(&request.id).await
+}
+
+/// Alta de usuario con contraseña inicial: user.create.
+#[tauri::command]
+#[specta::specta]
+pub async fn user_create(
+    state: State<'_, LocalState>,
+    request: NewUserRequestDto,
+) -> Result<UserDto, IpcError> {
+    state.user_create(request).await
+}
+
+/// Edición de nombre, email o estado: user.update.
+#[tauri::command]
+#[specta::specta]
+pub async fn user_update(
+    state: State<'_, LocalState>,
+    request: UpdateUserRequestDto,
+) -> Result<UserDto, IpcError> {
+    state.user_update(request).await
+}
+
+/// Reemplazo de roles de organización: role.assign.
+#[tauri::command]
+#[specta::specta]
+pub async fn user_set_roles(
+    state: State<'_, LocalState>,
+    request: SetUserRolesRequestDto,
+) -> Result<UserDto, IpcError> {
+    state.user_set_roles(request).await
+}
+
+/// Roles de la organización: role.read.
+#[tauri::command]
+#[specta::specta]
+pub async fn role_list(state: State<'_, LocalState>) -> Result<Vec<RoleDto>, IpcError> {
+    state.role_list().await
+}
+
+/// Rol concreto con sus permisos: role.read.
+#[tauri::command]
+#[specta::specta]
+pub async fn role_get(
+    state: State<'_, LocalState>,
+    request: CatalogItemRequestDto,
+) -> Result<RoleDto, IpcError> {
+    state.role_get(&request.id).await
+}
+
+/// Alta de rol: role.create y, al conceder permisos, role.permissions.manage.
+#[tauri::command]
+#[specta::specta]
+pub async fn role_create(
+    state: State<'_, LocalState>,
+    request: NewRoleRequestDto,
+) -> Result<RoleDto, IpcError> {
+    state.role_create(request).await
+}
+
+/// Edición de nombre o estado de un rol: role.update.
+#[tauri::command]
+#[specta::specta]
+pub async fn role_update(
+    state: State<'_, LocalState>,
+    request: UpdateRoleRequestDto,
+) -> Result<RoleDto, IpcError> {
+    state.role_update(request).await
+}
+
+/// Reemplazo de permisos de un rol: role.permissions.manage.
+#[tauri::command]
+#[specta::specta]
+pub async fn role_set_permissions(
+    state: State<'_, LocalState>,
+    request: SetRolePermissionsRequestDto,
+) -> Result<RoleDto, IpcError> {
+    state.role_set_permissions(request).await
+}
+
+/// Catálogo de permisos del sistema: permission.read.
+#[tauri::command]
+#[specta::specta]
+pub async fn permission_list(state: State<'_, LocalState>) -> Result<Vec<PermissionDto>, IpcError> {
+    state.permission_list().await
+}
+
+/// Membresías de sucursal: branch.membership.read.
+#[tauri::command]
+#[specta::specta]
+pub async fn membership_list(state: State<'_, LocalState>) -> Result<Vec<MembershipDto>, IpcError> {
+    state.membership_list().await
+}
+
+/// Alta de membresía de sucursal: branch.membership.create.
+#[tauri::command]
+#[specta::specta]
+pub async fn membership_create(
+    state: State<'_, LocalState>,
+    request: CreateMembershipRequestDto,
+) -> Result<MembershipDto, IpcError> {
+    state.membership_create(request).await
+}
+
+/// Edición de estado o roles de una membresía: branch.membership.update y
+/// branch.membership.roles.manage.
+#[tauri::command]
+#[specta::specta]
+pub async fn membership_update(
+    state: State<'_, LocalState>,
+    request: UpdateMembershipRequestDto,
+) -> Result<MembershipDto, IpcError> {
+    state.membership_update(request).await
+}
+
 /// Registro único utilizado para el dispatcher real y la generación TypeScript.
 pub fn registry<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
     tauri_specta::Builder::<R>::new().commands(tauri_specta::collect_commands![
@@ -267,5 +398,19 @@ pub fn registry<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         branch_get,
         branch_create,
         branch_update,
+        user_list,
+        user_get,
+        user_create,
+        user_update,
+        user_set_roles,
+        role_list,
+        role_get,
+        role_create,
+        role_update,
+        role_set_permissions,
+        permission_list,
+        membership_list,
+        membership_create,
+        membership_update,
     ])
 }

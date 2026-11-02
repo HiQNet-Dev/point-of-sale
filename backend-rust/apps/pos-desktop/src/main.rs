@@ -8,6 +8,7 @@
 //! - `--installation-default`: la misma instalación, en el directorio privado
 //!   que el sistema operativo asigna a la aplicación.
 //! - `--export-bindings`: regenera los contratos TypeScript.
+mod administration;
 mod arguments;
 mod auth;
 mod bindings;
