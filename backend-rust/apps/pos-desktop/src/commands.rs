@@ -2,14 +2,17 @@
 use crate::{
     composition::LocalState,
     dto::{
-        BootstrapInstallRequestDto, BootstrapStatusDto, BranchAdminDto, BranchDto,
-        CatalogItemRequestDto, CategoryDto, CreateBranchRequestDto, CreateMembershipRequestDto,
-        CreateProductRequest, CreatedProductDto, InstallationStatusDto, IpcError, LoginRequestDto,
-        LogoutAllDto, MembershipDto, NewCategoryRequestDto, NewRoleRequestDto, NewUserRequestDto,
+        BootstrapInstallRequestDto, BootstrapStatusDto, BranchAdminDto, BranchDto, CashRegisterDto,
+        CashRegisterListRequestDto, CashShiftDto, CashShiftItemRequestDto, CashShiftListRequestDto,
+        CatalogItemRequestDto, CategoryDto, CloseCashShiftRequestDto, CreateBranchRequestDto,
+        CreateMembershipRequestDto, CreateProductRequest, CreatedProductDto, InstallationStatusDto,
+        IpcError, LoginRequestDto, LogoutAllDto, MembershipDto, NewCashRegisterRequestDto,
+        NewCategoryRequestDto, NewRoleRequestDto, NewUserRequestDto, OpenCashShiftRequestDto,
         OrganizationDto, PageRequest, PermissionDto, ProductDto, RoleDto, SelectBranchRequestDto,
         SessionIdentityDto, SetRolePermissionsRequestDto, SetUserRolesRequestDto,
-        UpdateBranchRequestDto, UpdateMembershipRequestDto, UpdateOrganizationRequestDto,
-        UpdateProductRequestDto, UpdateRoleRequestDto, UpdateUserRequestDto, UserDto,
+        UpdateBranchRequestDto, UpdateCashRegisterRequestDto, UpdateMembershipRequestDto,
+        UpdateOrganizationRequestDto, UpdateProductRequestDto, UpdateRoleRequestDto,
+        UpdateUserRequestDto, UserDto,
     },
 };
 use tauri::State;
@@ -370,6 +373,96 @@ pub async fn membership_update(
     state.membership_update(request).await
 }
 
+/// Cajas de la sucursal seleccionada: cash-register.read.
+#[tauri::command]
+#[specta::specta]
+pub async fn cash_register_list(
+    state: State<'_, LocalState>,
+    request: CashRegisterListRequestDto,
+) -> Result<Vec<CashRegisterDto>, IpcError> {
+    state.cash_register_list(request).await
+}
+
+/// Caja concreta de la sucursal: cash-register.read.
+#[tauri::command]
+#[specta::specta]
+pub async fn cash_register_get(
+    state: State<'_, LocalState>,
+    request: CatalogItemRequestDto,
+) -> Result<CashRegisterDto, IpcError> {
+    state.cash_register_get(&request.id).await
+}
+
+/// Alta de caja: cash-register.create.
+#[tauri::command]
+#[specta::specta]
+pub async fn cash_register_create(
+    state: State<'_, LocalState>,
+    request: NewCashRegisterRequestDto,
+) -> Result<CashRegisterDto, IpcError> {
+    state.cash_register_create(request).await
+}
+
+/// Edición de caja con CAS: cash-register.update.
+#[tauri::command]
+#[specta::specta]
+pub async fn cash_register_update(
+    state: State<'_, LocalState>,
+    request: UpdateCashRegisterRequestDto,
+) -> Result<CashRegisterDto, IpcError> {
+    state.cash_register_update(request).await
+}
+
+/// Apertura de turno: cash-shift.open.
+#[tauri::command]
+#[specta::specta]
+pub async fn cash_shift_open(
+    state: State<'_, LocalState>,
+    request: OpenCashShiftRequestDto,
+) -> Result<CashShiftDto, IpcError> {
+    state.cash_shift_open(request).await
+}
+
+/// Turno abierto de una caja: cash-shift.read.
+#[tauri::command]
+#[specta::specta]
+pub async fn cash_shift_get_open(
+    state: State<'_, LocalState>,
+    request: CatalogItemRequestDto,
+) -> Result<Option<CashShiftDto>, IpcError> {
+    state.cash_shift_get_open(&request.id).await
+}
+
+/// Turno concreto de una caja: cash-shift.read.
+#[tauri::command]
+#[specta::specta]
+pub async fn cash_shift_get(
+    state: State<'_, LocalState>,
+    request: CashShiftItemRequestDto,
+) -> Result<CashShiftDto, IpcError> {
+    state.cash_shift_get(request).await
+}
+
+/// Historial de turnos de una caja: cash-shift.read.
+#[tauri::command]
+#[specta::specta]
+pub async fn cash_shift_list(
+    state: State<'_, LocalState>,
+    request: CashShiftListRequestDto,
+) -> Result<Vec<CashShiftDto>, IpcError> {
+    state.cash_shift_list(request).await
+}
+
+/// Cierre de turno con guard de ventas abiertas: cash-shift.close.
+#[tauri::command]
+#[specta::specta]
+pub async fn cash_shift_close(
+    state: State<'_, LocalState>,
+    request: CloseCashShiftRequestDto,
+) -> Result<CashShiftDto, IpcError> {
+    state.cash_shift_close(request).await
+}
+
 /// Registro único utilizado para el dispatcher real y la generación TypeScript.
 pub fn registry<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
     tauri_specta::Builder::<R>::new().commands(tauri_specta::collect_commands![
@@ -412,5 +505,14 @@ pub fn registry<R: tauri::Runtime>() -> tauri_specta::Builder<R> {
         membership_list,
         membership_create,
         membership_update,
+        cash_register_list,
+        cash_register_get,
+        cash_register_create,
+        cash_register_update,
+        cash_shift_open,
+        cash_shift_get_open,
+        cash_shift_get,
+        cash_shift_list,
+        cash_shift_close,
     ])
 }

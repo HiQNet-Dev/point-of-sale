@@ -8,6 +8,7 @@ import { SetupWizard } from './SetupWizard'
 import { CatalogWorkspace } from './CatalogWorkspace'
 import { BusinessSettingsPage } from './BusinessSettingsPage'
 import { BranchesPage } from './BranchesPage'
+import { CashPage } from './CashPage'
 import { TeamPage } from './TeamPage'
 
 const stateLabels: Record<string, string> = {
@@ -74,7 +75,9 @@ export function SessionGate({ status }: { status: InstallationStatusDto }) {
  */
 function AuthenticatedHome({ identity, status }: { identity: SessionIdentityDto; status: InstallationStatusDto }) {
   const queryClient = useQueryClient()
-  const [section, setSection] = useState<'operation' | 'business' | 'branches' | 'team'>('operation')
+  const [section, setSection] = useState<'operation' | 'cash' | 'business' | 'branches' | 'team'>(
+    'operation',
+  )
   const branches = useQuery({
     queryKey: ['rust-desktop', 'branches'],
     queryFn: desktopService.authListBranches,
@@ -124,16 +127,25 @@ function AuthenticatedHome({ identity, status }: { identity: SessionIdentityDto;
 
         <Tabs
           value={section}
-          onChange={(_, value: 'operation' | 'business' | 'branches' | 'team') => setSection(value)}
+          onChange={(_, value: 'operation' | 'cash' | 'business' | 'branches' | 'team') =>
+            setSection(value)
+          }
           aria-label="Secciones de la aplicación"
           variant="scrollable"
           allowScrollButtonsMobile
         >
           <Tab value="operation" label="Operación" id="section-operation" aria-controls="panel-operation" />
+          <Tab value="cash" label="Caja" id="section-cash" aria-controls="panel-cash" />
           <Tab value="business" label="Negocio" id="section-business" aria-controls="panel-business" />
           <Tab value="branches" label="Sucursales" id="section-branches" aria-controls="panel-branches" />
           <Tab value="team" label="Equipo" id="section-team" aria-controls="panel-team" />
         </Tabs>
+
+        {section === 'cash' ? (
+          <Box role="tabpanel" id="panel-cash" aria-labelledby="section-cash">
+            <CashPage permissions={identity.permissions} branchSelected={identity.branchId !== null} />
+          </Box>
+        ) : null}
 
         {section === 'business' ? (
           <Box role="tabpanel" id="panel-business" aria-labelledby="section-business">

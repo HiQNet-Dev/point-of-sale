@@ -179,8 +179,26 @@ where
         hash: &SessionHash,
         now: UtcSeconds,
     ) -> Result<VerifiedPrincipal, ApplicationError> {
+        self.principal_in(hash, now, None).await
+    }
+
+    /// Revalida una sesión en el scope de sucursal ya elegido por el shell nativo.
+    ///
+    /// La sucursal la custodia el proceso Rust al seleccionarla; nunca llega desde
+    /// el renderer en cada comando. Una sucursal que ya no aporta permisos
+    /// devuelve un principal con las grants que SQLite conceda en ese instante.
+    ///
+    /// # Errors
+    /// Devuelve [`ApplicationError::Unauthenticated`] si la sesión no existe,
+    /// venció o fue revocada.
+    pub async fn principal_in(
+        &self,
+        hash: &SessionHash,
+        now: UtcSeconds,
+        branch_id: Option<&EntityId>,
+    ) -> Result<VerifiedPrincipal, ApplicationError> {
         self.directory
-            .principal_for_hash(hash, now, None)
+            .principal_for_hash(hash, now, branch_id)
             .await
             .map_err(unauthenticated)
     }
@@ -195,9 +213,23 @@ where
         hash: &SessionHash,
         now: UtcSeconds,
     ) -> Result<SessionIdentity, ApplicationError> {
+        self.current_in(hash, now, None).await
+    }
+
+    /// Revalida una sesión en una sucursal ya elegida y devuelve su identidad.
+    ///
+    /// # Errors
+    /// Devuelve [`ApplicationError::Unauthenticated`] si la sesión no existe,
+    /// venció o fue revocada.
+    pub async fn current_in(
+        &self,
+        hash: &SessionHash,
+        now: UtcSeconds,
+        branch_id: Option<&EntityId>,
+    ) -> Result<SessionIdentity, ApplicationError> {
         let principal = self
             .directory
-            .principal_for_hash(hash, now, None)
+            .principal_for_hash(hash, now, branch_id)
             .await
             .map_err(unauthenticated)?;
         let user = self

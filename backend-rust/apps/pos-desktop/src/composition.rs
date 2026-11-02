@@ -81,6 +81,12 @@ pub(crate) struct ProductInstallation {
     /// Handle de sesión en memoria nativa; nunca se persiste ni llega al
     /// renderer. Se libera al cerrar la aplicación.
     pub(crate) session: tokio::sync::Mutex<Option<String>>,
+    /// Sucursal elegida por la persona autenticada.
+    ///
+    /// Vive en memoria nativa junto al handle: los comandos operativos la leen
+    /// de aquí en lugar de aceptarla en cada petición. Se limpia al iniciar o
+    /// cerrar sesión.
+    pub(crate) selected_branch: tokio::sync::Mutex<Option<EntityId>>,
 }
 
 /// Fallos de arranque sin SQL, credenciales ni contenidos de fila.
@@ -198,6 +204,7 @@ impl LocalState {
                 directory: installation_directory,
                 installation_lock,
                 session: tokio::sync::Mutex::new(None),
+                selected_branch: tokio::sync::Mutex::new(None),
             }),
         })
     }
@@ -209,6 +216,7 @@ impl LocalState {
             Mode::Product(product) => {
                 // El handle sale de memoria al cerrar: no se persiste en ningún sitio.
                 *product.session.lock().await = None;
+                *product.selected_branch.lock().await = None;
                 // Un cierre limpio deja el WAL integrado en el archivo principal.
                 let _ = checkpoint(&product.pool).await;
                 product.pool.close().await;

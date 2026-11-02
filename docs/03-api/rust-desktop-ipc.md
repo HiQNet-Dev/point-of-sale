@@ -118,6 +118,15 @@ Fuente verificable: `apps/pos-desktop/src/commands.rs` + `dto.rs`, relativa a
 | `membership_list` | Instalación | `{}` | `MembershipDto[]` | `branch.membership.read` | Organización del principal |
 | `membership_create` | Instalación | `{ "request": { "branchId", "userId", "roleIds" } }` | `MembershipDto` | `branch.membership.create` (+ `branch.membership.roles.manage` si asigna roles) | Sucursal validada en la organización |
 | `membership_update` | Instalación | `{ "request": { "membershipId", "expectedRevision", "status?", "roleIds?" } }` | `MembershipDto` | `branch.membership.update` (+ `branch.membership.roles.manage` al cambiar roles) | Sucursal de la membresía |
+| `cash_register_list` | Instalación | `{ "request": { "status?", "limit", "offset" } }` | `CashRegisterDto[]` | `cash-register.read` | Sucursal seleccionada |
+| `cash_register_get` | Instalación | `{ "request": { "id" } }` | `CashRegisterDto` | `cash-register.read` | Sucursal seleccionada |
+| `cash_register_create` | Instalación | `{ "request": { "code", "name" } }` | `CashRegisterDto` | `cash-register.create` | Sucursal seleccionada |
+| `cash_register_update` | Instalación | `{ "request": { "cashRegisterId", "expectedRevision", "name?", "status?" } }` | `CashRegisterDto` | `cash-register.update` | Sucursal seleccionada |
+| `cash_shift_open` | Instalación | `{ "request": { "cashRegisterId", "openingAmount" } }` | `CashShiftDto` | `cash-shift.open` | Sucursal seleccionada |
+| `cash_shift_get_open` | Instalación | `{ "request": { "id" } }` | `CashShiftDto \| null` | `cash-shift.read` | Sucursal seleccionada |
+| `cash_shift_get` | Instalación | `{ "request": { "cashRegisterId", "cashShiftId" } }` | `CashShiftDto` | `cash-shift.read` | Sucursal seleccionada |
+| `cash_shift_list` | Instalación | `{ "request": { "cashRegisterId", "status?", "limit", "offset" } }` | `CashShiftDto[]` | `cash-shift.read` | Sucursal seleccionada |
+| `cash_shift_close` | Instalación | `{ "request": { "cashRegisterId", "cashShiftId", "expectedRevision", "closingDeclaredAmount" } }` | `CashShiftDto` | `cash-shift.close` | Sucursal seleccionada; scope de recuperación solo aquí |
 
 ### Primera instalación
 
@@ -206,6 +215,33 @@ dotarla de roles es lo que habilita operar en caja, ventas e inventario.
 
 Diseño y consecuencias en
 [ADR-0030](../01-architecture/adr/0030-local-identity-administration.md).
+
+### Cajas y turnos
+
+Nueve comandos activan el contrato de `0009`/`0010` sobre la sucursal
+seleccionada. La sucursal **no** viaja en la petición: el proceso Rust la custodia
+desde `auth_select_branch` y la aplica en cada revalidación
+([ADR-0031](../01-architecture/adr-0031-native-branch-selection.md)).
+
+| Dato | Transporte | Motivo |
+| --- | --- | --- |
+| `openingAmount`, `closingDeclaredAmount` | texto decimal exacto (máx. 4 decimales) | Nunca se usa coma flotante |
+| `expectedRevision` | texto decimal | Revisión de 64 bits |
+| `openedAt`, `closedAt` | texto decimal de segundos Unix | El renderer formatea, no rederiva |
+| `branchId`, `organizationId` | ausentes | Salen del scope verificado |
+
+Rechazos públicos: `cash-register.create` sin permiso → `FORBIDDEN`; código
+duplicado, caja con turno abierto, turno ya cerrado, ventas `OPEN` o revisión
+obsoleta → `CONFLICT`; caja o turno de otra sucursal → `NOT_FOUND`; importe con
+más de cuatro decimales o página fuera de rango → `VALIDATION_ERROR`.
+
+El cierre es el único comando que admite el scope de recuperación del contrato:
+puede cerrar un turno histórico sobre una caja o sucursal ya inactiva. La apertura
+y la administración de cajas no lo admiten.
+
+**Fuera de alcance del contrato actual**: movimientos de efectivo, arqueos y
+totales esperados. No se calculan ni se simulan.
+
 
 ### Autenticación Local
 

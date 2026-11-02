@@ -1,6 +1,6 @@
 # Matriz de corte v0.4.0 — HiQNet POS Free Local (Rust)
 
-**Estado a 2026-11-01, tras el vertical de administración de identidad.**
+**Estado a 2026-11-02, tras activar cajas y turnos en el escritorio.**
 
 Estados admitidos por columna: `IMPLEMENTED`, `TESTED`, `INTEGRATED`, `BLOCKED`,
 `DEFERRED`. No se usan porcentajes.
@@ -29,7 +29,7 @@ ninguna fila comprometida quede en `BLOCKED`.
 | Auditoría | IMPLEMENTED | IMPLEMENTED | TESTED | DEFERRED | DEFERRED | DEFERRED | Mantener; no se expone UI en v0.4.0 |
 | Catálogo (categorías, productos) | IMPLEMENTED | IMPLEMENTED | TESTED | INTEGRATED | IMPLEMENTED | TESTED | Operativo: crear, listar, consultar y editar con sesión real |
 | Modificadores | IMPLEMENTED | IMPLEMENTED | TESTED | DEFERRED | DEFERRED | DEFERRED | Mantener persistencia y snapshots |
-| Cajas y turnos | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Desbloqueado: la membresía de sucursal ya se administra |
+| Cajas y turnos | IMPLEMENTED | IMPLEMENTED | TESTED | INTEGRATED | IMPLEMENTED | TESTED | Crear caja, abrir, consultar y cerrar turno con CAS, guard de ventas y reapertura ([ADR-0031](../01-architecture/adr/0031-native-branch-selection.md)) |
 | Ventas | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Mantener; falta IPC/UI |
 | Checkout y pagos | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Mantener; atómico y probado |
 | Inventario y ledger | IMPLEMENTED | IMPLEMENTED | TESTED | BLOCKED | BLOCKED | DEFERRED | Mantener; falta IPC/UI |
@@ -65,7 +65,7 @@ consecuencia.
 
 Con esta matriz **no** se puede retirar Java todavía. Faltan:
 
-1. Handlers IPC de caja, ventas, inventario y compras con sus ACL.
+1. Handlers IPC de ventas, inventario y compras con sus ACL.
 2. Pantallas React de esos flujos.
 3. E2E gráfico de escritorio y Docker que ejerza el flujo comercial completo.
 4. Ratificación de D-AUTH-09 y del perfil de conformidad normativa.
@@ -74,8 +74,14 @@ Con esta matriz **no** se puede retirar Java todavía. Faltan:
 
 ## Siguiente orden de corte
 
-1. Caja y turnos.
-2. Ventas y pagos.
-3. Inventario y consumo.
-4. Compras, backup comercial, instalador, E2E y paridad.
-5. Retirada de Java y release `v0.4.0`.
+1. Ventas y pagos.
+2. Inventario y consumo.
+3. Compras, backup comercial, instalador, E2E y paridad.
+4. Retirada de Java y release `v0.4.0`.
+
+## Extensiones de caja deliberadamente pendientes
+
+La superficie activada cubre el contrato aprobado en `0009`/`0010`: caja, turno,
+importe inicial, importe declarado y guard de ventas abiertas. **No** se calculan
+movimientos de efectivo, arqueos ni totales esperados porque el esquema y el
+dominio todavía no los modelan; añadirlos exige una decisión física nueva.
