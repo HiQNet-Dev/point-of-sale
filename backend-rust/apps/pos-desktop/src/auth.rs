@@ -64,6 +64,8 @@ impl LocalState {
             .await
             .map_err(IpcError::from)?;
         *session = Some(authenticated.handle);
+        // Una sesión nueva no hereda la sucursal de la sesión anterior.
+        *product.selected_branch.lock().await = None;
         Ok(SessionIdentityDto::from(authenticated.identity))
     }
 
@@ -78,8 +80,9 @@ impl LocalState {
         };
         let hash = hash_of(&handle)?;
         let (now, _) = clock(&product.pool).await?;
+        let branch = product.selected_branch.lock().await.clone();
         let application = identity_application(product.pool.clone()).map_err(IpcError::from)?;
-        match application.current(&hash, now).await {
+        match application.current_in(&hash, now, branch.as_ref()).await {
             Ok(identity) => Ok(SessionIdentityDto::from(identity)),
             Err(ApplicationError::Unauthenticated) => {
                 forget_handle(product, &handle).await;
@@ -100,9 +103,10 @@ impl LocalState {
         };
         let hash = hash_of(&handle)?;
         let (now, _) = clock(&product.pool).await?;
+        let branch = product.selected_branch.lock().await.clone();
         let application = identity_application(product.pool.clone()).map_err(IpcError::from)?;
         application
-            .principal(&hash, now)
+            .principal_in(&hash, now, branch.as_ref())
             .await
             .map_err(IpcError::from)
     }
@@ -124,6 +128,7 @@ impl LocalState {
             .logout(&mut identities, &hash, now, &occurred_at)
             .await;
         forget_handle(product, &handle).await;
+        *product.selected_branch.lock().await = None;
         result.map_err(IpcError::from)
     }
 
@@ -145,6 +150,7 @@ impl LocalState {
             .await
             .map_err(IpcError::from)?;
         forget_handle(product, &handle).await;
+        *product.selected_branch.lock().await = None;
         Ok(LogoutAllDto {
             revoked: u32::try_from(revoked).unwrap_or(u32::MAX),
         })
@@ -172,6 +178,9 @@ impl LocalState {
             .select_branch(&mut identities, &hash, now, &occurred_at, &branch)
             .await
             .map_err(IpcError::from)?;
+        // La sucursal queda custodiada en memoria nativa: los comandos
+        // operativos la leen de aquí y no de la petición.
+        *product.selected_branch.lock().await = Some(branch);
         Ok(SessionIdentityDto::from(identity))
     }
 
@@ -180,18 +189,8 @@ impl LocalState {
     /// # Errors
     /// Devuelve [`IpcError::Unauthorized`] sin sesión vigente o sin `branch.read`.
     pub async fn auth_list_branches(&self) -> Result<Vec<BranchDto>, IpcError> {
-        let product = self.product_installation()?;
-        let Some(handle) = current_handle(product).await? else {
-            return Err(IpcError::Unauthorized);
-        };
-        let hash = hash_of(&handle)?;
-        let (now, _) = clock(&product.pool).await?;
-        let application = identity_application(product.pool.clone()).map_err(IpcError::from)?;
-        let principal = application
-            .principal(&hash, now)
-            .await
-            .map_err(IpcError::from)?;
-        let reader = SqliteOrganizationBranchStore::new(product.pool.clone());
+        let principal = self.authenticated_principal().await?;
+        let reader = SqliteOrganizationBranchStore::new(self.product_installation()?.pool.clone());
         let branches = list_authorized_branches(&reader, &principal).await?;
         Ok(branches
             .into_iter()
