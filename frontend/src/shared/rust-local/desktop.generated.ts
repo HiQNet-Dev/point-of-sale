@@ -85,6 +85,24 @@ export const commands = {
 	 *  branch.membership.roles.manage.
 	 */
 	membershipUpdate: (request: UpdateMembershipRequestDto_Deserialize) => typedError<MembershipDto, IpcError>(__TAURI_INVOKE("membership_update", { request })),
+	/**  Cajas de la sucursal seleccionada: cash-register.read. */
+	cashRegisterList: (request: CashRegisterListRequestDto_Deserialize) => typedError<CashRegisterDto[], IpcError>(__TAURI_INVOKE("cash_register_list", { request })),
+	/**  Caja concreta de la sucursal: cash-register.read. */
+	cashRegisterGet: (request: CatalogItemRequestDto) => typedError<CashRegisterDto, IpcError>(__TAURI_INVOKE("cash_register_get", { request })),
+	/**  Alta de caja: cash-register.create. */
+	cashRegisterCreate: (request: NewCashRegisterRequestDto) => typedError<CashRegisterDto, IpcError>(__TAURI_INVOKE("cash_register_create", { request })),
+	/**  Edición de caja con CAS: cash-register.update. */
+	cashRegisterUpdate: (request: UpdateCashRegisterRequestDto_Deserialize) => typedError<CashRegisterDto, IpcError>(__TAURI_INVOKE("cash_register_update", { request })),
+	/**  Apertura de turno: cash-shift.open. */
+	cashShiftOpen: (request: OpenCashShiftRequestDto) => typedError<CashShiftDto_Serialize, IpcError>(__TAURI_INVOKE("cash_shift_open", { request })),
+	/**  Turno abierto de una caja: cash-shift.read. */
+	cashShiftGetOpen: (request: CatalogItemRequestDto) => typedError<CashShiftDto_Serialize | null, IpcError>(__TAURI_INVOKE("cash_shift_get_open", { request })),
+	/**  Turno concreto de una caja: cash-shift.read. */
+	cashShiftGet: (request: CashShiftItemRequestDto) => typedError<CashShiftDto_Serialize, IpcError>(__TAURI_INVOKE("cash_shift_get", { request })),
+	/**  Historial de turnos de una caja: cash-shift.read. */
+	cashShiftList: (request: CashShiftListRequestDto_Deserialize) => typedError<CashShiftDto_Serialize[], IpcError>(__TAURI_INVOKE("cash_shift_list", { request })),
+	/**  Cierre de turno con guard de ventas abiertas: cash-shift.close. */
+	cashShiftClose: (request: CloseCashShiftRequestDto) => typedError<CashShiftDto_Serialize, IpcError>(__TAURI_INVOKE("cash_shift_close", { request })),
 };
 
 /* Types */
@@ -235,6 +253,146 @@ export type BranchDto = {
 	status: string,
 };
 
+/**  Caja de la sucursal operativa con su revisión exacta. */
+export type CashRegisterDto = {
+	/**  UUID canónico. */
+	id: string,
+	/**  Sucursal propietaria. */
+	branchId: string,
+	/**  Código inmutable dentro de la sucursal. */
+	code: string,
+	/**  Nombre visible. */
+	name: string,
+	/**  `ACTIVE` o `INACTIVE`. */
+	status: string,
+	/**  Revisión optimista en texto decimal. */
+	revision: string,
+};
+
+/**  Listado paginado de cajas con filtro opcional de estado. */
+export type CashRegisterListRequestDto = CashRegisterListRequestDto_Serialize | CashRegisterListRequestDto_Deserialize;
+
+/**  Listado paginado de cajas con filtro opcional de estado. */
+export type CashRegisterListRequestDto_Deserialize = {
+	/**  `ACTIVE` o `INACTIVE`; si falta, no filtra. */
+	status?: string | null,
+	/**  Tamaño de página, de 1 a 100. */
+	limit: number,
+	/**  Desplazamiento desde el inicio. */
+	offset: number,
+};
+
+/**  Listado paginado de cajas con filtro opcional de estado. */
+export type CashRegisterListRequestDto_Serialize = {
+	/**  `ACTIVE` o `INACTIVE`; si falta, no filtra. */
+	status: string | null,
+	/**  Tamaño de página, de 1 a 100. */
+	limit: number,
+	/**  Desplazamiento desde el inicio. */
+	offset: number,
+};
+
+/**
+ *  Turno de caja con importes exactos y marcas temporales en segundos Unix.
+ *
+ *  `openedAt` y `closedAt` viajan como texto decimal y no como número: el
+ *  renderer no debe rederivar ni truncar el instante autoritativo.
+ */
+export type CashShiftDto = CashShiftDto_Serialize | CashShiftDto_Deserialize;
+
+/**
+ *  Turno de caja con importes exactos y marcas temporales en segundos Unix.
+ *
+ *  `openedAt` y `closedAt` viajan como texto decimal y no como número: el
+ *  renderer no debe rederivar ni truncar el instante autoritativo.
+ */
+export type CashShiftDto_Deserialize = {
+	/**  UUID canónico. */
+	id: string,
+	/**  Caja a la que pertenece el turno. */
+	cashRegisterId: string,
+	/**  `OPEN` o `CLOSED`. */
+	status: string,
+	/**  Importe inicial exacto de escala 4. */
+	openingAmount: string,
+	/**  Importe declarado al cierre, si ya se cerró. */
+	closingDeclaredAmount?: string | null,
+	/**  Instante de apertura, en segundos Unix. */
+	openedAt: string,
+	/**  Instante de cierre, si ya se cerró. */
+	closedAt?: string | null,
+	/**  Usuario que abrió el turno. */
+	openedByUserId: string,
+	/**  Usuario que cerró el turno, si ya se cerró. */
+	closedByUserId?: string | null,
+	/**  Revisión optimista en texto decimal. */
+	revision: string,
+};
+
+/**
+ *  Turno de caja con importes exactos y marcas temporales en segundos Unix.
+ *
+ *  `openedAt` y `closedAt` viajan como texto decimal y no como número: el
+ *  renderer no debe rederivar ni truncar el instante autoritativo.
+ */
+export type CashShiftDto_Serialize = {
+	/**  UUID canónico. */
+	id: string,
+	/**  Caja a la que pertenece el turno. */
+	cashRegisterId: string,
+	/**  `OPEN` o `CLOSED`. */
+	status: string,
+	/**  Importe inicial exacto de escala 4. */
+	openingAmount: string,
+	/**  Importe declarado al cierre, si ya se cerró. */
+	closingDeclaredAmount: string | null,
+	/**  Instante de apertura, en segundos Unix. */
+	openedAt: string,
+	/**  Instante de cierre, si ya se cerró. */
+	closedAt: string | null,
+	/**  Usuario que abrió el turno. */
+	openedByUserId: string,
+	/**  Usuario que cerró el turno, si ya se cerró. */
+	closedByUserId: string | null,
+	/**  Revisión optimista en texto decimal. */
+	revision: string,
+};
+
+/**  Referencia a un turno concreto dentro de una caja. */
+export type CashShiftItemRequestDto = {
+	/**  UUID de la caja. */
+	cashRegisterId: string,
+	/**  UUID del turno. */
+	cashShiftId: string,
+};
+
+/**  Consulta paginada del historial de turnos de una caja. */
+export type CashShiftListRequestDto = CashShiftListRequestDto_Serialize | CashShiftListRequestDto_Deserialize;
+
+/**  Consulta paginada del historial de turnos de una caja. */
+export type CashShiftListRequestDto_Deserialize = {
+	/**  UUID de la caja. */
+	cashRegisterId: string,
+	/**  `OPEN` o `CLOSED`; si falta, no filtra. */
+	status?: string | null,
+	/**  Tamaño de página, de 1 a 100. */
+	limit: number,
+	/**  Desplazamiento desde el inicio. */
+	offset: number,
+};
+
+/**  Consulta paginada del historial de turnos de una caja. */
+export type CashShiftListRequestDto_Serialize = {
+	/**  UUID de la caja. */
+	cashRegisterId: string,
+	/**  `OPEN` o `CLOSED`; si falta, no filtra. */
+	status: string | null,
+	/**  Tamaño de página, de 1 a 100. */
+	limit: number,
+	/**  Desplazamiento desde el inicio. */
+	offset: number,
+};
+
 /**  Identidad de una entidad del catálogo. */
 export type CatalogItemRequestDto = {
 	/**  UUID canónico dentro de la organización del principal. */
@@ -251,6 +409,18 @@ export type CategoryDto = {
 	name: string,
 	/**  Versión decimal entera, nunca number de JavaScript. */
 	version: string,
+};
+
+/**  Cierre no idempotente de un turno abierto. */
+export type CloseCashShiftRequestDto = {
+	/**  UUID de la caja. */
+	cashRegisterId: string,
+	/**  UUID del turno. */
+	cashShiftId: string,
+	/**  Revisión leída por el cliente, en texto decimal. */
+	expectedRevision: string,
+	/**  Importe declarado como texto decimal de escala máxima 4. */
+	closingDeclaredAmount: string,
 };
 
 /**
@@ -434,6 +604,14 @@ export type MembershipDto = {
 	roles: RoleRefDto[],
 };
 
+/**  Alta de caja en la sucursal del principal. */
+export type NewCashRegisterRequestDto = {
+	/**  Código slug único dentro de la sucursal. */
+	code: string,
+	/**  Nombre visible. */
+	name: string,
+};
+
 /**  Alta de categoría por el administrador autenticado. */
 export type NewCategoryRequestDto = {
 	/**  Código slug de la categoría. */
@@ -465,6 +643,14 @@ export type NewUserRequestDto = {
 	email: string,
 	/**  Contraseña inicial en claro solo para esta llamada. */
 	password: string,
+};
+
+/**  Apertura de turno en una caja activa de la sucursal del principal. */
+export type OpenCashShiftRequestDto = {
+	/**  UUID de la caja. */
+	cashRegisterId: string,
+	/**  Importe inicial como texto decimal de escala máxima 4. */
+	openingAmount: string,
 };
 
 /**
@@ -705,6 +891,33 @@ export type UpdateBranchRequestDto_Serialize = {
 	name: string | null,
 	/**  Operación sobre la zona horaria. */
 	timezone: TimezoneOverrideRequestDto_Serialize,
+};
+
+/**  Edición de caja con CAS. El código y los propietarios son inmutables. */
+export type UpdateCashRegisterRequestDto = UpdateCashRegisterRequestDto_Serialize | UpdateCashRegisterRequestDto_Deserialize;
+
+/**  Edición de caja con CAS. El código y los propietarios son inmutables. */
+export type UpdateCashRegisterRequestDto_Deserialize = {
+	/**  UUID de la caja dentro de la sucursal. */
+	cashRegisterId: string,
+	/**  Revisión leída por el cliente, en texto decimal. */
+	expectedRevision: string,
+	/**  Nombre nuevo; si falta, se conserva. */
+	name?: string | null,
+	/**  `ACTIVE` o `INACTIVE`; si falta, se conserva. */
+	status?: string | null,
+};
+
+/**  Edición de caja con CAS. El código y los propietarios son inmutables. */
+export type UpdateCashRegisterRequestDto_Serialize = {
+	/**  UUID de la caja dentro de la sucursal. */
+	cashRegisterId: string,
+	/**  Revisión leída por el cliente, en texto decimal. */
+	expectedRevision: string,
+	/**  Nombre nuevo; si falta, se conserva. */
+	name: string | null,
+	/**  `ACTIVE` o `INACTIVE`; si falta, se conserva. */
+	status: string | null,
 };
 
 /**  Edición del estado y los roles de una membresía. */

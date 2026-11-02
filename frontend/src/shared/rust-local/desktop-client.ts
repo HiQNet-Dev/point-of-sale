@@ -1,4 +1,4 @@
-import { commands, type BootstrapInstallRequestDto_Deserialize, type CreateBranchRequestDto_Deserialize, type CreateMembershipRequestDto, type CreateProductRequest_Deserialize, type IpcError, type NewRoleRequestDto, type NewUserRequestDto, type SetRolePermissionsRequestDto, type SetUserRolesRequestDto, type UpdateBranchRequestDto_Deserialize, type UpdateMembershipRequestDto_Deserialize, type UpdateOrganizationRequestDto_Deserialize, type UpdateProductRequestDto_Deserialize, type UpdateRoleRequestDto_Deserialize, type UpdateUserRequestDto_Deserialize } from './desktop.generated'
+import { commands, type BootstrapInstallRequestDto_Deserialize, type CashRegisterListRequestDto_Serialize, type CashShiftListRequestDto_Serialize, type CloseCashShiftRequestDto, type CreateBranchRequestDto_Deserialize, type CreateMembershipRequestDto, type CreateProductRequest_Deserialize, type IpcError, type NewCashRegisterRequestDto, type NewRoleRequestDto, type NewUserRequestDto, type OpenCashShiftRequestDto, type SetRolePermissionsRequestDto, type SetUserRolesRequestDto, type UpdateBranchRequestDto_Deserialize, type UpdateCashRegisterRequestDto_Deserialize, type UpdateMembershipRequestDto_Deserialize, type UpdateOrganizationRequestDto_Deserialize, type UpdateProductRequestDto_Deserialize, type UpdateRoleRequestDto_Deserialize, type UpdateUserRequestDto_Deserialize } from './desktop.generated'
 
 /** Errores públicos del adaptador IPC, sin diagnósticos de almacenamiento. */
 export class DesktopCommandError extends Error {
@@ -91,4 +91,21 @@ export const desktopService = {
   membershipList: () => unwrap(commands.membershipList()),
   membershipCreate: (request: CreateMembershipRequestDto) => unwrap(commands.membershipCreate(request)),
   membershipUpdate: (request: UpdateMembershipRequestDto_Deserialize) => unwrap(commands.membershipUpdate(request)),
+
+  /**
+   * Cajas y turnos de la sucursal seleccionada.
+   *
+   * La sucursal no se envía: el proceso Rust la custodia desde
+   * `auth_select_branch`. Los importes viajan como texto decimal exacto.
+   */
+  cashRegisterList: (request: CashRegisterListRequestDto_Serialize) => unwrap(commands.cashRegisterList(request)),
+  cashRegisterGet: (id: string) => unwrap(commands.cashRegisterGet({ id })),
+  cashRegisterCreate: (request: NewCashRegisterRequestDto) => unwrap(commands.cashRegisterCreate(request)),
+  cashRegisterUpdate: (request: UpdateCashRegisterRequestDto_Deserialize) => unwrap(commands.cashRegisterUpdate(request)),
+  cashShiftOpen: (request: OpenCashShiftRequestDto) => unwrap(commands.cashShiftOpen(request)),
+  cashShiftGetOpen: (cashRegisterId: string) => unwrap(commands.cashShiftGetOpen({ id: cashRegisterId })),
+  cashShiftGet: (cashRegisterId: string, cashShiftId: string) =>
+    unwrap(commands.cashShiftGet({ cashRegisterId, cashShiftId })),
+  cashShiftList: (request: CashShiftListRequestDto_Serialize) => unwrap(commands.cashShiftList(request)),
+  cashShiftClose: (request: CloseCashShiftRequestDto) => unwrap(commands.cashShiftClose(request)),
 }
