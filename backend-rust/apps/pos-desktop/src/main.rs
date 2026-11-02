@@ -13,6 +13,7 @@ mod arguments;
 mod auth;
 mod bindings;
 mod bootstrap;
+mod cash;
 mod catalog;
 mod command_names;
 mod commands;

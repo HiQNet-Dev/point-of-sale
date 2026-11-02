@@ -42,6 +42,15 @@ pub const COMMAND_NAMES: &[&str] = &[
     "membership_list",
     "membership_create",
     "membership_update",
+    "cash_register_list",
+    "cash_register_get",
+    "cash_register_create",
+    "cash_register_update",
+    "cash_shift_open",
+    "cash_shift_get_open",
+    "cash_shift_get",
+    "cash_shift_list",
+    "cash_shift_close",
 ];
 
 /// Comandos del laboratorio sintético; no existen en el modo instalación.
@@ -114,4 +123,20 @@ pub const ADMINISTRATION_COMMAND_NAMES: &[&str] = &[
     "membership_list",
     "membership_create",
     "membership_update",
+];
+
+/// Comandos de cajas y turnos; requieren sesión, sucursal seleccionada y permiso.
+///
+/// La sucursal no se envía: sale del scope verificado del principal.
+#[allow(dead_code)] // Consumido por las pruebas del dispatcher.
+pub const CASH_COMMAND_NAMES: &[&str] = &[
+    "cash_register_list",
+    "cash_register_get",
+    "cash_register_create",
+    "cash_register_update",
+    "cash_shift_open",
+    "cash_shift_get_open",
+    "cash_shift_get",
+    "cash_shift_list",
+    "cash_shift_close",
 ];

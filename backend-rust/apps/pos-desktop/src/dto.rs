@@ -564,6 +564,137 @@ pub struct MembershipDto {
     pub roles: Vec<RoleRefDto>,
 }
 
+/// Caja de la sucursal operativa con su revisión exacta.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CashRegisterDto {
+    /// UUID canónico.
+    pub id: String,
+    /// Sucursal propietaria.
+    pub branch_id: String,
+    /// Código inmutable dentro de la sucursal.
+    pub code: String,
+    /// Nombre visible.
+    pub name: String,
+    /// `ACTIVE` o `INACTIVE`.
+    pub status: String,
+    /// Revisión optimista en texto decimal.
+    pub revision: String,
+}
+
+/// Listado paginado de cajas con filtro opcional de estado.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CashRegisterListRequestDto {
+    /// `ACTIVE` o `INACTIVE`; si falta, no filtra.
+    pub status: Option<String>,
+    /// Tamaño de página, de 1 a 100.
+    pub limit: u32,
+    /// Desplazamiento desde el inicio.
+    pub offset: u32,
+}
+
+/// Alta de caja en la sucursal del principal.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NewCashRegisterRequestDto {
+    /// Código slug único dentro de la sucursal.
+    pub code: String,
+    /// Nombre visible.
+    pub name: String,
+}
+
+/// Edición de caja con CAS. El código y los propietarios son inmutables.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateCashRegisterRequestDto {
+    /// UUID de la caja dentro de la sucursal.
+    pub cash_register_id: String,
+    /// Revisión leída por el cliente, en texto decimal.
+    pub expected_revision: String,
+    /// Nombre nuevo; si falta, se conserva.
+    pub name: Option<String>,
+    /// `ACTIVE` o `INACTIVE`; si falta, se conserva.
+    pub status: Option<String>,
+}
+
+/// Turno de caja con importes exactos y marcas temporales en segundos Unix.
+///
+/// `openedAt` y `closedAt` viajan como texto decimal y no como número: el
+/// renderer no debe rederivar ni truncar el instante autoritativo.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CashShiftDto {
+    /// UUID canónico.
+    pub id: String,
+    /// Caja a la que pertenece el turno.
+    pub cash_register_id: String,
+    /// `OPEN` o `CLOSED`.
+    pub status: String,
+    /// Importe inicial exacto de escala 4.
+    pub opening_amount: String,
+    /// Importe declarado al cierre, si ya se cerró.
+    pub closing_declared_amount: Option<String>,
+    /// Instante de apertura, en segundos Unix.
+    pub opened_at: String,
+    /// Instante de cierre, si ya se cerró.
+    pub closed_at: Option<String>,
+    /// Usuario que abrió el turno.
+    pub opened_by_user_id: String,
+    /// Usuario que cerró el turno, si ya se cerró.
+    pub closed_by_user_id: Option<String>,
+    /// Revisión optimista en texto decimal.
+    pub revision: String,
+}
+
+/// Apertura de turno en una caja activa de la sucursal del principal.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OpenCashShiftRequestDto {
+    /// UUID de la caja.
+    pub cash_register_id: String,
+    /// Importe inicial como texto decimal de escala máxima 4.
+    pub opening_amount: String,
+}
+
+/// Referencia a un turno concreto dentro de una caja.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CashShiftItemRequestDto {
+    /// UUID de la caja.
+    pub cash_register_id: String,
+    /// UUID del turno.
+    pub cash_shift_id: String,
+}
+
+/// Consulta paginada del historial de turnos de una caja.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CashShiftListRequestDto {
+    /// UUID de la caja.
+    pub cash_register_id: String,
+    /// `OPEN` o `CLOSED`; si falta, no filtra.
+    pub status: Option<String>,
+    /// Tamaño de página, de 1 a 100.
+    pub limit: u32,
+    /// Desplazamiento desde el inicio.
+    pub offset: u32,
+}
+
+/// Cierre no idempotente de un turno abierto.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CloseCashShiftRequestDto {
+    /// UUID de la caja.
+    pub cash_register_id: String,
+    /// UUID del turno.
+    pub cash_shift_id: String,
+    /// Revisión leída por el cliente, en texto decimal.
+    pub expected_revision: String,
+    /// Importe declarado como texto decimal de escala máxima 4.
+    pub closing_declared_amount: String,
+}
+
 /// Error seguro; nunca contiene SQL ni material de sesión.
 #[derive(Debug, PartialEq, Eq, Serialize, Type)]
 #[serde(tag = "code", rename_all = "SCREAMING_SNAKE_CASE")]
@@ -605,6 +736,7 @@ impl From<pos_core::organization_branch::ApplicationError> for IpcError {
             | ApplicationError::InvalidOrganizationInput
             | ApplicationError::InvalidPurchaseInput
             | ApplicationError::InvalidAdministrationInput
+            | ApplicationError::InvalidCashInput
             | ApplicationError::OverReceipt => Self::ValidationError,
             ApplicationError::BranchNotFound
             | ApplicationError::OrganizationNotFound
@@ -615,6 +747,8 @@ impl From<pos_core::organization_branch::ApplicationError> for IpcError {
             | ApplicationError::UserNotFound
             | ApplicationError::RoleNotFound
             | ApplicationError::MembershipNotFound
+            | ApplicationError::CashRegisterNotFound
+            | ApplicationError::CashShiftNotFound
             | ApplicationError::InventoryItemNotFound => Self::NotFound,
             ApplicationError::ConcurrentModification
             | ApplicationError::BranchCapacityReached
@@ -622,6 +756,12 @@ impl From<pos_core::organization_branch::ApplicationError> for IpcError {
             | ApplicationError::RoleCodeAlreadyExists
             | ApplicationError::MembershipAlreadyExists
             | ApplicationError::LastAdministrator
+            | ApplicationError::CashRegisterCodeAlreadyExists
+            | ApplicationError::CashRegisterInactive
+            | ApplicationError::BranchInactive
+            | ApplicationError::CashRegisterAlreadyHasOpenShift
+            | ApplicationError::CashShiftAlreadyClosed
+            | ApplicationError::CashShiftHasOpenSales
             | ApplicationError::SupplierCodeAlreadyExists
             | ApplicationError::PurchaseOrderCodeAlreadyExists
             | ApplicationError::SupplierInactive

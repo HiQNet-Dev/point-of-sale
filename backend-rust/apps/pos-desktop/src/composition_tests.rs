@@ -9,9 +9,10 @@ use pos_storage_sqlite::{
 
 use super::*;
 use crate::dto::{
-    BootstrapInstallRequestDto, CreateBranchRequestDto, CreateProductRequest, LoginRequestDto,
-    PageRequest, SelectBranchRequestDto, TimezoneOverrideRequestDto, UpdateBranchRequestDto,
-    UpdateOrganizationRequestDto,
+    BootstrapInstallRequestDto, CashRegisterListRequestDto, CashShiftListRequestDto,
+    CloseCashShiftRequestDto, CreateBranchRequestDto, CreateProductRequest, LoginRequestDto,
+    NewCashRegisterRequestDto, OpenCashShiftRequestDto, PageRequest, SelectBranchRequestDto,
+    TimezoneOverrideRequestDto, UpdateBranchRequestDto, UpdateOrganizationRequestDto,
 };
 
 fn page() -> PageRequest {
@@ -875,4 +876,195 @@ fn administration_commands_require_a_session_and_reject_the_laboratory()
         state.shutdown().await;
         Ok(())
     })
+}
+
+#[test]
+fn cash_commands_require_a_session_and_reject_the_laboratory() -> Result<(), Box<dyn Error>> {
+    tauri::async_runtime::block_on(async {
+        let lab = LocalState::synthetic().await?;
+        for error in [
+            lab.cash_register_list(cash_page()).await.err(),
+            lab.cash_shift_get_open("00000000-0000-0000-0000-000000000001")
+                .await
+                .err(),
+        ] {
+            assert_eq!(error, Some(IpcError::OperationNotAvailable));
+        }
+        lab.shutdown().await;
+
+        // Instalación sin sesión: ningún dato de caja sale del proceso.
+        let directory = crate::test_support::Fixture::new()?;
+        let state = LocalState::open_installation(directory.path()).await?;
+        for error in [
+            state.cash_register_list(cash_page()).await.err(),
+            state
+                .cash_register_create(NewCashRegisterRequestDto {
+                    code: "caja-1".to_owned(),
+                    name: "Caja principal".to_owned(),
+                })
+                .await
+                .err(),
+            state
+                .cash_shift_open(OpenCashShiftRequestDto {
+                    cash_register_id: "00000000-0000-0000-0000-000000000001".to_owned(),
+                    opening_amount: "100.0000".to_owned(),
+                })
+                .await
+                .err(),
+        ] {
+            assert_eq!(error, Some(IpcError::Unauthorized));
+        }
+        state.shutdown().await;
+        Ok(())
+    })
+}
+
+#[test]
+fn cash_register_and_shift_round_trip_survives_a_restart() -> Result<(), Box<dyn Error>> {
+    tauri::async_runtime::block_on(async {
+        let directory = crate::test_support::Fixture::new()?;
+        let state = LocalState::open_installation(directory.path()).await?;
+        let pool = state.product_installation()?.pool.clone();
+        deliver_authorization(directory.path(), &pool).await?;
+        install_and_login(&state).await?;
+
+        let branch = state
+            .branch_create(CreateBranchRequestDto {
+                code: "centro".to_owned(),
+                name: "Sucursal Centro".to_owned(),
+                timezone: None,
+            })
+            .await?;
+        state.auth_select_branch(select_branch(&branch.id)).await?;
+
+        let register = state
+            .cash_register_create(NewCashRegisterRequestDto {
+                code: "caja-1".to_owned(),
+                name: "Caja principal".to_owned(),
+            })
+            .await?;
+        assert_eq!(register.revision, "0");
+        assert_eq!(register.status, "ACTIVE");
+        assert_eq!(
+            state.cash_register_list(cash_page()).await?.len(),
+            1,
+            "la caja recién creada debe listarse"
+        );
+
+        // Código duplicado en la misma sucursal: conflicto, no un error interno.
+        assert_eq!(
+            state
+                .cash_register_create(NewCashRegisterRequestDto {
+                    code: "caja-1".to_owned(),
+                    name: "Otra".to_owned(),
+                })
+                .await
+                .err(),
+            Some(IpcError::Conflict)
+        );
+
+        let shift = state
+            .cash_shift_open(OpenCashShiftRequestDto {
+                cash_register_id: register.id.clone(),
+                opening_amount: "150.0000".to_owned(),
+            })
+            .await?;
+        assert_eq!(shift.status, "OPEN");
+        assert_eq!(shift.opening_amount, "150.0000");
+
+        // Segunda apertura: la caja ya tiene un turno abierto.
+        assert_eq!(
+            state
+                .cash_shift_open(OpenCashShiftRequestDto {
+                    cash_register_id: register.id.clone(),
+                    opening_amount: "10.0000".to_owned(),
+                })
+                .await
+                .err(),
+            Some(IpcError::Conflict)
+        );
+
+        let open = state
+            .cash_shift_get_open(&register.id)
+            .await?
+            .ok_or("falta el turno abierto")?;
+        assert_eq!(open.id, shift.id);
+
+        let closed = state
+            .cash_shift_close(CloseCashShiftRequestDto {
+                cash_register_id: register.id.clone(),
+                cash_shift_id: shift.id.clone(),
+                expected_revision: shift.revision.clone(),
+                closing_declared_amount: "150.0000".to_owned(),
+            })
+            .await?;
+        assert_eq!(closed.status, "CLOSED");
+        assert_eq!(closed.closing_declared_amount.as_deref(), Some("150.0000"));
+
+        // La revisión quedó obsoleta: el cierre no es idempotente.
+        assert_eq!(
+            state
+                .cash_shift_close(CloseCashShiftRequestDto {
+                    cash_register_id: register.id.clone(),
+                    cash_shift_id: shift.id.clone(),
+                    expected_revision: shift.revision.clone(),
+                    closing_declared_amount: "150.0000".to_owned(),
+                })
+                .await
+                .err(),
+            Some(IpcError::Conflict)
+        );
+
+        assert!(state.cash_shift_get_open(&register.id).await?.is_none());
+        let history = state
+            .cash_shift_list(CashShiftListRequestDto {
+                cash_register_id: register.id.clone(),
+                status: None,
+                limit: 20,
+                offset: 0,
+            })
+            .await?;
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].status, "CLOSED");
+        state.shutdown().await;
+
+        // Reapertura: la sesión se perdió, pero caja y turno persisten.
+        let reopened = LocalState::open_installation(directory.path()).await?;
+        assert_eq!(
+            reopened.cash_register_list(cash_page()).await.err(),
+            Some(IpcError::Unauthorized)
+        );
+        reopened
+            .auth_login(LoginRequestDto {
+                email: "admin@cafe.test".to_owned(),
+                password: "contraseña-larga-2k".to_owned(),
+            })
+            .await?;
+        reopened
+            .auth_select_branch(select_branch(&branch.id))
+            .await?;
+        let registers = reopened.cash_register_list(cash_page()).await?;
+        assert_eq!(registers.len(), 1);
+        assert_eq!(registers[0].code, "caja-1");
+        let reopened_history = reopened
+            .cash_shift_list(CashShiftListRequestDto {
+                cash_register_id: register.id.clone(),
+                status: Some("CLOSED".to_owned()),
+                limit: 20,
+                offset: 0,
+            })
+            .await?;
+        assert_eq!(reopened_history.len(), 1);
+        assert_eq!(reopened_history[0].id, shift.id);
+        reopened.shutdown().await;
+        Ok(())
+    })
+}
+
+fn cash_page() -> CashRegisterListRequestDto {
+    CashRegisterListRequestDto {
+        status: None,
+        limit: 20,
+        offset: 0,
+    }
 }
